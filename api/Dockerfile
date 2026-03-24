@@ -18,6 +18,7 @@ RUN apt-get update \
     fonts-liberation \
     wkhtmltopdf \
     tzdata \
+    wget \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 10001 appuser
