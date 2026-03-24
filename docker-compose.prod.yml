@@ -3,10 +3,10 @@ services:
     image: ghcr.io/janexpl/courseslistnext-api:latest
     restart: unless-stopped
     ports:
-      - "8082:8082"
+      - "${PORT:-8082}:${PORT:=8082}"
     env_file: .env
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/api/v1/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${PORT:-8082}/api/v1/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

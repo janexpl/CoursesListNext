@@ -1,11 +1,11 @@
 FROM golang:1.26.1-bookworm AS builder
 
-WORKDIR /src/next/api
+WORKDIR /src/api
 
-COPY next/api/go.mod next/api/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY next/api ./
+COPY . .
 
 RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api
 
@@ -26,11 +26,11 @@ WORKDIR /app
 
 COPY --from=builder /out/api /usr/local/bin/api
 
-ENV PORT=8081
+
 ENV CHROME_BIN=/usr/bin/chromium
 ENV PDF_RENDERER=wkhtmltopdf
 
-EXPOSE 8081
+EXPOSE ${PORT:-8082}
 
 USER appuser
 
