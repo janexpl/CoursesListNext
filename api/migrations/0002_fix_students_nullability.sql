@@ -1,0 +1,4 @@
+ALTER TABLE students
+    ALTER COLUMN firstname SET NOT NULL,
+    ALTER COLUMN lastname SET NOT NULL,
+    ALTER COLUMN telephoneno DROP NOT NULL;
