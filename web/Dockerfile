@@ -2,10 +2,10 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-COPY next/web/package.json next/web/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY next/web ./
+COPY . .
 
 RUN npm run build
 
