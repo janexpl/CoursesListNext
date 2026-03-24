@@ -854,9 +854,17 @@ const journalPrintDocument = computed(() => {
         color: #475569;
       }
 
-      .signature-cell {
-        min-width: 140px;
-        height: 42px;
+      .trainer-signature {
+        padding-top: 96px;
+      }
+
+      .trainer-signature__line {
+        width: 220px;
+        border-top: 1px solid #64748b;
+        padding-top: 6px;
+        font-size: 11px;
+        text-align: center;
+        color: #475569;
       }
 
       .attendance-sheet {
@@ -989,6 +997,10 @@ const journalPrintDocument = computed(() => {
             ${programRowsHtml}
           </tbody>
         </table>
+
+        <div class="trainer-signature">
+          <div class="trainer-signature__line">Podpis wykładowcy</div>
+        </div>
       </article>
 
       <article class="print-sheet attendance-sheet">
