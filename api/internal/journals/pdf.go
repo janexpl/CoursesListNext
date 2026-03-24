@@ -89,6 +89,12 @@ func buildJournalPDFHTML(
         break-after: auto;
       }
 
+      .program-sheet {
+        min-height: calc(297mm - 28mm - 24px);
+        display: flex;
+        flex-direction: column;
+      }
+
       .sheet-header {
         margin-bottom: 18px;
         padding-bottom: 14px;
@@ -101,7 +107,7 @@ func buildJournalPDFHTML(
         border: 1px solid #cbd5e1;
         border-radius: 999px;
         padding: 4px 10px;
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.08em;
         color: #475569;
@@ -122,12 +128,12 @@ func buildJournalPDFHTML(
       }
 
       h1 {
-        font-size: 28px;
+        font-size: 35px;
         line-height: 1.2;
       }
 
       h2 {
-        font-size: 20px;
+        font-size: 30px;
         line-height: 1.25;
       }
 
@@ -139,7 +145,7 @@ func buildJournalPDFHTML(
 
       .section-lead {
         margin: 4px 0 14px;
-        font-size: 12px;
+        font-size: 14px;
         color: #64748b;
       }
 
@@ -147,12 +153,12 @@ func buildJournalPDFHTML(
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 12px 18px;
-        font-size: 13px;
+        font-size: 18px;
       }
 
       .details-grid dt {
-        margin: 0 0 4px;
-        font-size: 10px;
+        margin: 4px 0 0;
+        font-size: 15px;
         letter-spacing: 0.12em;
         color: #64748b;
         text-transform: uppercase;
@@ -170,7 +176,7 @@ func buildJournalPDFHTML(
       .print-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        font-size: 14px;
       }
 
       .print-table th,
@@ -182,7 +188,7 @@ func buildJournalPDFHTML(
 
       .print-table thead th {
         background: #f8fafc;
-        font-size: 8px;
+        font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.03em;
         color: #475569;
@@ -192,6 +198,36 @@ func buildJournalPDFHTML(
       .signature-cell {
         min-width: 140px;
         height: 42px;
+      }
+
+      .program-table {
+        table-layout: fixed;
+      }
+
+      .program-table col:nth-child(1) {
+        width: 7%;
+      }
+
+      .program-table col:nth-child(2) {
+        width: 14%;
+      }
+
+      .program-table col:nth-child(3) {
+        width: 31%;
+      }
+
+      .program-table col:nth-child(4),
+      .program-table col:nth-child(5) {
+        width: 14%;
+      }
+
+      .program-table col:nth-child(6) {
+        width: 20%;
+      }
+
+      .program-table td,
+      .program-table th {
+        word-break: break-word;
       }
 
       .attendance-sheet {
@@ -214,12 +250,33 @@ func buildJournalPDFHTML(
       }
 
       .attendance-heading {
-        font-size: 7.5px;
-        line-height: 1.15;
+        font-size: 9px;
+        line-height: 1;
       }
 
       .attendee-cell {
         font-weight: 500;
+      }
+
+      .trainer-signature {
+        padding-top: 28px;
+      }
+
+      .trainer-signature__inner {
+        width: 220px;
+        height: 72px;
+        display: flex;
+        padding-top: 100px;
+        align-items: flex-end;
+        text-align: center;
+      }
+
+      .trainer-signature__line {
+        width: 100%;
+        border-top: 1px solid #64748b;
+        padding-top: 6px;
+        font-size: 11px;
+        color: #475569;
       }
     </style>
   </head>
@@ -230,7 +287,7 @@ func buildJournalPDFHTML(
           <div class="status-badge">` + html.EscapeString(journalStatusLabel(journal.Status)) + `</div>
           <span class="course-symbol">` + html.EscapeString(journal.CourseSymbol) + `</span>
           <h1>` + html.EscapeString(journal.Title) + `</h1>
-          <p class="subtitle">` + html.EscapeString(journal.CourseName) + `</p>
+          
         </div>
 
         <dl class="details-grid">
@@ -284,7 +341,6 @@ func buildJournalPDFHTML(
               <th>Data urodzenia</th>
               <th>Firma</th>
               <th>Zaświadczenie</th>
-              <th>Podpis</th>
             </tr>
           </thead>
           <tbody>
@@ -293,10 +349,18 @@ func buildJournalPDFHTML(
         </table>
       </article>
 
-      <article class="print-sheet">
+      <article class="print-sheet program-sheet">
         <h2>Program szkolenia</h2>
         <p class="section-lead">Tematy, prowadzący i godziny przypisane do dziennika.</p>
-        <table class="print-table">
+        <table class="print-table program-table">
+          <colgroup>
+            <col>
+            <col>
+            <col>
+            <col>
+            <col>
+            <col>
+          </colgroup>
           <thead>
             <tr>
               <th>Lp.</th>
@@ -311,6 +375,12 @@ func buildJournalPDFHTML(
             ` + programRowsHTML + `
           </tbody>
         </table>
+
+        <div class="trainer-signature">
+          <div class="trainer-signature__inner">
+            <div class="trainer-signature__line">Podpis wykładowcy</div>
+          </div>
+        </div>
       </article>
 
       <article class="print-sheet attendance-sheet">
@@ -346,7 +416,7 @@ func buildJournalParticipantRowsHTML(attendees []sqlc.ListJournalAttendeesRow) s
 		}
 
 		rows = append(rows, fmt.Sprintf(
-			"<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class='signature-cell'></td></tr>",
+			"<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>",
 			index+1,
 			html.EscapeString(attendee.FullNameSnapshot),
 			html.EscapeString(formatJournalPrintDate(attendee.BirthdateSnapshot)),

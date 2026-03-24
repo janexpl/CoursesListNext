@@ -335,7 +335,6 @@ onMounted(() => {
                 <th>Data urodzenia</th>
                 <th>Firma</th>
                 <th>Zaświadczenie</th>
-                <th>Podpis</th>
               </tr>
             </thead>
             <tbody>
@@ -345,7 +344,6 @@ onMounted(() => {
                 <td>{{ formatDate(attendee.birthdateSnapshot) }}</td>
                 <td>{{ attendee.companyNameSnapshot || 'Brak firmy' }}</td>
                 <td>{{ formatCertificateNumber(attendee) }}</td>
-                <td class="signature-cell" />
               </tr>
             </tbody>
           </table>
@@ -383,6 +381,10 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="trainer-signature">
+          <div class="trainer-signature__line">Podpis wykładowcy</div>
         </div>
       </article>
 
@@ -470,9 +472,17 @@ onMounted(() => {
   color: rgb(71 85 105);
 }
 
-.signature-cell {
-  min-width: 140px;
-  height: 42px;
+.trainer-signature {
+  padding-top: 96px;
+}
+
+.trainer-signature__line {
+  width: 220px;
+  border-top: 1px solid rgb(100 116 139);
+  padding-top: 6px;
+  font-size: 11px;
+  text-align: center;
+  color: rgb(71 85 105);
 }
 
 .attendance-table th:not(:first-child),
