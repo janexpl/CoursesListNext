@@ -67,6 +67,7 @@ func renderPDFWithChrome(ctx context.Context, chromePath, pageHTML string) ([]by
 		ctx,
 		chromePath,
 		"--headless",
+		"--no-sandbox",
 		"--disable-gpu",
 		"--no-first-run",
 		"--no-default-browser-check",

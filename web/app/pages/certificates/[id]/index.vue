@@ -86,7 +86,7 @@ function escapeHtml(value: string) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll('\'', '&#39;')
+    .replaceAll("'", '&#39;')
 }
 
 const courseProgramEntries = computed(() => {
@@ -224,7 +224,7 @@ const certificatePreviewDocument = computed(() => {
           radial-gradient(circle at top left, rgb(14 165 233 / 0.10), transparent 25%),
           linear-gradient(180deg, #e2e8f0 0%, #f8fafc 100%);
         color: #0f172a;
-        font-family: "Times New Roman", "Liberation Serif", Georgia, serif;
+        font-family: "Liberation Serif","Times New Roman", Georgia, serif;
         line-height: 1.4;
       }
 
@@ -363,7 +363,7 @@ const certificatePreviewDocument = computed(() => {
           width: 210mm;
           min-height: 297mm;
           margin: 0;
-          padding: 40mm 25mm 12mm 25mm;
+          padding: 0 25mm 12mm 25mm;
           border: none;
           border-radius: 0;
           box-shadow: none;
@@ -377,7 +377,7 @@ const certificatePreviewDocument = computed(() => {
         }
 
         .secondary-sheet {
-          padding-top: 50mm;
+          padding-top: 30mm;
         }
 
         h1 {
@@ -774,10 +774,7 @@ useSeoMeta({
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <h2 class="text-lg font-semibold text-slate-900">Powiązany dziennik</h2>
 
-            <div
-              v-if="certificate.journal"
-              class="mt-5 space-y-4"
-            >
+            <div v-if="certificate.journal" class="mt-5 space-y-4">
               <div>
                 <p class="text-xs uppercase tracking-[0.16em] text-slate-400">Tytuł</p>
                 <p class="mt-1 text-sm font-medium text-slate-900">
@@ -788,9 +785,11 @@ useSeoMeta({
               <div class="flex flex-wrap items-center gap-3">
                 <span
                   class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize"
-                  :class="certificate.journal.status === 'closed'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-amber-100 text-amber-700'"
+                  :class="
+                    certificate.journal.status === 'closed'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                  "
                 >
                   {{ certificate.journal.status === 'closed' ? 'Zamknięty' : 'Roboczy' }}
                 </span>

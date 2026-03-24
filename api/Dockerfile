@@ -29,7 +29,7 @@ COPY --from=builder /out/api /usr/local/bin/api
 
 
 ENV CHROME_BIN=/usr/bin/chromium
-ENV PDF_RENDERER=wkhtmltopdf
+ENV PDF_RENDERER=chrome
 
 EXPOSE ${PORT:-8082}
 

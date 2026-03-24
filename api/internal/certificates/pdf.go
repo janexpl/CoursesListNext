@@ -38,15 +38,16 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     }
 
     html, body {
-      margin: 0;
+      margin: -;
       padding: 0;
       color: #0f172a;
       background: white;
-      font-family: "Times New Roman", "Liberation Serif", Times, serif !important;
+      font-family: "Liberation Serif", "Times New Roman", Times, serif !important;
     }
 
     body {
       display: block;
+      margin: 15mm;
       padding: 14mm 12mm;
       line-height: 1.4;
     }
@@ -62,7 +63,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     }
 
     .spacer {
-      height: 12mm;
+      height: 25mm;
     }
 
     h1, h2, h3, h4, h5, h6 {

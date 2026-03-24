@@ -68,11 +68,11 @@ func buildJournalPDFHTML(
         padding: 0;
         background: white;
         color: #0f172a;
-        font-family: "Times New Roman", "Liberation Serif", Times, serif;
+        font-family: "Liberation Sans", "Times New Roman", "Liberation Serif", Times, serif;
       }
 
       body {
-        font-size: 14px;
+        font-size: 12px;
         line-height: 1.35;
       }
 
@@ -123,24 +123,24 @@ func buildJournalPDFHTML(
       }
 
       h1 {
-        font-size: 40px;
+        font-size: 35px;
         line-height: 1.2;
       }
 
       h2 {
-        font-size: 35px;
+        font-size: 24px;
         line-height: 1.25;
       }
 
       .subtitle {
         margin-top: 6px;
-        font-size: 19px;
+        font-size: 15px;
         color: #475569;
       }
 
       .section-lead {
         margin: 4px 0 14px;
-        font-size: 14px;
+        font-size: 12px;
         color: #64748b;
       }
 
@@ -153,7 +153,7 @@ func buildJournalPDFHTML(
 
       .details-grid dt {
         margin: 15px 0 0;
-        font-size: 14px;
+        font-size: 12px;
         letter-spacing: 0.12em;
         color: #64748b;
         text-transform: uppercase;
@@ -171,7 +171,7 @@ func buildJournalPDFHTML(
       .print-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 14px;
+        font-size: 12px;
       }
 
       .print-table th,
@@ -183,7 +183,7 @@ func buildJournalPDFHTML(
 
       .print-table thead th {
         background: #f8fafc;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.03em;
         color: #475569;
@@ -228,7 +228,7 @@ func buildJournalPDFHTML(
         width: 220px;
         border-top: 1px solid #64748b;
         padding-top: 6px;
-        font-size: 13px;
+        font-size: 10px;
         text-align: center;
         color: #475569;
       }
@@ -253,7 +253,7 @@ func buildJournalPDFHTML(
       }
 
       .attendance-heading {
-        font-size: 10px;
+        font-size: 8px;
         line-height: 1.15;
       }
 
