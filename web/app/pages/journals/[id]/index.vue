@@ -179,7 +179,7 @@ const {
     const response = await api.students({
       search,
       companyId: journal.value?.companyId ?? undefined,
-      limit: 8
+      limit: 100
     })
 
     return response.data
