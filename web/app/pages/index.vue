@@ -29,8 +29,7 @@ const expiringCount = computed(() => data.value?.data.expiring.in30Days ?? 0)
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Panel operacyjny</p>
         <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
         <p class="max-w-2xl text-sm leading-6 text-slate-600">
-          Witaj{{ auth.user.value ? `, ${auth.user.value.firstName}` : '' }}. Ten widok korzysta już
-          z nowego backendu Go i pokazuje najważniejsze dane operacyjne.
+          Witaj{{ auth.user.value ? `, ${auth.user.value.firstName}` : '' }}.
         </p>
       </div>
 
@@ -88,10 +87,7 @@ const expiringCount = computed(() => data.value?.data.expiring.in30Days ?? 0)
 
       <div class="rounded-xl border border-slate-200 bg-white/90 shadow-sm">
         <div class="border-b border-slate-200 px-6 py-5">
-          <h2 class="text-lg font-semibold text-slate-900">Najbliższe wygaśnięcia</h2>
-          <p v-if="showDevHints" class="mt-1 text-sm text-slate-500">
-            Dane pochodzą z endpointu <code>/api/v1/dashboard</code>.
-          </p>
+          <h2 class="text-lg font-semibold text-slate-900">Wygasające certyfikaty</h2>
         </div>
 
         <div v-if="pending" class="px-6 py-10 text-sm text-slate-500">Ładowanie danych...</div>
