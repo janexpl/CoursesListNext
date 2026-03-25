@@ -316,6 +316,46 @@ func TestListPassesFiltersToQuery(t *testing.T) {
 	}
 }
 
+func TestListUsesTokenizedStudentSearchQuery(t *testing.T) {
+	rows := &fakeRows{}
+
+	handler := NewHandler(dbsqlc.New(fakeDB{
+		query: func(_ context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+			if !strings.Contains(sql, "regexp_split_to_array") {
+				t.Fatalf("expected tokenized search SQL, got %q", sql)
+			}
+			if !strings.Contains(sql, "COALESCE(s.firstname, '') NOT ILIKE '%' || term || '%'") {
+				t.Fatalf("expected first name token match clause, got %q", sql)
+			}
+			if !strings.Contains(sql, "COALESCE(s.lastname, '') NOT ILIKE '%' || term || '%'") {
+				t.Fatalf("expected last name token match clause, got %q", sql)
+			}
+			if !strings.Contains(sql, "COALESCE(s.pesel, '') NOT ILIKE '%' || term || '%'") {
+				t.Fatalf("expected pesel token match clause, got %q", sql)
+			}
+
+			searchArg, ok := args[0].(pgtype.Text)
+			if !ok {
+				t.Fatalf("expected search arg type pgtype.Text, got %T", args[0])
+			}
+			if !searchArg.Valid || searchArg.String != "Nowak Jan" {
+				t.Fatalf("expected search arg %q, got %+v", "Nowak Jan", searchArg)
+			}
+
+			return rows, nil
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/students?search=Nowak%20Jan", nil)
+	rec := httptest.NewRecorder()
+
+	handler.List(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
 func TestGetReturnsStudentDetailsResponse(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
 		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {

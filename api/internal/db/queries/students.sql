@@ -14,9 +14,19 @@
   WHERE
       (
           sqlc.narg(search)::text IS NULL
-          OR COALESCE(s.firstname, '') ILIKE '%' || sqlc.narg(search)::text || '%'
-          OR COALESCE(s.lastname, '') ILIKE '%' || sqlc.narg(search)::text || '%'
-          OR COALESCE(s.pesel, '') ILIKE '%' || sqlc.narg(search)::text || '%'
+          OR NOT EXISTS (
+              SELECT 1
+              FROM unnest(
+                  regexp_split_to_array(
+                      trim(regexp_replace(sqlc.narg(search)::text, '[,\s]+', ' ', 'g')),
+                      ' '
+                  )
+              ) AS term
+              WHERE term <> ''
+                AND COALESCE(s.firstname, '') NOT ILIKE '%' || term || '%'
+                AND COALESCE(s.lastname, '') NOT ILIKE '%' || term || '%'
+                AND COALESCE(s.pesel, '') NOT ILIKE '%' || term || '%'
+          )
       )
       AND (
           sqlc.narg(company_id)::bigint IS NULL
@@ -163,5 +173,4 @@
       c.name AS company_name
   FROM inserted s
   LEFT JOIN companies c ON c.id = s.company_id;
-
 

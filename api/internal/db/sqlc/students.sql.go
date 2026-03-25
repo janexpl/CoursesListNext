@@ -206,9 +206,19 @@ const listStudents = `-- name: ListStudents :many
   WHERE
       (
           $1::text IS NULL
-          OR COALESCE(s.firstname, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(s.lastname, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(s.pesel, '') ILIKE '%' || $1::text || '%'
+          OR NOT EXISTS (
+              SELECT 1
+              FROM unnest(
+                  regexp_split_to_array(
+                      trim(regexp_replace($1::text, '[,\s]+', ' ', 'g')),
+                      ' '
+                  )
+              ) AS term
+              WHERE term <> ''
+                AND COALESCE(s.firstname, '') NOT ILIKE '%' || term || '%'
+                AND COALESCE(s.lastname, '') NOT ILIKE '%' || term || '%'
+                AND COALESCE(s.pesel, '') NOT ILIKE '%' || term || '%'
+          )
       )
       AND (
           $2::bigint IS NULL
