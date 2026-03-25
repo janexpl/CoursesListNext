@@ -240,7 +240,7 @@ function companyLabel(journal: JournalSummary) {
           <div class="relative">
             <select
               v-model="status"
-              class="h-[50px] w-full appearance-none rounded-md border border-slate-300 bg-white px-4 pr-10 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+              class="h-12.5 w-full appearance-none rounded-md border border-slate-300 bg-white px-4 pr-10 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
             >
               <option value="">
                 Wszystkie
@@ -339,9 +339,6 @@ function companyLabel(journal: JournalSummary) {
             <h2 class="text-xl font-semibold tracking-tight text-slate-900">
               {{ journal.title }}
             </h2>
-            <p class="text-sm text-slate-600">
-              {{ journal.course.name }}
-            </p>
             <p class="text-sm text-slate-500">
               {{ companyLabel(journal) }}
             </p>
