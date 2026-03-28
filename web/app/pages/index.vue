@@ -9,7 +9,6 @@ useSeoMeta({
 
 const api = useApi()
 const auth = useAuth()
-const showDevHints = import.meta.dev
 
 const { data, pending, error, refresh } = await useAsyncData('dashboard', async () => {
   return await api.dashboard()

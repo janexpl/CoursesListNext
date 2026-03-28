@@ -1,3 +1,4 @@
+// Package server
 package server
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	"github.com/janexpl/CoursesListNext/api/internal/certificates"
 	"github.com/janexpl/CoursesListNext/api/internal/companies"
@@ -34,18 +36,23 @@ type Handler struct {
 
 func NewRouter(deps Dependencies) http.Handler {
 	h := Handler{queries: deps.Queries}
-	studentHandler := students.NewHandler(deps.Queries)
-	companyHandler := companies.NewHandler(deps.Queries)
+	recorder := auditlog.NewRecorder()
+	studentService := students.NewService(deps.Pool, deps.Queries, recorder)
+	studentHandler := students.NewHandler(deps.Queries, studentService)
+	companyService := companies.NewService(deps.Pool, deps.Queries, recorder)
+	companyHandler := companies.NewHandler(deps.Queries, companyService)
 	authHandler := auth.NewHandler(deps.Queries, deps.Config)
-	certificateService := certificates.NewService(deps.Pool, deps.Queries)
-	userService := users.NewService(deps.Queries)
+	certificateService := certificates.NewService(deps.Pool, deps.Queries, recorder)
+	userService := users.NewServiceWithAudit(deps.Pool, deps.Queries, recorder)
 	userHandler := users.NewHandler(deps.Queries, userService)
 	certificateHandler := certificates.NewHandler(deps.Queries, certificateService)
 	dashboardHandler := dashboard.NewHandler(deps.Queries)
-	courseHandler := courses.NewHandler(deps.Queries)
+	coursesService := courses.NewService(deps.Pool, deps.Queries, recorder)
+	courseHandler := courses.NewHandler(deps.Queries, coursesService)
 	registryHandler := registries.NewHandler(deps.Queries)
-	journalService := journals.NewService(deps.Pool, deps.Queries)
+	journalService := journals.NewService(deps.Pool, deps.Queries, recorder)
 	journalHandler := journals.NewHandler(deps.Queries, journalService)
+	auditLogHandler := auditlog.NewHandler(deps.Queries)
 
 	r := chi.NewRouter()
 
@@ -131,6 +138,11 @@ func NewRouter(deps Dependencies) http.Handler {
 				r.Delete("/admin/users/{id}", userHandler.Delete)
 				r.Patch("/admin/users/{id}", userHandler.Patch)
 				r.Patch("/admin/users/{id}/password", userHandler.PatchPasswordByAdmin)
+				r.Get("/courses/{id}/audit-log", auditLogHandler.ListByEntity("course"))
+				r.Get("/certificates/{id}/audit-log", auditLogHandler.ListByEntity("certificate"))
+				r.Get("/companies/{id}/audit-log", auditLogHandler.ListByEntity("company"))
+				r.Get("/students/{id}/audit-log", auditLogHandler.ListByEntity("student"))
+				r.Get("/admin/users/{id}/audit-log", auditLogHandler.ListByEntity("user"))
 			})
 		})
 	})

@@ -15,13 +15,12 @@ import (
 
 type Querier interface {
 	ListUsers(ctx context.Context) ([]sqlc.ListUsersRow, error)
-	DeleteUser(ctx context.Context, id int64) (int64, error)
-	GetUserByID(ctx context.Context, id int64) (sqlc.User, error)
-	CountAdminUsers(ctx context.Context, role int32) (int64, error)
-	UpdateUser(ctx context.Context, arg sqlc.UpdateUserParams) (sqlc.UpdateUserRow, error)
 }
 type Creator interface {
 	Create(ctx context.Context, req CreateUserRequest) (UserDTO, error)
+	Update(ctx context.Context, userID int64, req UpdateUserRequest) (UserDTO, error)
+	UpdateProfile(ctx context.Context, req UpdateProfileRequest) (UserDTO, error)
+	Delete(ctx context.Context, userID int64) (int64, error)
 	PatchPassword(ctx context.Context, req UpdatePasswordRequest) error
 	PatchPasswordByAdmin(ctx context.Context, userID int64, newPassword string) error
 }
@@ -97,37 +96,21 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentUser, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
-		return
-	}
-	if currentUser.ID == id {
-		response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot delete current user")
-		return
-	}
-
-	targetUser, err := h.querier.GetUserByID(r.Context(), id)
+	row, err := h.creator.Delete(r.Context(), id)
 	if err != nil {
-		response.HandleDBError(w, err, "user")
-		return
-	}
-
-	if targetUser.Role == auth.RoleAdmin {
-		adminCount, err := h.querier.CountAdminUsers(r.Context(), auth.RoleAdmin)
-		if err != nil {
-			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to count admin users")
+		if errors.Is(err, ErrUnauthorized) {
+			response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
 			return
 		}
-		if adminCount <= 1 {
+		if errors.Is(err, ErrCannotDeleteCurrentUser) {
+			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot delete current user")
+			return
+		}
+		if errors.Is(err, ErrCannotDeleteLastAdmin) {
 			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot delete last admin")
 			return
 		}
-	}
-
-	row, err := h.querier.DeleteUser(r.Context(), id)
-	if err != nil {
-		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to delete user")
+		response.HandleDBError(w, err, "user")
 		return
 	}
 	if row == 0 {
@@ -224,25 +207,22 @@ func (h *Handler) PatchProfile(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid email format")
 		return
 	}
-	currentUser, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
-		return
-	}
-	row, err := h.querier.UpdateUser(r.Context(), sqlc.UpdateUserParams{
-		ID:        currentUser.ID,
+	row, err := h.creator.UpdateProfile(r.Context(), UpdateProfileRequest{
 		Email:     req.Email,
 		Firstname: req.Firstname,
 		Lastname:  req.Lastname,
-		Role:      currentUser.Role,
 	})
 	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
+			return
+		}
 		response.HandleDBError(w, err, "user")
 		return
 	}
 
 	response.WriteJSON(w, http.StatusOK, UserResponse{
-		Data: mapUpdateUserRow(row),
+		Data: row,
 	})
 
 }
@@ -271,47 +251,30 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid email format")
 		return
 	}
-	currentUser, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
-		return
-	}
-
-	targetUser, err := h.querier.GetUserByID(r.Context(), id)
-	if err != nil {
-		response.HandleDBError(w, err, "user")
-		return
-	}
-
-	if targetUser.Role == auth.RoleAdmin && req.Role != auth.RoleAdmin {
-		adminCount, err := h.querier.CountAdminUsers(r.Context(), auth.RoleAdmin)
-		if err != nil {
-			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to count admin users")
-			return
-		}
-		if adminCount <= 1 {
-			if currentUser.ID == id {
-				response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot remove your own last admin access")
-				return
-			}
-			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot update last admin role")
-			return
-		}
-	}
-
-	row, err := h.querier.UpdateUser(r.Context(), sqlc.UpdateUserParams{
-		ID:        id,
+	row, err := h.creator.Update(r.Context(), id, UpdateUserRequest{
 		Email:     req.Email,
 		Firstname: req.Firstname,
 		Lastname:  req.Lastname,
 		Role:      req.Role,
 	})
 	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
+			return
+		}
+		if errors.Is(err, ErrCannotRemoveOwnLastAdminAccess) {
+			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot remove your own last admin access")
+			return
+		}
+		if errors.Is(err, ErrCannotUpdateLastAdminRole) {
+			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot update last admin role")
+			return
+		}
 		response.HandleDBError(w, err, "user")
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, UserResponse{
-		Data: mapUpdateUserRow(row),
+		Data: row,
 	})
 }
 func mapUpdateUserRow(row sqlc.UpdateUserRow) UserDTO {

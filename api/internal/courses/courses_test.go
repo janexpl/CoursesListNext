@@ -16,10 +16,16 @@ import (
 )
 
 type fakeQuerier struct {
-	ListCoursesFunc   func(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error)
-	GetCourseByIDFunc func(ctx context.Context, id int64) (sqlc.Course, error)
-	UpdateCourseFunc  func(ctx context.Context, arg sqlc.UpdateCourseParams) (sqlc.Course, error)
-	CreateCourseFunc  func(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error)
+	ListCoursesFunc                                 func(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error)
+	GetCourseByIDFunc                               func(ctx context.Context, id int64) (sqlc.Course, error)
+	UpdateCourseFunc                                func(ctx context.Context, arg sqlc.UpdateCourseParams) (sqlc.Course, error)
+	CreateCourseFunc                                func(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error)
+	ListCourseCertificateTranslationsByCourseIDFunc func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
+}
+
+type fakeCreator struct {
+	CreateFunc func(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error)
+	UpdateFunc func(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error)
 }
 
 func (f fakeQuerier) ListCourses(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error) {
@@ -36,6 +42,27 @@ func (f fakeQuerier) UpdateCourse(ctx context.Context, arg sqlc.UpdateCoursePara
 
 func (f fakeQuerier) CreateCourse(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error) {
 	return f.CreateCourseFunc(ctx, arg)
+}
+
+func (f fakeQuerier) ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error) {
+	if f.ListCourseCertificateTranslationsByCourseIDFunc == nil {
+		return []sqlc.ListCourseCertificateTranslationsByCourseIDRow{}, nil
+	}
+	return f.ListCourseCertificateTranslationsByCourseIDFunc(ctx, courseID)
+}
+
+func (f fakeCreator) Create(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error) {
+	if f.CreateFunc == nil {
+		return CourseDetailDTO{}, errors.New("unexpected Create call")
+	}
+	return f.CreateFunc(ctx, input)
+}
+
+func (f fakeCreator) Update(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
+	if f.UpdateFunc == nil {
+		return CourseDetailDTO{}, errors.New("unexpected Update call")
+	}
+	return f.UpdateFunc(ctx, courseID, input)
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
@@ -87,7 +114,7 @@ func TestListCourses(t *testing.T) {
 			}
 			return courses, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/courses", nil)
@@ -135,7 +162,7 @@ func TestListCoursesReturnsInternalError(t *testing.T) {
 			}
 			return nil, errors.New("database error")
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/courses", nil)
@@ -153,7 +180,7 @@ func TestListCoursesReturnsEmptyList(t *testing.T) {
 			}
 			return []sqlc.ListCoursesRow{}, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/courses", nil)
@@ -196,7 +223,7 @@ func TestGetCourseReturnsCourseDetail(t *testing.T) {
 			}
 			return course, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses/7", nil)
@@ -240,7 +267,7 @@ func TestGetCourseReturnsBadRequestForInvalidID(t *testing.T) {
 			t.Fatalf("GetCourseByID should not be called for invalid id, got %d", id)
 			return sqlc.Course{}, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses/not-a-number", nil)
@@ -256,7 +283,7 @@ func TestGetCourseReturnsInternalError(t *testing.T) {
 		GetCourseByIDFunc: func(ctx context.Context, id int64) (sqlc.Course, error) {
 			return sqlc.Course{}, errors.New("database error")
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses/7", nil)
@@ -272,7 +299,7 @@ func TestGetCourseReturnsNotFound(t *testing.T) {
 		GetCourseByIDFunc: func(ctx context.Context, id int64) (sqlc.Course, error) {
 			return sqlc.Course{}, pgx.ErrNoRows
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses/7", nil)
@@ -289,7 +316,7 @@ func TestListCoursesReturnsBadRequestForInvalidLimit(t *testing.T) {
 			t.Fatal("ListCourses should not be called for invalid limit")
 			return nil, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses?limit=abc", nil)
@@ -305,7 +332,7 @@ func TestListCoursesReturnsBadRequestForOutOfRangeLimit(t *testing.T) {
 			t.Fatal("ListCourses should not be called for invalid limit")
 			return nil, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses?limit=101", nil)
@@ -326,7 +353,7 @@ func TestListCoursesPassesFiltersToQuery(t *testing.T) {
 			}
 			return []sqlc.ListCoursesRow{}, nil
 		},
-	})
+	}, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/courses?search=bhp&limit=20", nil)
@@ -340,38 +367,32 @@ func TestListCoursesPassesFiltersToQuery(t *testing.T) {
 
 func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
 	expiryTime := "5"
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(ctx context.Context, arg sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			if arg.ID != 12 {
-				t.Fatalf("expected course id 12, got %d", arg.ID)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
+			if courseID != 12 {
+				t.Fatalf("expected course id 12, got %d", courseID)
 			}
-			if !arg.Mainname.Valid || arg.Mainname.String != "BHP" {
-				t.Fatalf("unexpected mainname: %+v", arg.Mainname)
+			if input.MainName != "BHP" || input.Name != "Szkolenie okresowe" || input.Symbol != "BHP-OKR" {
+				t.Fatalf("unexpected update input: %+v", input)
 			}
-			if arg.Name != "Szkolenie okresowe" {
-				t.Fatalf("unexpected name: %q", arg.Name)
+			if input.ExpiryTime != "5" {
+				t.Fatalf("unexpected expirytime: %q", input.ExpiryTime)
 			}
-			if arg.Symbol != "BHP-OKR" {
-				t.Fatalf("unexpected symbol: %q", arg.Symbol)
+			if input.CourseProgram != `[{"Subject":"Intro"}]` {
+				t.Fatalf("unexpected courseprogram: %q", input.CourseProgram)
 			}
-			if !arg.Expirytime.Valid || arg.Expirytime.String != "5" {
-				t.Fatalf("unexpected expirytime: %+v", arg.Expirytime)
-			}
-			if string(arg.Courseprogram) != `[{"Subject":"Intro"}]` {
-				t.Fatalf("unexpected courseprogram: %q", string(arg.Courseprogram))
-			}
-			if !arg.Certfrontpage.Valid || arg.Certfrontpage.String != "<p>Front</p>" {
-				t.Fatalf("unexpected certfrontpage: %+v", arg.Certfrontpage)
+			if input.CertFrontPage != "<p>Front</p>" {
+				t.Fatalf("unexpected certfrontpage: %q", input.CertFrontPage)
 			}
 
-			return sqlc.Course{
+			return CourseDetailDTO{
 				ID:            12,
-				Mainname:      pgtype.Text{String: "BHP", Valid: true},
+				MainName:      "BHP",
 				Name:          "Szkolenie okresowe",
 				Symbol:        "BHP-OKR",
-				Expirytime:    pgtype.Text{String: expiryTime, Valid: true},
-				Courseprogram: []byte(`[{"Subject":"Intro"}]`),
-				Certfrontpage: pgtype.Text{String: "<p>Front</p>", Valid: true},
+				ExpiryTime:    &expiryTime,
+				CourseProgram: `[{"Subject":"Intro"}]`,
+				CertFrontPage: "<p>Front</p>",
 			}, nil
 		},
 	})
@@ -412,11 +433,100 @@ func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
 	}
 }
 
+func TestPatchCoursePassesCertificateTranslationsToService(t *testing.T) {
+	expiryTime := "5"
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
+			if courseID != 12 {
+				t.Fatalf("expected course id 12, got %d", courseID)
+			}
+			if len(input.CertificateTranslations) != 2 {
+				t.Fatalf("expected 2 certificate translations, got %d", len(input.CertificateTranslations))
+			}
+			if input.CertificateTranslations[0].LanguageCode != "en" || input.CertificateTranslations[0].CourseName != "Periodic training" {
+				t.Fatalf("unexpected first translation input: %+v", input.CertificateTranslations[0])
+			}
+			if input.CertificateTranslations[1].LanguageCode != "de" || input.CertificateTranslations[1].CertFrontPage != "<p>DE</p>" {
+				t.Fatalf("unexpected second translation input: %+v", input.CertificateTranslations[1])
+			}
+
+			return CourseDetailDTO{
+				ID:            12,
+				MainName:      "BHP",
+				Name:          "Szkolenie okresowe",
+				Symbol:        "BHP-OKR",
+				ExpiryTime:    &expiryTime,
+				CourseProgram: `[ {"Subject":"Intro"} ]`,
+				CertFrontPage: "<p>Front</p>",
+				CertificateTranslations: []CourseCertificateTranslationDTO{
+					{
+						LanguageCode:  "en",
+						CourseName:    "Periodic training",
+						CourseProgram: `[{"Subject":"Introduction"}]`,
+						CertFrontPage: "<p>EN</p>",
+					},
+					{
+						LanguageCode:  "de",
+						CourseName:    "Wiederholungsschulung",
+						CourseProgram: `[{"Subject":"Einfuhrung"}]`,
+						CertFrontPage: "<p>DE</p>",
+					},
+				},
+			}, nil
+		},
+	})
+
+	body := `{
+		"mainName":"BHP",
+		"name":"Szkolenie okresowe",
+		"symbol":"BHP-OKR",
+		"expiryTime":"5",
+		"courseProgram":"[ {\"Subject\":\"Intro\"} ]",
+		"certFrontPage":"<p>Front</p>",
+		"certificateTranslations":[
+			{
+				"languageCode":"en",
+				"courseName":"Periodic training",
+				"courseProgram":"[{\"Subject\":\"Introduction\"}]",
+				"certFrontPage":"<p>EN</p>"
+			},
+			{
+				"languageCode":"de",
+				"courseName":"Wiederholungsschulung",
+				"courseProgram":"[{\"Subject\":\"Einfuhrung\"}]",
+				"certFrontPage":"<p>DE</p>"
+			}
+		]
+	}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/courses/12", strings.NewReader(body))
+	req.SetPathValue("id", "12")
+
+	handler.Patch(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody GetCourseResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(responseBody.Data.CertificateTranslations) != 2 {
+		t.Fatalf("expected 2 certificate translations in response, got %d", len(responseBody.Data.CertificateTranslations))
+	}
+	if responseBody.Data.CertificateTranslations[0].LanguageCode != "en" {
+		t.Fatalf("unexpected first translation in response: %+v", responseBody.Data.CertificateTranslations[0])
+	}
+}
+
 func TestPatchCourseReturnsBadRequestForInvalidID(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			t.Fatal("UpdateCourse should not be called for invalid id")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Update should not be called for invalid id")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -430,10 +540,10 @@ func TestPatchCourseReturnsBadRequestForInvalidID(t *testing.T) {
 }
 
 func TestPatchCourseReturnsBadRequestForInvalidBody(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			t.Fatal("UpdateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Update should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -447,10 +557,10 @@ func TestPatchCourseReturnsBadRequestForInvalidBody(t *testing.T) {
 }
 
 func TestPatchCourseReturnsBadRequestForMissingRequiredField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			t.Fatal("UpdateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Update should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -472,10 +582,10 @@ func TestPatchCourseReturnsBadRequestForMissingRequiredField(t *testing.T) {
 }
 
 func TestPatchCourseReturnsBadRequestForUnknownField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			t.Fatal("UpdateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Update should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -500,9 +610,9 @@ func TestPatchCourseReturnsBadRequestForUnknownField(t *testing.T) {
 
 func TestPatchCourseReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
 	expiryTime := "5"
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			return sqlc.Course{}, pgx.ErrNoRows
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			return CourseDetailDTO{}, pgx.ErrNoRows
 		},
 	})
 
@@ -525,9 +635,9 @@ func TestPatchCourseReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
 }
 
 func TestPatchCourseReturnsInternalError(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		UpdateCourseFunc: func(context.Context, sqlc.UpdateCourseParams) (sqlc.Course, error) {
-			return sqlc.Course{}, errors.New("database error")
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+			return CourseDetailDTO{}, errors.New("database error")
 		},
 	})
 
@@ -551,35 +661,29 @@ func TestPatchCourseReturnsInternalError(t *testing.T) {
 
 func TestCreateCourseReturnsCreatedCourse(t *testing.T) {
 	expiryTime := "5"
-	handler := NewHandler(fakeQuerier{
-		CreateCourseFunc: func(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error) {
-			if !arg.Mainname.Valid || arg.Mainname.String != "BHP" {
-				t.Fatalf("unexpected mainname: %+v", arg.Mainname)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error) {
+			if input.MainName != "BHP" || input.Name != "Szkolenie okresowe" || input.Symbol != "BHP-OKR" {
+				t.Fatalf("unexpected create input: %+v", input)
 			}
-			if arg.Name != "Szkolenie okresowe" {
-				t.Fatalf("unexpected name: %q", arg.Name)
+			if input.ExpiryTime != "5" {
+				t.Fatalf("unexpected expirytime: %q", input.ExpiryTime)
 			}
-			if arg.Symbol != "BHP-OKR" {
-				t.Fatalf("unexpected symbol: %q", arg.Symbol)
+			if input.CourseProgram != `[{"Subject":"Intro"}]` {
+				t.Fatalf("unexpected courseprogram: %q", input.CourseProgram)
 			}
-			if !arg.Expirytime.Valid || arg.Expirytime.String != "5" {
-				t.Fatalf("unexpected expirytime: %+v", arg.Expirytime)
-			}
-			if string(arg.Courseprogram) != `[{"Subject":"Intro"}]` {
-				t.Fatalf("unexpected courseprogram: %q", string(arg.Courseprogram))
-			}
-			if !arg.Certfrontpage.Valid || arg.Certfrontpage.String != "<p>Front</p>" {
-				t.Fatalf("unexpected certfrontpage: %+v", arg.Certfrontpage)
+			if input.CertFrontPage != "<p>Front</p>" {
+				t.Fatalf("unexpected certfrontpage: %q", input.CertFrontPage)
 			}
 
-			return sqlc.Course{
+			return CourseDetailDTO{
 				ID:            13,
-				Mainname:      pgtype.Text{String: "BHP", Valid: true},
+				MainName:      "BHP",
 				Name:          "Szkolenie okresowe",
 				Symbol:        "BHP-OKR",
-				Expirytime:    pgtype.Text{String: expiryTime, Valid: true},
-				Courseprogram: []byte(`[{"Subject":"Intro"}]`),
-				Certfrontpage: pgtype.Text{String: "<p>Front</p>", Valid: true},
+				ExpiryTime:    &expiryTime,
+				CourseProgram: `[{"Subject":"Intro"}]`,
+				CertFrontPage: "<p>Front</p>",
 			}, nil
 		},
 	})
@@ -619,11 +723,96 @@ func TestCreateCourseReturnsCreatedCourse(t *testing.T) {
 	}
 }
 
+func TestCreateCoursePassesCertificateTranslationsToService(t *testing.T) {
+	expiryTime := "5"
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error) {
+			if len(input.CertificateTranslations) != 2 {
+				t.Fatalf("expected 2 certificate translations, got %d", len(input.CertificateTranslations))
+			}
+			if input.CertificateTranslations[0].LanguageCode != "en" || input.CertificateTranslations[0].CourseName != "Periodic training" {
+				t.Fatalf("unexpected first translation input: %+v", input.CertificateTranslations[0])
+			}
+			if input.CertificateTranslations[1].LanguageCode != "de" || input.CertificateTranslations[1].CourseProgram != `[{"Subject":"Einfuhrung"}]` {
+				t.Fatalf("unexpected second translation input: %+v", input.CertificateTranslations[1])
+			}
+
+			return CourseDetailDTO{
+				ID:            13,
+				MainName:      "BHP",
+				Name:          "Szkolenie okresowe",
+				Symbol:        "BHP-OKR",
+				ExpiryTime:    &expiryTime,
+				CourseProgram: `[ {"Subject":"Intro"} ]`,
+				CertFrontPage: "<p>Front</p>",
+				CertificateTranslations: []CourseCertificateTranslationDTO{
+					{
+						LanguageCode:  "en",
+						CourseName:    "Periodic training",
+						CourseProgram: `[{"Subject":"Introduction"}]`,
+						CertFrontPage: "<p>EN</p>",
+					},
+					{
+						LanguageCode:  "de",
+						CourseName:    "Wiederholungsschulung",
+						CourseProgram: `[{"Subject":"Einfuhrung"}]`,
+						CertFrontPage: "<p>DE</p>",
+					},
+				},
+			}, nil
+		},
+	})
+
+	body := `{
+		"mainName":"BHP",
+		"name":"Szkolenie okresowe",
+		"symbol":"BHP-OKR",
+		"expiryTime":"5",
+		"courseProgram":"[ {\"Subject\":\"Intro\"} ]",
+		"certFrontPage":"<p>Front</p>",
+		"certificateTranslations":[
+			{
+				"languageCode":"en",
+				"courseName":"Periodic training",
+				"courseProgram":"[{\"Subject\":\"Introduction\"}]",
+				"certFrontPage":"<p>EN</p>"
+			},
+			{
+				"languageCode":"de",
+				"courseName":"Wiederholungsschulung",
+				"courseProgram":"[{\"Subject\":\"Einfuhrung\"}]",
+				"certFrontPage":"<p>DE</p>"
+			}
+		]
+	}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/courses", strings.NewReader(body))
+
+	handler.CreateCourse(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+
+	var responseBody GetCourseResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(responseBody.Data.CertificateTranslations) != 2 {
+		t.Fatalf("expected 2 certificate translations in response, got %d", len(responseBody.Data.CertificateTranslations))
+	}
+	if responseBody.Data.CertificateTranslations[1].LanguageCode != "de" {
+		t.Fatalf("unexpected second translation in response: %+v", responseBody.Data.CertificateTranslations[1])
+	}
+}
+
 func TestCreateCourseReturnsBadRequestForInvalidJSON(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		CreateCourseFunc: func(context.Context, sqlc.CreateCourseParams) (sqlc.Course, error) {
-			t.Fatal("CreateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Create should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -636,10 +825,10 @@ func TestCreateCourseReturnsBadRequestForInvalidJSON(t *testing.T) {
 }
 
 func TestCreateCourseReturnsBadRequestForMissingRequiredField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		CreateCourseFunc: func(context.Context, sqlc.CreateCourseParams) (sqlc.Course, error) {
-			t.Fatal("CreateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Create should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -661,10 +850,10 @@ func TestCreateCourseReturnsBadRequestForMissingRequiredField(t *testing.T) {
 }
 
 func TestCreateCourseReturnsBadRequestForUnknownField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		CreateCourseFunc: func(context.Context, sqlc.CreateCourseParams) (sqlc.Course, error) {
-			t.Fatal("CreateCourse should not be called for invalid body")
-			return sqlc.Course{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Create should not be called for invalid body")
+			return CourseDetailDTO{}, nil
 		},
 	})
 
@@ -687,9 +876,9 @@ func TestCreateCourseReturnsBadRequestForUnknownField(t *testing.T) {
 }
 
 func TestCreateCourseReturnsInternalError(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		CreateCourseFunc: func(context.Context, sqlc.CreateCourseParams) (sqlc.Course, error) {
-			return sqlc.Course{}, errors.New("database error")
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+			return CourseDetailDTO{}, errors.New("database error")
 		},
 	})
 

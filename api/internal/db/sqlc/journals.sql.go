@@ -551,9 +551,24 @@ const getJournalAttendeeForCertificateGeneration = `-- name: GetJournalAttendeeF
       a.certificate_id,
       j.course_id,
       j.date_start,
-      j.date_end
+	      j.date_end,
+	      s.firstname AS student_firstname,
+	      s.secondname AS student_secondname,
+	      s.lastname AS student_lastname,
+	      s.birthdate AS student_birthdate,
+	      s.birthplace AS student_birthplace,
+	      s.pesel AS student_pesel,
+	      comp.name AS company_name,
+	      c.name AS course_name,
+	      c.symbol AS course_symbol,
+	      c.expirytime AS course_expiry_time,
+	      c.courseprogram::text AS course_program,
+	      c.certfrontpage AS cert_front_page
   FROM training_journal_attendees a
   JOIN training_journals j ON j.id = a.journal_id
+	  JOIN students s ON s.id = a.student_id
+	  LEFT JOIN companies comp ON comp.id = s.company_id
+	  JOIN courses c ON c.id = j.course_id
   WHERE a.journal_id = $1
     AND a.id = $2
 `
@@ -564,13 +579,25 @@ type GetJournalAttendeeForCertificateGenerationParams struct {
 }
 
 type GetJournalAttendeeForCertificateGenerationRow struct {
-	AttendeeID    int64       `json:"attendee_id"`
-	JournalID     int64       `json:"journal_id"`
-	StudentID     int64       `json:"student_id"`
-	CertificateID pgtype.Int8 `json:"certificate_id"`
-	CourseID      int64       `json:"course_id"`
-	DateStart     pgtype.Date `json:"date_start"`
-	DateEnd       pgtype.Date `json:"date_end"`
+	AttendeeID        int64       `json:"attendee_id"`
+	JournalID         int64       `json:"journal_id"`
+	StudentID         int64       `json:"student_id"`
+	CertificateID     pgtype.Int8 `json:"certificate_id"`
+	CourseID          int64       `json:"course_id"`
+	DateStart         pgtype.Date `json:"date_start"`
+	DateEnd           pgtype.Date `json:"date_end"`
+	StudentFirstname  string      `json:"student_firstname"`
+	StudentSecondname pgtype.Text `json:"student_secondname"`
+	StudentLastname   string      `json:"student_lastname"`
+	StudentBirthdate  pgtype.Date `json:"student_birthdate"`
+	StudentBirthplace string      `json:"student_birthplace"`
+	StudentPesel      pgtype.Text `json:"student_pesel"`
+	CompanyName       pgtype.Text `json:"company_name"`
+	CourseName        string      `json:"course_name"`
+	CourseSymbol      string      `json:"course_symbol"`
+	CourseExpiryTime  pgtype.Text `json:"course_expiry_time"`
+	CourseProgram     string      `json:"course_program"`
+	CertFrontPage     pgtype.Text `json:"cert_front_page"`
 }
 
 func (q *Queries) GetJournalAttendeeForCertificateGeneration(ctx context.Context, arg GetJournalAttendeeForCertificateGenerationParams) (GetJournalAttendeeForCertificateGenerationRow, error) {
@@ -584,6 +611,18 @@ func (q *Queries) GetJournalAttendeeForCertificateGeneration(ctx context.Context
 		&i.CourseID,
 		&i.DateStart,
 		&i.DateEnd,
+		&i.StudentFirstname,
+		&i.StudentSecondname,
+		&i.StudentLastname,
+		&i.StudentBirthdate,
+		&i.StudentBirthplace,
+		&i.StudentPesel,
+		&i.CompanyName,
+		&i.CourseName,
+		&i.CourseSymbol,
+		&i.CourseExpiryTime,
+		&i.CourseProgram,
+		&i.CertFrontPage,
 	)
 	return i, err
 }

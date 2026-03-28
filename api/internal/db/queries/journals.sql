@@ -407,9 +407,24 @@
       a.certificate_id,
       j.course_id,
       j.date_start,
-      j.date_end
+	      j.date_end,
+	      s.firstname AS student_firstname,
+	      s.secondname AS student_secondname,
+	      s.lastname AS student_lastname,
+	      s.birthdate AS student_birthdate,
+	      s.birthplace AS student_birthplace,
+	      s.pesel AS student_pesel,
+	      comp.name AS company_name,
+	      c.name AS course_name,
+	      c.symbol AS course_symbol,
+	      c.expirytime AS course_expiry_time,
+	      c.courseprogram::text AS course_program,
+	      c.certfrontpage AS cert_front_page
   FROM training_journal_attendees a
   JOIN training_journals j ON j.id = a.journal_id
+	  JOIN students s ON s.id = a.student_id
+	  LEFT JOIN companies comp ON comp.id = s.company_id
+	  JOIN courses c ON c.id = j.course_id
   WHERE a.journal_id = $1
     AND a.id = $2;
 
@@ -685,5 +700,4 @@
 -- name: DeleteJournalAttendanceScan :execrows
   DELETE FROM training_journal_attendance_scans
   WHERE journal_id = $1;
-
 

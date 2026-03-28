@@ -1,4 +1,16 @@
 <script setup lang="ts">
+import CourseCertificateTranslationsEditor from '~/components/courses/CourseCertificateTranslationsEditor.vue'
+import type {
+  CourseCertificateTranslationForm,
+  CourseCertificateTranslationProgramRow
+} from '~/utils/courseCertificateTranslations'
+import {
+  buildCourseCertificateTranslationPayloads,
+  countReadyCourseCertificateTranslations,
+  getCourseCertificateTranslationsValidationError,
+  parseCourseCertificateTranslationProgramRows
+} from '~/utils/courseCertificateTranslations'
+
 type CourseProgramEntry = {
   Subject?: string
   TheoryTime?: string
@@ -12,7 +24,7 @@ type CourseProgramRow = {
   practiceTime: string
 }
 
-type EditTab = 'general' | 'program' | 'template'
+type EditTab = 'general' | 'program' | 'translations' | 'template'
 type TemplatePlaceholder = {
   label: string
   value: string
@@ -60,9 +72,12 @@ const initialSnapshot = ref('')
 const activeTab = ref<EditTab>('general')
 const showTemplateSource = ref(false)
 const programRows = ref<CourseProgramRow[]>([])
+const translationForms = ref<CourseCertificateTranslationForm[]>([])
 const hasInvalidStoredProgram = ref(false)
 const templateEditorRef = ref<HTMLDivElement | null>(null)
 let programRowSequence = 0
+let translationProgramRowSequence = 0
+let translationSequence = 0
 let templateEditorSyncInProgress = false
 
 const templatePlaceholders: TemplatePlaceholder[] = [
@@ -92,6 +107,35 @@ function createProgramRow(values: Partial<Omit<CourseProgramRow, 'id'>> = {}): C
     subject: values.subject ?? '',
     theoryTime: values.theoryTime ?? '',
     practiceTime: values.practiceTime ?? ''
+  }
+}
+
+function createTranslationProgramRow(values: Partial<Omit<CourseCertificateTranslationProgramRow, 'id'>> = {}): CourseCertificateTranslationProgramRow {
+  translationProgramRowSequence += 1
+
+  return {
+    id: translationProgramRowSequence,
+    subject: values.subject ?? '',
+    theoryTime: values.theoryTime ?? '',
+    practiceTime: values.practiceTime ?? ''
+  }
+}
+
+function createTranslationForm(
+  values: Partial<Omit<CourseCertificateTranslationForm, 'id' | 'programRows' | 'hasInvalidStoredProgram'>> & {
+    programRows?: CourseCertificateTranslationProgramRow[]
+    hasInvalidStoredProgram?: boolean
+  } = {}
+): CourseCertificateTranslationForm {
+  translationSequence += 1
+
+  return {
+    id: translationSequence,
+    languageCode: values.languageCode ?? '',
+    courseName: values.courseName ?? '',
+    certFrontPage: values.certFrontPage ?? '',
+    programRows: values.programRows ?? [createTranslationProgramRow()],
+    hasInvalidStoredProgram: values.hasInvalidStoredProgram ?? false
   }
 }
 
@@ -156,6 +200,9 @@ function moveProgramRow(index: number, direction: -1 | 1) {
   }
 
   const [row] = programRows.value.splice(index, 1)
+  if (!row) {
+    return
+  }
   programRows.value.splice(targetIndex, 0, row)
 }
 
@@ -282,6 +329,18 @@ const serializedCourseProgram = computed(() => {
   return JSON.stringify(courseProgramEntries.value)
 })
 
+const translationValidationMessage = computed(() => {
+  return getCourseCertificateTranslationsValidationError(translationForms.value)
+})
+
+const translationsReady = computed(() => {
+  return translationForms.value.length === 0 || !translationValidationMessage.value
+})
+
+const readyTranslationCount = computed(() => {
+  return countReadyCourseCertificateTranslations(translationForms.value)
+})
+
 function buildSnapshot() {
   return JSON.stringify({
     mainName: trimmedMainName.value,
@@ -289,7 +348,8 @@ function buildSnapshot() {
     symbol: trimmedSymbol.value,
     expiryTime: trimmedExpiryTime.value,
     certFrontPage: form.certFrontPage,
-    courseProgram: serializedCourseProgram.value
+    courseProgram: serializedCourseProgram.value,
+    certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
   })
 }
 
@@ -306,6 +366,20 @@ function applyCourseToForm() {
   const parsedProgram = parseProgramRows(course.value.courseProgram || '')
   hasInvalidStoredProgram.value = parsedProgram.invalid
   programRows.value = parsedProgram.rows.length ? parsedProgram.rows : [createProgramRow()]
+  translationForms.value = (course.value.certificateTranslations || []).map((translation) => {
+    const parsedTranslationProgram = parseCourseCertificateTranslationProgramRows(
+      translation.courseProgram || '',
+      createTranslationProgramRow
+    )
+
+    return createTranslationForm({
+      languageCode: translation.languageCode,
+      courseName: translation.courseName,
+      certFrontPage: translation.certFrontPage,
+      programRows: parsedTranslationProgram.rows.length ? parsedTranslationProgram.rows : [createTranslationProgramRow()],
+      hasInvalidStoredProgram: parsedTranslationProgram.invalid
+    })
+  })
   initialSnapshot.value = buildSnapshot()
   errorMessage.value = ''
   showTemplateSource.value = false
@@ -500,6 +574,12 @@ async function onSubmit() {
     return
   }
 
+  if (translationValidationMessage.value) {
+    errorMessage.value = translationValidationMessage.value
+    activeTab.value = 'translations'
+    return
+  }
+
   submitPending.value = true
 
   try {
@@ -509,7 +589,8 @@ async function onSubmit() {
       symbol: trimmedSymbol.value,
       expiryTime: trimmedExpiryTime.value,
       courseProgram: serializedCourseProgram.value,
-      certFrontPage: form.certFrontPage
+      certFrontPage: form.certFrontPage,
+      certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
     })
 
     await navigateTo(`/courses/${courseId.value}`)
@@ -548,6 +629,17 @@ useSeoMeta({
             : 'border-emerald-200 bg-emerald-50 text-emerald-700'"
         >
           {{ isDirty ? 'Niezapisane zmiany' : 'Brak zmian' }}
+        </span>
+
+        <span
+          class="inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium"
+          :class="translationsReady
+            ? 'border-sky-200 bg-sky-50 text-sky-700'
+            : 'border-amber-200 bg-amber-50 text-amber-700'"
+        >
+          {{ translationForms.length
+            ? `Wersje językowe ${readyTranslationCount}/${translationForms.length}`
+            : 'Brak wersji obcojęzycznych' }}
         </span>
 
         <div class="flex flex-wrap items-center gap-3">
@@ -627,6 +719,16 @@ useSeoMeta({
           @click="activeTab = 'program'"
         >
           Program
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition"
+          :class="activeTab === 'translations'
+            ? 'bg-sky-600 text-white shadow-sm'
+            : 'text-slate-700 hover:bg-slate-100'"
+          @click="activeTab = 'translations'"
+        >
+          Języki
         </button>
         <button
           type="button"
@@ -955,6 +1057,16 @@ useSeoMeta({
               </div>
             </section>
           </aside>
+        </div>
+
+        <div
+          v-else-if="activeTab === 'translations'"
+          class="space-y-6"
+        >
+          <CourseCertificateTranslationsEditor
+            v-model="translationForms"
+            :disabled="submitPending || pending"
+          />
         </div>
 
         <div

@@ -5,10 +5,13 @@ import (
 	"errors"
 	"log"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
@@ -34,15 +37,17 @@ type serviceTxScope struct {
 }
 
 type Service struct {
-	pool    *pgxpool.Pool
-	queries *sqlc.Queries
-	beginTx func(context.Context) (serviceTxScope, error)
+	pool     *pgxpool.Pool
+	queries  *sqlc.Queries
+	recorder *auditlog.Recorder
+	beginTx  func(context.Context) (serviceTxScope, error)
 }
 
-func NewService(pool *pgxpool.Pool, queries *sqlc.Queries) *Service {
+func NewService(pool *pgxpool.Pool, queries *sqlc.Queries, recorder *auditlog.Recorder) *Service {
 	return &Service{
-		pool:    pool,
-		queries: queries,
+		pool:     pool,
+		queries:  queries,
+		recorder: recorder,
 		beginTx: func(ctx context.Context) (serviceTxScope, error) {
 			tx, err := pool.Begin(ctx)
 			if err != nil {
@@ -97,6 +102,11 @@ func (s *Service) GenerateAttendeeCertificate(ctx context.Context, journalID, at
 		return GenerateAttendeeCertificateResult{}, ErrJournalCertificateGeneration
 	}
 
+	params, err := buildJournalCertificateParams(source)
+	if err != nil {
+		return GenerateAttendeeCertificateResult{}, err
+	}
+
 	registryYear := int64(source.DateEnd.Time.Year())
 	rows, err := tx.queries.ListRegistryDatesForCourseYear(ctx, sqlc.ListRegistryDatesForCourseYearParams{
 		CourseID: source.CourseID,
@@ -129,13 +139,10 @@ func (s *Service) GenerateAttendeeCertificate(ctx context.Context, journalID, at
 		return GenerateAttendeeCertificateResult{}, err
 	}
 
-	certificateID, err := tx.queries.CreateCertificate(ctx, sqlc.CreateCertificateParams{
-		Date:            certificateDate,
-		StudentID:       validation.Int64ToInt32(source.StudentID),
-		Coursedatestart: source.DateStart,
-		Coursedateend:   pgtype.Date{Time: source.DateEnd.Time, Valid: true},
-		RegistryID:      registryID,
-	})
+	params.Date = certificateDate
+	params.RegistryID = registryID
+
+	certificateID, err := tx.queries.CreateCertificate(ctx, params)
 	if err != nil {
 		return GenerateAttendeeCertificateResult{}, err
 	}
@@ -149,10 +156,91 @@ func (s *Service) GenerateAttendeeCertificate(ctx context.Context, journalID, at
 		return GenerateAttendeeCertificateResult{}, err
 	}
 
+	if s.recorder != nil {
+		createdCertificate, err := tx.queries.GetCertificateByID(ctx, certificateID)
+		if err != nil {
+			return GenerateAttendeeCertificateResult{}, err
+		}
+
+		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
+			EntityType: "certificate",
+			EntityID:   certificateID,
+			Action:     "create",
+			Before:     nil,
+			After:      mapJournalCertificateAuditSnapshot(createdCertificate),
+			Metadata: map[string]any{
+				"source":     "journal",
+				"journalId":  journalID,
+				"attendeeId": attendeeID,
+			},
+		}); err != nil {
+			return GenerateAttendeeCertificateResult{}, err
+		}
+	}
+
 	if err := tx.commit(ctx); err != nil {
 		return GenerateAttendeeCertificateResult{}, err
 	}
 	committed = true
 
 	return GenerateAttendeeCertificateResult{CertificateID: certificateID}, nil
+}
+
+func mapJournalCertificateAuditSnapshot(certificate sqlc.GetCertificateByIDRow) map[string]any {
+	expiryDate := ""
+	if value, ok := certificate.ExpiryDate.(string); ok {
+		expiryDate = value
+	}
+
+	return map[string]any{
+		"id":              certificate.ID,
+		"date":            certificate.Date.Time.Format(time.DateOnly),
+		"studentId":       certificate.StudentID,
+		"courseId":        certificate.CourseID,
+		"courseName":      certificate.CourseName,
+		"courseSymbol":    certificate.CourseSymbol,
+		"languageCode":    certificate.LanguageCode,
+		"registryYear":    certificate.RegistryYear,
+		"registryNumber":  certificate.RegistryNumber,
+		"courseDateStart": certificate.CourseDateStart.Time.Format(time.DateOnly),
+		"courseDateEnd":   certificate.CourseDateEnd.Time.Format(time.DateOnly),
+		"expiryDate":      expiryDate,
+		"journalId":       certificate.JournalID.Int64,
+	}
+}
+
+func buildJournalCertificateParams(source sqlc.GetJournalAttendeeForCertificateGenerationRow) (sqlc.CreateCertificateParams, error) {
+	if !source.DateStart.Valid || !source.DateEnd.Valid || !source.StudentBirthdate.Valid {
+		return sqlc.CreateCertificateParams{}, ErrJournalCertificateGeneration
+	}
+
+	firstName := strings.TrimSpace(source.StudentFirstname)
+	lastName := strings.TrimSpace(source.StudentLastname)
+	birthPlace := strings.TrimSpace(source.StudentBirthplace)
+	courseName := strings.TrimSpace(source.CourseName)
+	courseSymbol := strings.TrimSpace(source.CourseSymbol)
+	frontPage := strings.TrimSpace(source.CertFrontPage.String)
+
+	if firstName == "" || lastName == "" || birthPlace == "" || courseName == "" || courseSymbol == "" || frontPage == "" {
+		return sqlc.CreateCertificateParams{}, ErrJournalCertificateGeneration
+	}
+
+	return sqlc.CreateCertificateParams{
+		StudentID:                 validation.Int64ToInt32(source.StudentID),
+		CourseDateStart:           source.DateStart,
+		CourseDateEnd:             source.DateEnd,
+		LanguageCode:              "pl",
+		StudentFirstnameSnapshot:  firstName,
+		StudentSecondnameSnapshot: source.StudentSecondname,
+		StudentLastnameSnapshot:   lastName,
+		StudentBirthdateSnapshot:  source.StudentBirthdate,
+		StudentBirthplaceSnapshot: birthPlace,
+		StudentPeselSnapshot:      source.StudentPesel,
+		CompanyNameSnapshot:       source.CompanyName,
+		CourseNameSnapshot:        courseName,
+		CourseSymbolSnapshot:      courseSymbol,
+		CourseExpiryTimeSnapshot:  source.CourseExpiryTime,
+		CourseProgramSnapshot:     []byte(source.CourseProgram),
+		CertFrontPageSnapshot:     frontPage,
+	}, nil
 }

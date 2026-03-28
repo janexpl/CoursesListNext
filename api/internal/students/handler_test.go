@@ -58,6 +58,11 @@ type fakeRows struct {
 	err   error
 }
 
+type fakeCreator struct {
+	createFunc func(ctx context.Context, req CreateStudentRequest) (StudentDetailsDTO, error)
+	updateFunc func(ctx context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error)
+}
+
 func (r *fakeRows) Close() {}
 
 func (r *fakeRows) Err() error {
@@ -97,6 +102,24 @@ func (r *fakeRows) RawValues() [][]byte {
 
 func (r *fakeRows) Conn() *pgx.Conn {
 	return nil
+}
+
+func (f fakeCreator) Create(ctx context.Context, req CreateStudentRequest) (StudentDetailsDTO, error) {
+	if f.createFunc == nil {
+		return StudentDetailsDTO{}, errors.New("unexpected Create call")
+	}
+	return f.createFunc(ctx, req)
+}
+
+func (f fakeCreator) Update(ctx context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error) {
+	if f.updateFunc == nil {
+		return StudentDetailsDTO{}, errors.New("unexpected Update call")
+	}
+	return f.updateFunc(ctx, studentID, req)
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
@@ -719,92 +742,30 @@ func TestListStudentsByCompanyIdReturnsInternalServerErrorWhenQueryFails(t *test
 }
 
 func TestPatchReturnsUpdatedStudent(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
-			if len(args) != 12 {
-				t.Fatalf("expected 12 query args, got %d", len(args))
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error) {
+			if studentID != 21 {
+				t.Fatalf("expected student id 21, got %d", studentID)
 			}
-
-			firstNameArg, ok := args[0].(string)
-			if !ok || firstNameArg != "Jan" {
-				t.Fatalf("unexpected firstname arg: %+v", args[0])
+			if req.FirstName != "Jan" || req.LastName != "Nowak" || req.BirthDate != "1990-01-10" || req.BirthPlace != "Warszawa" {
+				t.Fatalf("unexpected update request: %+v", req)
 			}
-
-			lastNameArg, ok := args[1].(string)
-			if !ok || lastNameArg != "Nowak" {
-				t.Fatalf("unexpected lastname arg: %+v", args[1])
-			}
-
-			secondNameArg, ok := args[2].(pgtype.Text)
-			if !ok || !secondNameArg.Valid || secondNameArg.String != "Adam" {
-				t.Fatalf("unexpected secondname arg: %+v", args[2])
-			}
-
-			birthdateArg, ok := args[3].(pgtype.Date)
-			if !ok || !birthdateArg.Valid || birthdateArg.Time.Format(response.DateFormat) != "1990-01-10" {
-				t.Fatalf("unexpected birthdate arg: %+v", args[3])
-			}
-
-			birthplaceArg, ok := args[4].(string)
-			if !ok || birthplaceArg != "Warszawa" {
-				t.Fatalf("unexpected birthplace arg: %+v", args[4])
-			}
-
-			peselArg, ok := args[5].(pgtype.Text)
-			if !ok || !peselArg.Valid || peselArg.String != "90011012345" {
-				t.Fatalf("unexpected pesel arg: %+v", args[5])
-			}
-
-			addressStreetArg, ok := args[6].(pgtype.Text)
-			if !ok || !addressStreetArg.Valid || addressStreetArg.String != "Koszykowa 1" {
-				t.Fatalf("unexpected addressstreet arg: %+v", args[6])
-			}
-
-			addressCityArg, ok := args[7].(pgtype.Text)
-			if !ok || !addressCityArg.Valid || addressCityArg.String != "Warszawa" {
-				t.Fatalf("unexpected addresscity arg: %+v", args[7])
-			}
-
-			addressZipArg, ok := args[8].(pgtype.Text)
-			if !ok || !addressZipArg.Valid || addressZipArg.String != "00-001" {
-				t.Fatalf("unexpected addresszip arg: %+v", args[8])
-			}
-
-			telephoneArg, ok := args[9].(pgtype.Text)
-			if !ok || !telephoneArg.Valid || telephoneArg.String != "123456789" {
-				t.Fatalf("unexpected telephoneno arg: %+v", args[9])
-			}
-
-			companyArg, ok := args[10].(pgtype.Int8)
-			if !ok || !companyArg.Valid || companyArg.Int64 != 8 {
-				t.Fatalf("unexpected company arg: %+v", args[10])
-			}
-
-			studentIDArg, ok := args[11].(int64)
-			if !ok || studentIDArg != 21 {
-				t.Fatalf("unexpected student id arg: %+v", args[11])
-			}
-
-			return fakeRow{
-				scan: func(dest ...any) error {
-					*(dest[0].(*int64)) = 21
-					*(dest[1].(*string)) = "Jan"
-					*(dest[2].(*string)) = "Nowak"
-					*(dest[3].(*pgtype.Text)) = pgtype.Text{String: "Adam", Valid: true}
-					*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
-					*(dest[5].(*string)) = "Warszawa"
-					*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-					*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Koszykowa 1", Valid: true}
-					*(dest[8].(*pgtype.Text)) = pgtype.Text{String: "Warszawa", Valid: true}
-					*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "00-001", Valid: true}
-					*(dest[10].(*pgtype.Text)) = pgtype.Text{String: "123456789", Valid: true}
-					*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: 8, Valid: true}
-					*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-					return nil
-				},
-			}
+			return StudentDetailsDTO{
+				ID:            21,
+				FirstName:     "Jan",
+				LastName:      "Nowak",
+				SecondName:    ptrString("Adam"),
+				BirthDate:     "1990-01-10",
+				BirthPlace:    "Warszawa",
+				Pesel:         ptrString("90011012345"),
+				AddressStreet: ptrString("Koszykowa 1"),
+				AddressCity:   ptrString("Warszawa"),
+				AddressZip:    ptrString("00-001"),
+				Telephone:     ptrString("123456789"),
+				Company:       &CompanyDTO{ID: 8, Name: "ABC Sp. z o.o."},
+			}, nil
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/students/21", strings.NewReader(`{
 		"firstName":"  Jan  ",
@@ -949,11 +910,11 @@ func TestPatchReturnsBadRequestForInvalidCompanyID(t *testing.T) {
 }
 
 func TestPatchReturnsNotFoundWhenStudentDoesNotExist(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
-			return fakeRow{err: pgx.ErrNoRows}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, pgx.ErrNoRows
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/students/21", strings.NewReader(`{
 		"firstName":"Jan",
@@ -971,11 +932,11 @@ func TestPatchReturnsNotFoundWhenStudentDoesNotExist(t *testing.T) {
 }
 
 func TestPatchReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
-			return fakeRow{err: errors.New("db error")}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, errors.New("db error")
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/students/21", strings.NewReader(`{
 		"firstName":"Jan",
@@ -993,83 +954,26 @@ func TestPatchReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 }
 
 func TestCreateStudentReturnsCreatedStudentResponse(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
-			if len(args) != 11 {
-				t.Fatalf("expected 11 query args, got %d", len(args))
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateStudentRequest) (StudentDetailsDTO, error) {
+			if req.FirstName != "Jan" || req.LastName != "Nowak" || req.BirthDate != "1990-01-10" || req.BirthPlace != "Warszawa" {
+				t.Fatalf("unexpected create request: %+v", req)
 			}
-
-			if got, ok := args[0].(string); !ok || got != "Jan" {
-				t.Fatalf("expected trimmed firstName, got %+v", args[0])
-			}
-			if got, ok := args[1].(string); !ok || got != "Nowak" {
-				t.Fatalf("expected trimmed lastName, got %+v", args[1])
-			}
-
-			secondNameArg, ok := args[2].(pgtype.Text)
-			if !ok || !secondNameArg.Valid || secondNameArg.String != "Adam" {
-				t.Fatalf("expected secondName arg to be valid, got %+v", args[2])
-			}
-
-			birthDateArg, ok := args[3].(pgtype.Date)
-			if !ok || !birthDateArg.Valid || birthDateArg.Time.Format(response.DateFormat) != "1990-01-10" {
-				t.Fatalf("expected birthDate arg 1990-01-10, got %+v", args[3])
-			}
-
-			if got, ok := args[4].(string); !ok || got != "Warszawa" {
-				t.Fatalf("expected trimmed birthPlace, got %+v", args[4])
-			}
-
-			peselArg, ok := args[5].(pgtype.Text)
-			if !ok || !peselArg.Valid || peselArg.String != "90011012345" {
-				t.Fatalf("expected pesel arg to be valid, got %+v", args[5])
-			}
-
-			addressStreetArg, ok := args[6].(pgtype.Text)
-			if !ok || !addressStreetArg.Valid || addressStreetArg.String != "Koszykowa 1" {
-				t.Fatalf("expected addressStreet arg to be valid, got %+v", args[6])
-			}
-
-			addressCityArg, ok := args[7].(pgtype.Text)
-			if !ok || !addressCityArg.Valid || addressCityArg.String != "Warszawa" {
-				t.Fatalf("expected addressCity arg to be valid, got %+v", args[7])
-			}
-
-			addressZipArg, ok := args[8].(pgtype.Text)
-			if !ok || !addressZipArg.Valid || addressZipArg.String != "00-001" {
-				t.Fatalf("expected addressZip arg to be valid, got %+v", args[8])
-			}
-
-			telephoneArg, ok := args[9].(pgtype.Text)
-			if !ok || telephoneArg.Valid {
-				t.Fatalf("expected telephone arg to be null, got %+v", args[9])
-			}
-
-			companyArg, ok := args[10].(pgtype.Int8)
-			if !ok || !companyArg.Valid || companyArg.Int64 != 8 {
-				t.Fatalf("expected company arg 8, got %+v", args[10])
-			}
-
-			return fakeRow{
-				scan: func(dest ...any) error {
-					*(dest[0].(*int64)) = 21
-					*(dest[1].(*string)) = "Jan"
-					*(dest[2].(*string)) = "Nowak"
-					*(dest[3].(*pgtype.Text)) = pgtype.Text{String: "Adam", Valid: true}
-					*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
-					*(dest[5].(*string)) = "Warszawa"
-					*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-					*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Koszykowa 1", Valid: true}
-					*(dest[8].(*pgtype.Text)) = pgtype.Text{String: "Warszawa", Valid: true}
-					*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "00-001", Valid: true}
-					*(dest[10].(*pgtype.Text)) = pgtype.Text{}
-					*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: 8, Valid: true}
-					*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-					return nil
-				},
-			}
+			return StudentDetailsDTO{
+				ID:            21,
+				FirstName:     "Jan",
+				LastName:      "Nowak",
+				SecondName:    ptrString("Adam"),
+				BirthDate:     "1990-01-10",
+				BirthPlace:    "Warszawa",
+				Pesel:         ptrString("90011012345"),
+				AddressStreet: ptrString("Koszykowa 1"),
+				AddressCity:   ptrString("Warszawa"),
+				AddressZip:    ptrString("00-001"),
+				Company:       &CompanyDTO{ID: 8, Name: "ABC Sp. z o.o."},
+			}, nil
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/students", strings.NewReader(`{
 		"firstName": "  Jan ",
@@ -1215,11 +1119,11 @@ func TestCreateStudentReturnsBadRequestForUnknownField(t *testing.T) {
 }
 
 func TestCreateStudentReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
-			return fakeRow{err: errors.New("db error")}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, errors.New("db error")
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/students", strings.NewReader(`{
 		"firstName":"Jan",

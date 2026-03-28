@@ -71,13 +71,13 @@ export function useSearchableSelect<T>(options: UseSearchableSelectOptions<T>) {
 
       availableOptions.value = nextOptions
       error.value = ''
-    } catch (error) {
+    } catch (caughtError: unknown) {
       if (currentRequestId !== requestId) {
         return
       }
 
       availableOptions.value = []
-      error.value = options.getErrorMessage(error)
+      error.value = options.getErrorMessage(caughtError)
     } finally {
       if (currentRequestId === requestId) {
         pending.value = false

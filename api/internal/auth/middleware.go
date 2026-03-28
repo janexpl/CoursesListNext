@@ -1,3 +1,4 @@
+// Package auth ..
 package auth
 
 import (
@@ -12,8 +13,10 @@ import (
 
 type contextKey string
 
-const userContextKey contextKey = "auth_user"
-const RoleAdmin int32 = 1
+const (
+	userContextKey contextKey = "auth_user"
+	RoleAdmin      int32      = 1
+)
 
 func RequireAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -33,7 +36,6 @@ func RequireAdmin() func(http.Handler) http.Handler {
 }
 
 func RequireAuth(queries *dbsqlc.Queries, config *config.Config) func(http.Handler) http.Handler {
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie(config.SessionCookieName)

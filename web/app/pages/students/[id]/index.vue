@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
 
 const route = useRoute()
 const api = useApi()
+const auth = useAuth()
+const isAdmin = computed(() => auth.user.value?.role === 1)
 
 const studentId = computed(() => Number.parseInt(`${route.params.id}`, 10))
 
@@ -43,8 +47,31 @@ const {
   async () => await api.studentCertificates(studentId.value)
 )
 
+const {
+  data: auditData,
+  pending: auditPending,
+  error: auditError,
+  refresh: refreshAudit
+} = await useAsyncData(
+  `student-audit:${studentId.value}`,
+  async () => {
+    if (!isAdmin.value) {
+      return { data: [] }
+    }
+
+    return await api.studentAuditLog(studentId.value)
+  },
+  {
+    watch: [isAdmin]
+  }
+)
+
 const student = computed(() => data.value?.data ?? null)
 const certificates = computed(() => certificatesData.value?.data ?? [])
+const auditEntries = computed(() => auditData.value?.data ?? [])
+const auditErrorMessage = computed(() => {
+  return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian kursanta.') : ''
+})
 const editStudentLink = computed(() => `/students/${studentId.value}/edit`)
 
 const fullName = computed(() => {
@@ -71,7 +98,11 @@ const fullAddress = computed(() => {
 })
 
 const refreshAll = async () => {
-  await Promise.all([refresh(), refreshCertificates()])
+  await Promise.all([
+    refresh(),
+    refreshCertificates(),
+    isAdmin.value ? refreshAudit() : Promise.resolve()
+  ])
 }
 
 const certificateNumber = (certificate: {
@@ -121,7 +152,7 @@ useSeoMeta({
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="outline"
-          :loading="pending || certificatesPending"
+          :loading="pending || certificatesPending || (isAdmin && auditPending)"
           @click="refreshAll()"
         >
           Odśwież
@@ -347,6 +378,16 @@ useSeoMeta({
           </section>
         </aside>
       </div>
+
+      <AuditHistoryPanel
+        v-if="isAdmin"
+        :entries="auditEntries"
+        :pending="auditPending"
+        :error-message="auditErrorMessage"
+        title="Historia zmian kursanta"
+        description="Zmiany zapisane dla danych kursanta i powiązań administracyjnych."
+        empty-message="Brak wpisów historii zmian dla tego kursanta."
+      />
     </template>
   </section>
 </template>

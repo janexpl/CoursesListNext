@@ -9,13 +9,14 @@ type CourseDTO struct {
 }
 
 type CourseDetailDTO struct {
-	ID            int64   `json:"id"`
-	MainName      string  `json:"mainName"`
-	Name          string  `json:"name"`
-	Symbol        string  `json:"symbol"`
-	ExpiryTime    *string `json:"expiryTime"`
-	CourseProgram string  `json:"courseProgram"`
-	CertFrontPage string  `json:"certFrontPage"`
+	ID                      int64                             `json:"id"`
+	MainName                string                            `json:"mainName"`
+	Name                    string                            `json:"name"`
+	Symbol                  string                            `json:"symbol"`
+	ExpiryTime              *string                           `json:"expiryTime"`
+	CourseProgram           string                            `json:"courseProgram"`
+	CertFrontPage           string                            `json:"certFrontPage"`
+	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`
 }
 
 type ListCoursesResponse struct {
@@ -27,12 +28,20 @@ type GetCourseResponse struct {
 }
 
 type coursePayload struct {
-	MainName      string  `json:"mainName"`
-	Name          string  `json:"name"`
-	Symbol        string  `json:"symbol"`
-	ExpiryTime    *string `json:"expiryTime"`
-	CourseProgram string  `json:"courseProgram"`
-	CertFrontPage string  `json:"certFrontPage"`
+	MainName                string                            `json:"mainName"`
+	Name                    string                            `json:"name"`
+	Symbol                  string                            `json:"symbol"`
+	ExpiryTime              *string                           `json:"expiryTime"`
+	CourseProgram           string                            `json:"courseProgram"`
+	CertFrontPage           string                            `json:"certFrontPage"`
+	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`
+}
+
+type CourseCertificateTranslationDTO struct {
+	LanguageCode  string `json:"languageCode"`
+	CourseName    string `json:"courseName"`
+	CourseProgram string `json:"courseProgram"`
+	CertFrontPage string `json:"certFrontPage"`
 }
 
 type UpdateCourseRequest struct {

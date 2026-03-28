@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import CourseCertificateTranslationsEditor from '~/components/courses/CourseCertificateTranslationsEditor.vue'
+import type { CourseCertificateTranslationForm } from '~/utils/courseCertificateTranslations'
+import {
+  buildCourseCertificateTranslationPayloads,
+  countReadyCourseCertificateTranslations,
+  getCourseCertificateTranslationsValidationError
+} from '~/utils/courseCertificateTranslations'
+
 type CourseProgramEntry = {
   Subject?: string
   TheoryTime?: string
@@ -12,7 +20,7 @@ type CourseProgramRow = {
   practiceTime: string
 }
 
-type CreateTab = 'general' | 'program' | 'template'
+type CreateTab = 'general' | 'program' | 'translations' | 'template'
 type TemplatePlaceholder = {
   label: string
   value: string
@@ -43,6 +51,7 @@ const activeTab = ref<CreateTab>('general')
 const showTemplateSource = ref(false)
 const templateEditorRef = ref<HTMLDivElement | null>(null)
 const programRows = ref<CourseProgramRow[]>([])
+const translationForms = ref<CourseCertificateTranslationForm[]>([])
 
 let programRowSequence = 0
 let templateEditorSyncInProgress = false
@@ -66,9 +75,9 @@ const fontSizeOptions: FontSizeOption[] = [
   { label: 'Bardzo duża', value: '28px' }
 ]
 
-function readQueryValue(value: string | string[] | undefined) {
+function readQueryValue(value: string | null | Array<string | null> | undefined) {
   if (Array.isArray(value)) {
-    return value[0] ?? ''
+    return value.find((entry): entry is string => typeof entry === 'string') ?? ''
   }
 
   return value ?? ''
@@ -113,6 +122,9 @@ function moveProgramRow(index: number, direction: -1 | 1) {
   }
 
   const [row] = programRows.value.splice(index, 1)
+  if (!row) {
+    return
+  }
   programRows.value.splice(targetIndex, 0, row)
 }
 
@@ -246,6 +258,15 @@ const courseProgramEntries = computed(() => {
 
 const serializedCourseProgram = computed(() => JSON.stringify(courseProgramEntries.value))
 const programReady = computed(() => courseProgramEntries.value.length > 0 && !hasInvalidCourseProgram.value)
+const translationValidationMessage = computed(() => {
+  return getCourseCertificateTranslationsValidationError(translationForms.value)
+})
+const translationsReady = computed(() => {
+  return translationForms.value.length === 0 || !translationValidationMessage.value
+})
+const readyTranslationCount = computed(() => {
+  return countReadyCourseCertificateTranslations(translationForms.value)
+})
 const templateReady = computed(() => !!form.certFrontPage.trim())
 const returningToCertificate = computed(() => readQueryValue(route.query.returnTo) === 'certificate')
 
@@ -257,6 +278,7 @@ const isDirty = computed(() => {
     || !!trimmedExpiryTime.value
     || !!form.certFrontPage.trim()
     || !!courseProgramEntries.value.length
+    || !!translationForms.value.length
   )
 })
 
@@ -295,6 +317,7 @@ function resetForm() {
   form.expiryTime = ''
   form.certFrontPage = ''
   programRows.value = [createProgramRow()]
+  translationForms.value = []
   errorMessage.value = ''
   showTemplateSource.value = false
   syncTemplateEditorFromForm()
@@ -403,6 +426,12 @@ async function onSubmit() {
     return
   }
 
+  if (translationValidationMessage.value) {
+    errorMessage.value = translationValidationMessage.value
+    activeTab.value = 'translations'
+    return
+  }
+
   submitPending.value = true
 
   try {
@@ -412,7 +441,8 @@ async function onSubmit() {
       symbol: trimmedSymbol.value,
       expiryTime: trimmedExpiryTime.value,
       courseProgram: serializedCourseProgram.value,
-      certFrontPage: form.certFrontPage
+      certFrontPage: form.certFrontPage,
+      certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
     })
 
     if (readQueryValue(route.query.returnTo) === 'certificate') {
@@ -489,6 +519,16 @@ useSeoMeta({
           >
             {{ templateReady ? 'Szablon gotowy' : 'Uzupełnij szablon' }}
           </span>
+          <span
+            class="inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium"
+            :class="translationsReady
+              ? 'border-sky-200 bg-sky-50 text-sky-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'"
+          >
+            {{ translationForms.length
+              ? `Wersje językowe ${readyTranslationCount}/${translationForms.length}`
+              : 'Wersje językowe opcjonalne' }}
+          </span>
         </div>
 
         <div
@@ -558,6 +598,16 @@ useSeoMeta({
         @click="activeTab = 'program'"
       >
         Program
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition"
+        :class="activeTab === 'translations'
+          ? 'bg-sky-600 text-white shadow-sm'
+          : 'text-slate-700 hover:bg-slate-100'"
+        @click="activeTab = 'translations'"
+      >
+        Języki
       </button>
       <button
         type="button"
@@ -863,6 +913,16 @@ useSeoMeta({
             </div>
           </section>
         </aside>
+      </div>
+
+      <div
+        v-else-if="activeTab === 'translations'"
+        class="space-y-6"
+      >
+        <CourseCertificateTranslationsEditor
+          v-model="translationForms"
+          :disabled="submitPending"
+        />
       </div>
 
       <div

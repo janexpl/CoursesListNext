@@ -15,16 +15,44 @@ type ApiSession struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AuditLog struct {
+	ID                     int64              `json:"id"`
+	EntityType             string             `json:"entity_type"`
+	EntityID               int64              `json:"entity_id"`
+	Action                 string             `json:"action"`
+	ActorUserID            pgtype.Int8        `json:"actor_user_id"`
+	ActorUserEmailSnapshot pgtype.Text        `json:"actor_user_email_snapshot"`
+	ActorUserNameSnapshot  pgtype.Text        `json:"actor_user_name_snapshot"`
+	RequestID              pgtype.Text        `json:"request_id"`
+	BeforeData             []byte             `json:"before_data"`
+	AfterData              []byte             `json:"after_data"`
+	Metadata               []byte             `json:"metadata"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
 type Certificate struct {
-	ID              int64              `json:"id"`
-	Date            pgtype.Date        `json:"date"`
-	StudentID       int32              `json:"student_id"`
-	Coursedatestart pgtype.Date        `json:"coursedatestart"`
-	Coursedateend   pgtype.Date        `json:"coursedateend"`
-	RegistryID      int64              `json:"registry_id"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	DeletedByUserID pgtype.Int8        `json:"deleted_by_user_id"`
-	DeleteReason    pgtype.Text        `json:"delete_reason"`
+	ID                        int64              `json:"id"`
+	Date                      pgtype.Date        `json:"date"`
+	StudentID                 int32              `json:"student_id"`
+	Coursedatestart           pgtype.Date        `json:"coursedatestart"`
+	Coursedateend             pgtype.Date        `json:"coursedateend"`
+	RegistryID                int64              `json:"registry_id"`
+	LanguageCode              string             `json:"language_code"`
+	StudentFirstnameSnapshot  string             `json:"student_firstname_snapshot"`
+	StudentSecondnameSnapshot pgtype.Text        `json:"student_secondname_snapshot"`
+	StudentLastnameSnapshot   string             `json:"student_lastname_snapshot"`
+	StudentBirthdateSnapshot  pgtype.Date        `json:"student_birthdate_snapshot"`
+	StudentBirthplaceSnapshot string             `json:"student_birthplace_snapshot"`
+	StudentPeselSnapshot      pgtype.Text        `json:"student_pesel_snapshot"`
+	CompanyNameSnapshot       pgtype.Text        `json:"company_name_snapshot"`
+	CourseNameSnapshot        string             `json:"course_name_snapshot"`
+	CourseSymbolSnapshot      string             `json:"course_symbol_snapshot"`
+	CourseExpiryTimeSnapshot  pgtype.Text        `json:"course_expiry_time_snapshot"`
+	CourseProgramSnapshot     []byte             `json:"course_program_snapshot"`
+	CertFrontPageSnapshot     string             `json:"cert_front_page_snapshot"`
+	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
+	DeletedByUserID           pgtype.Int8        `json:"deleted_by_user_id"`
+	DeleteReason              pgtype.Text        `json:"delete_reason"`
 }
 
 type Company struct {
@@ -48,6 +76,17 @@ type Course struct {
 	Expirytime    pgtype.Text `json:"expirytime"`
 	Courseprogram []byte      `json:"courseprogram"`
 	Certfrontpage pgtype.Text `json:"certfrontpage"`
+}
+
+type CourseCertificateTranslation struct {
+	ID            int64              `json:"id"`
+	CourseID      int64              `json:"course_id"`
+	LanguageCode  string             `json:"language_code"`
+	CourseName    string             `json:"course_name"`
+	CourseProgram []byte             `json:"course_program"`
+	CertFrontPage string             `json:"cert_front_page"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Registry struct {

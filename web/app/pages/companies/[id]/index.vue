@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
 
 const route = useRoute()
 const api = useApi()
+const auth = useAuth()
 const studentSearch = ref('')
+const isAdmin = computed(() => auth.user.value?.role === 1)
 
 const companyId = computed(() => Number.parseInt(`${route.params.id}`, 10))
 
@@ -44,7 +48,30 @@ const {
   async () => await api.companyStudents(companyId.value)
 )
 
+const {
+  data: auditData,
+  pending: auditPending,
+  error: auditError,
+  refresh: refreshAudit
+} = await useAsyncData(
+  `company-audit:${companyId.value}`,
+  async () => {
+    if (!isAdmin.value) {
+      return { data: [] }
+    }
+
+    return await api.companyAuditLog(companyId.value)
+  },
+  {
+    watch: [isAdmin]
+  }
+)
+
 const company = computed(() => data.value?.data ?? null)
+const auditEntries = computed(() => auditData.value?.data ?? [])
+const auditErrorMessage = computed(() => {
+  return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian firmy.') : ''
+})
 const editCompanyLink = computed(() => `/companies/${companyId.value}/edit`)
 const students = computed(() => studentsData.value?.data ?? [])
 const normalizedStudentSearch = computed(() => studentSearch.value.trim().toLocaleLowerCase())
@@ -79,7 +106,11 @@ const companyAddress = computed(() => {
 })
 
 const refreshAll = async () => {
-  await Promise.all([refresh(), refreshStudents()])
+  await Promise.all([
+    refresh(),
+    refreshStudents(),
+    isAdmin.value ? refreshAudit() : Promise.resolve()
+  ])
 }
 
 const studentFullName = (student: {
@@ -113,7 +144,7 @@ useSeoMeta({
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="outline"
-          :loading="pending || studentsPending"
+          :loading="pending || studentsPending || (isAdmin && auditPending)"
           @click="refreshAll()"
         >
           Odśwież
@@ -420,6 +451,16 @@ useSeoMeta({
           </section>
         </aside>
       </div>
+
+      <AuditHistoryPanel
+        v-if="isAdmin"
+        :entries="auditEntries"
+        :pending="auditPending"
+        :error-message="auditErrorMessage"
+        title="Historia zmian firmy"
+        description="Zmiany zapisane dla danych firmy i ich aktualizacji administracyjnych."
+        empty-message="Brak wpisów historii zmian dla tej firmy."
+      />
     </template>
   </section>
 </template>

@@ -17,32 +17,84 @@ INSERT INTO certificates (
     student_id,
     coursedatestart,
     coursedateend,
-    registry_id
+    registry_id,
+    language_code,
+    student_firstname_snapshot,
+    student_secondname_snapshot,
+    student_lastname_snapshot,
+    student_birthdate_snapshot,
+    student_birthplace_snapshot,
+    student_pesel_snapshot,
+    company_name_snapshot,
+    course_name_snapshot,
+    course_symbol_snapshot,
+    course_expiry_time_snapshot,
+    course_program_snapshot,
+    cert_front_page_snapshot
 ) VALUES (
     $1,
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17,
+    $18
 )
 RETURNING id
 `
 
 type CreateCertificateParams struct {
-	Date            pgtype.Date `json:"date"`
-	StudentID       int32       `json:"student_id"`
-	Coursedatestart pgtype.Date `json:"coursedatestart"`
-	Coursedateend   pgtype.Date `json:"coursedateend"`
-	RegistryID      int64       `json:"registry_id"`
+	Date                      pgtype.Date `json:"date"`
+	StudentID                 int32       `json:"student_id"`
+	CourseDateStart           pgtype.Date `json:"course_date_start"`
+	CourseDateEnd             pgtype.Date `json:"course_date_end"`
+	RegistryID                int64       `json:"registry_id"`
+	LanguageCode              string      `json:"language_code"`
+	StudentFirstnameSnapshot  string      `json:"student_firstname_snapshot"`
+	StudentSecondnameSnapshot pgtype.Text `json:"student_secondname_snapshot"`
+	StudentLastnameSnapshot   string      `json:"student_lastname_snapshot"`
+	StudentBirthdateSnapshot  pgtype.Date `json:"student_birthdate_snapshot"`
+	StudentBirthplaceSnapshot string      `json:"student_birthplace_snapshot"`
+	StudentPeselSnapshot      pgtype.Text `json:"student_pesel_snapshot"`
+	CompanyNameSnapshot       pgtype.Text `json:"company_name_snapshot"`
+	CourseNameSnapshot        string      `json:"course_name_snapshot"`
+	CourseSymbolSnapshot      string      `json:"course_symbol_snapshot"`
+	CourseExpiryTimeSnapshot  pgtype.Text `json:"course_expiry_time_snapshot"`
+	CourseProgramSnapshot     []byte      `json:"course_program_snapshot"`
+	CertFrontPageSnapshot     string      `json:"cert_front_page_snapshot"`
 }
 
 func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificateParams) (int64, error) {
 	row := q.db.QueryRow(ctx, createCertificate,
 		arg.Date,
 		arg.StudentID,
-		arg.Coursedatestart,
-		arg.Coursedateend,
+		arg.CourseDateStart,
+		arg.CourseDateEnd,
 		arg.RegistryID,
+		arg.LanguageCode,
+		arg.StudentFirstnameSnapshot,
+		arg.StudentSecondnameSnapshot,
+		arg.StudentLastnameSnapshot,
+		arg.StudentBirthdateSnapshot,
+		arg.StudentBirthplaceSnapshot,
+		arg.StudentPeselSnapshot,
+		arg.CompanyNameSnapshot,
+		arg.CourseNameSnapshot,
+		arg.CourseSymbolSnapshot,
+		arg.CourseExpiryTimeSnapshot,
+		arg.CourseProgramSnapshot,
+		arg.CertFrontPageSnapshot,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -53,59 +105,58 @@ const getCertificateByID = `-- name: GetCertificateByID :one
 SELECT
     c.id,
     c.date,
-    s.id AS student_id,
-    s.firstname AS student_firstname,
-    s.secondname AS student_secondname,
-    s.lastname AS student_lastname,
-    s.birthdate AS student_birthdate,
-    s.birthplace AS student_birthplace,
-    s.pesel AS student_pesel,
-    comp.id AS company_id,
-    comp.name AS company_name,
+    c.student_id,
+    c.student_firstname_snapshot AS student_firstname,
+    c.student_secondname_snapshot AS student_secondname,
+    c.student_lastname_snapshot AS student_lastname,
+    c.student_birthdate_snapshot AS student_birthdate,
+    c.student_birthplace_snapshot AS student_birthplace,
+    c.student_pesel_snapshot AS student_pesel,
+    c.company_name_snapshot AS company_name,
     c.coursedatestart AS course_date_start,
     c.coursedateend AS course_date_end,
     r.id AS registry_id,
     r.year AS registry_year,
     r.number::bigint AS registry_number,
-    cr.id AS course_id,
-    cr.mainname AS course_mainname,
-    cr.name AS course_name,
-    cr.symbol AS course_symbol,
-    cr.expirytime AS course_expiry_time,
-    cr.courseprogram::text AS course_program,
-    cr.certfrontpage AS cert_front_page,
+    r.course_id AS course_id,
+    c.course_name_snapshot AS course_name,
+    c.course_symbol_snapshot AS course_symbol,
+    c.course_expiry_time_snapshot AS course_expiry_time,
+    c.course_program_snapshot::text AS course_program,
+    c.cert_front_page_snapshot AS cert_front_page,
+    c.language_code,
     tja.id AS journal_attendee_id,
     tj.id AS journal_id,
     tj.title AS journal_title,
     tj.status AS journal_status,
-    COALESCE(CASE
-        WHEN c.coursedateend IS NOT NULL
-            AND cr.expirytime IS NOT NULL
-            AND cr.expirytime ~ '^[0-9]+$'
-        THEN TO_CHAR(c.coursedateend + cr.expirytime::int * 365, 'YYYY-MM-DD')
-        ELSE NULL::text
-    END, '') AS expiry_date
+    COALESCE(
+        CASE
+            WHEN c.coursedateend IS NOT NULL
+                AND c.course_expiry_time_snapshot IS NOT NULL
+                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            ELSE NULL::text
+        END,
+        ''
+    ) AS expiry_date
 FROM certificates c
-JOIN students s ON s.id = c.student_id
-LEFT JOIN companies comp ON comp.id = s.company_id
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
-JOIN courses cr ON cr.id = r.course_id
-WHERE c.id = $1 AND c.deleted_at IS NULL
+WHERE c.id = $1
+  AND c.deleted_at IS NULL
 `
 
 type GetCertificateByIDRow struct {
 	ID                int64       `json:"id"`
 	Date              pgtype.Date `json:"date"`
-	StudentID         int64       `json:"student_id"`
+	StudentID         int32       `json:"student_id"`
 	StudentFirstname  string      `json:"student_firstname"`
 	StudentSecondname pgtype.Text `json:"student_secondname"`
 	StudentLastname   string      `json:"student_lastname"`
 	StudentBirthdate  pgtype.Date `json:"student_birthdate"`
 	StudentBirthplace string      `json:"student_birthplace"`
 	StudentPesel      pgtype.Text `json:"student_pesel"`
-	CompanyID         pgtype.Int8 `json:"company_id"`
 	CompanyName       pgtype.Text `json:"company_name"`
 	CourseDateStart   pgtype.Date `json:"course_date_start"`
 	CourseDateEnd     pgtype.Date `json:"course_date_end"`
@@ -113,12 +164,12 @@ type GetCertificateByIDRow struct {
 	RegistryYear      int64       `json:"registry_year"`
 	RegistryNumber    int64       `json:"registry_number"`
 	CourseID          int64       `json:"course_id"`
-	CourseMainname    pgtype.Text `json:"course_mainname"`
 	CourseName        string      `json:"course_name"`
 	CourseSymbol      string      `json:"course_symbol"`
 	CourseExpiryTime  pgtype.Text `json:"course_expiry_time"`
 	CourseProgram     string      `json:"course_program"`
-	CertFrontPage     pgtype.Text `json:"cert_front_page"`
+	CertFrontPage     string      `json:"cert_front_page"`
+	LanguageCode      string      `json:"language_code"`
 	JournalAttendeeID pgtype.Int8 `json:"journal_attendee_id"`
 	JournalID         pgtype.Int8 `json:"journal_id"`
 	JournalTitle      pgtype.Text `json:"journal_title"`
@@ -139,7 +190,6 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.StudentBirthdate,
 		&i.StudentBirthplace,
 		&i.StudentPesel,
-		&i.CompanyID,
 		&i.CompanyName,
 		&i.CourseDateStart,
 		&i.CourseDateEnd,
@@ -147,12 +197,12 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.RegistryYear,
 		&i.RegistryNumber,
 		&i.CourseID,
-		&i.CourseMainname,
 		&i.CourseName,
 		&i.CourseSymbol,
 		&i.CourseExpiryTime,
 		&i.CourseProgram,
 		&i.CertFrontPage,
+		&i.LanguageCode,
 		&i.JournalAttendeeID,
 		&i.JournalID,
 		&i.JournalTitle,
@@ -163,45 +213,46 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 }
 
 const listCertificates = `-- name: ListCertificates :many
-  SELECT
-      c.id,
-      c.date,
-      s.firstname AS student_firstname,
-      s.lastname AS student_lastname,
-      comp.name AS company_name,
-      cr.name AS course_name,
-      cr.symbol AS course_symbol,
-      r.year AS registry_year,
-      r.number::bigint AS registry_number,
-      c.coursedatestart AS course_date_start,
-      c.coursedateend AS course_date_end,
-      COALESCE(CASE
-          WHEN c.coursedateend IS NOT NULL
-              AND cr.expirytime IS NOT NULL
-              AND cr.expirytime ~ '^[0-9]+$'
-          THEN TO_CHAR(c.coursedateend + cr.expirytime::int * 365, 'YYYY-MM-DD')
-          ELSE NULL::text
-      END, '') AS expiry_date
-  FROM certificates c
-  JOIN students s ON s.id = c.student_id
-  LEFT JOIN companies comp ON comp.id = s.company_id
-  JOIN registries r ON r.id = c.registry_id
-  JOIN courses cr ON cr.id = r.course_id
-  WHERE
-      (
-          $1::text IS NULL
-          OR COALESCE(s.firstname, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(s.lastname, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(comp.name, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(cr.name, '') ILIKE '%' || $1::text || '%'
-          OR COALESCE(cr.symbol, '') ILIKE '%' || $1::text || '%'
-          OR (
-              r.number::bigint::text || '/' || cr.symbol || '/' || r.year::text
-          ) ILIKE '%' || $1::text || '%'
-      )
-      AND c.deleted_at IS NULL
-  ORDER BY c.date DESC, c.id DESC
-  LIMIT $2
+SELECT
+    c.id,
+    c.date,
+    c.student_firstname_snapshot AS student_firstname,
+    c.student_lastname_snapshot AS student_lastname,
+    c.company_name_snapshot AS company_name,
+    c.course_name_snapshot AS course_name,
+    c.course_symbol_snapshot AS course_symbol,
+    r.year AS registry_year,
+    r.number::bigint AS registry_number,
+    c.coursedatestart AS course_date_start,
+    c.coursedateend AS course_date_end,
+    c.language_code,
+    COALESCE(
+        CASE
+            WHEN c.coursedateend IS NOT NULL
+                AND c.course_expiry_time_snapshot IS NOT NULL
+                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            ELSE NULL::text
+        END,
+        ''
+    ) AS expiry_date
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE
+    (
+        $1::text IS NULL
+        OR COALESCE(c.student_firstname_snapshot, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.student_lastname_snapshot, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.company_name_snapshot, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.course_name_snapshot, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.course_symbol_snapshot, '') ILIKE '%' || $1::text || '%'
+        OR (
+            r.number::bigint::text || '/' || c.course_symbol_snapshot || '/' || r.year::text
+        ) ILIKE '%' || $1::text || '%'
+    )
+    AND c.deleted_at IS NULL
+ORDER BY c.date DESC, c.id DESC
+LIMIT $2
 `
 
 type ListCertificatesParams struct {
@@ -221,6 +272,7 @@ type ListCertificatesRow struct {
 	RegistryNumber   int64       `json:"registry_number"`
 	CourseDateStart  pgtype.Date `json:"course_date_start"`
 	CourseDateEnd    pgtype.Date `json:"course_date_end"`
+	LanguageCode     string      `json:"language_code"`
 	ExpiryDate       interface{} `json:"expiry_date"`
 }
 
@@ -245,6 +297,7 @@ func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesPara
 			&i.RegistryNumber,
 			&i.CourseDateStart,
 			&i.CourseDateEnd,
+			&i.LanguageCode,
 			&i.ExpiryDate,
 		); err != nil {
 			return nil, err
@@ -261,22 +314,21 @@ const listCertificatesByStudentID = `-- name: ListCertificatesByStudentID :many
   SELECT
       c.id,
       c.date,
-      cr.name AS course_name,
-      cr.symbol AS course_symbol,
+	      c.course_name_snapshot AS course_name,
+	      c.course_symbol_snapshot AS course_symbol,
       r.year AS registry_year,
       r.number::bigint AS registry_number,
       c.coursedatestart AS course_date_start,
       c.coursedateend AS course_date_end,
       COALESCE(CASE
           WHEN c.coursedateend IS NOT NULL
-              AND cr.expirytime IS NOT NULL
-              AND cr.expirytime ~ '^[0-9]+$'
-          THEN TO_CHAR(c.coursedateend + cr.expirytime::int * 365, 'YYYY-MM-DD')
+	              AND c.course_expiry_time_snapshot IS NOT NULL
+	              AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+	          THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
           ELSE NULL::text
       END, '') AS expiry_date
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
-  JOIN courses cr ON cr.id = r.course_id
   WHERE c.student_id = $1
   AND c.deleted_at IS NULL
   ORDER BY c.date DESC, c.id DESC
@@ -349,81 +401,93 @@ func (q *Queries) SoftDeleteCertificate(ctx context.Context, arg SoftDeleteCerti
 }
 
 const updateCertificate = `-- name: UpdateCertificate :one
-  WITH updated AS (
-      UPDATE certificates AS c
-      SET
-          date = $1,
-          student_id = $2,
-          coursedatestart = $3,
-          coursedateend = $4
-      WHERE c.id = $5
+WITH updated AS (
+    UPDATE certificates AS c
+    SET
+        date = $1,
+        student_id = $2,
+        coursedatestart = $3,
+        coursedateend = $4,
+        student_firstname_snapshot = $5,
+        student_secondname_snapshot = $6,
+        student_lastname_snapshot = $7,
+        student_birthdate_snapshot = $8,
+        student_birthplace_snapshot = $9,
+        student_pesel_snapshot = $10,
+        company_name_snapshot = $11
+    WHERE c.id = $12
       AND c.deleted_at IS NULL
-      RETURNING c.id
-  )
-  SELECT
-      c.id,
-      c.date,
-      s.id AS student_id,
-      s.firstname AS student_firstname,
-      s.secondname AS student_secondname,
-      s.lastname AS student_lastname,
-      s.birthdate AS student_birthdate,
-      s.birthplace AS student_birthplace,
-      s.pesel AS student_pesel,
-      comp.id AS company_id,
-      comp.name AS company_name,
-      c.coursedatestart AS course_date_start,
-      c.coursedateend AS course_date_end,
-      r.id AS registry_id,
-      r.year AS registry_year,
-      r.number::bigint AS registry_number,
-      cr.id AS course_id,
-      cr.mainname AS course_mainname,
-      cr.name AS course_name,
-      cr.symbol AS course_symbol,
-      cr.expirytime AS course_expiry_time,
-      cr.courseprogram::text AS course_program,
-      cr.certfrontpage AS cert_front_page,
-      tja.id AS journal_attendee_id,
-      tj.id AS journal_id,
-      tj.title AS journal_title,
-      tj.status AS journal_status,
-      COALESCE(CASE
-          WHEN c.coursedateend IS NOT NULL
-              AND cr.expirytime IS NOT NULL
-              AND cr.expirytime ~ '^[0-9]+$'
-          THEN TO_CHAR(c.coursedateend + cr.expirytime::int * 365, 'YYYY-MM-DD')
-          ELSE NULL::text
-      END, '') AS expiry_date
-  FROM updated u
-  JOIN certificates c ON c.id = u.id
-  JOIN students s ON s.id = c.student_id
-  LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
-  LEFT JOIN training_journals tj ON tj.id = tja.journal_id
-  LEFT JOIN companies comp ON comp.id = s.company_id
-  JOIN registries r ON r.id = c.registry_id
-  JOIN courses cr ON cr.id = r.course_id
+    RETURNING c.id
+)
+SELECT
+    c.id,
+    c.date,
+    c.student_id,
+    c.student_firstname_snapshot AS student_firstname,
+    c.student_secondname_snapshot AS student_secondname,
+    c.student_lastname_snapshot AS student_lastname,
+    c.student_birthdate_snapshot AS student_birthdate,
+    c.student_birthplace_snapshot AS student_birthplace,
+    c.student_pesel_snapshot AS student_pesel,
+    c.company_name_snapshot AS company_name,
+    c.coursedatestart AS course_date_start,
+    c.coursedateend AS course_date_end,
+    r.id AS registry_id,
+    r.year AS registry_year,
+    r.number::bigint AS registry_number,
+    r.course_id AS course_id,
+    c.course_name_snapshot AS course_name,
+    c.course_symbol_snapshot AS course_symbol,
+    c.course_expiry_time_snapshot AS course_expiry_time,
+    c.course_program_snapshot::text AS course_program,
+    c.cert_front_page_snapshot AS cert_front_page,
+    c.language_code,
+    tja.id AS journal_attendee_id,
+    tj.id AS journal_id,
+    tj.title AS journal_title,
+    tj.status AS journal_status,
+    COALESCE(
+        CASE
+            WHEN c.coursedateend IS NOT NULL
+                AND c.course_expiry_time_snapshot IS NOT NULL
+                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            ELSE NULL::text
+        END,
+        ''
+    ) AS expiry_date
+FROM updated u
+JOIN certificates c ON c.id = u.id
+LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
+LEFT JOIN training_journals tj ON tj.id = tja.journal_id
+JOIN registries r ON r.id = c.registry_id
 `
 
 type UpdateCertificateParams struct {
-	Date            pgtype.Date `json:"date"`
-	StudentID       int32       `json:"student_id"`
-	CourseDateStart pgtype.Date `json:"course_date_start"`
-	CourseDateEnd   pgtype.Date `json:"course_date_end"`
-	CertificateID   int64       `json:"certificate_id"`
+	Date                      pgtype.Date `json:"date"`
+	StudentID                 int32       `json:"student_id"`
+	CourseDateStart           pgtype.Date `json:"course_date_start"`
+	CourseDateEnd             pgtype.Date `json:"course_date_end"`
+	StudentFirstnameSnapshot  string      `json:"student_firstname_snapshot"`
+	StudentSecondnameSnapshot pgtype.Text `json:"student_secondname_snapshot"`
+	StudentLastnameSnapshot   string      `json:"student_lastname_snapshot"`
+	StudentBirthdateSnapshot  pgtype.Date `json:"student_birthdate_snapshot"`
+	StudentBirthplaceSnapshot string      `json:"student_birthplace_snapshot"`
+	StudentPeselSnapshot      pgtype.Text `json:"student_pesel_snapshot"`
+	CompanyNameSnapshot       pgtype.Text `json:"company_name_snapshot"`
+	CertificateID             int64       `json:"certificate_id"`
 }
 
 type UpdateCertificateRow struct {
 	ID                int64       `json:"id"`
 	Date              pgtype.Date `json:"date"`
-	StudentID         int64       `json:"student_id"`
+	StudentID         int32       `json:"student_id"`
 	StudentFirstname  string      `json:"student_firstname"`
 	StudentSecondname pgtype.Text `json:"student_secondname"`
 	StudentLastname   string      `json:"student_lastname"`
 	StudentBirthdate  pgtype.Date `json:"student_birthdate"`
 	StudentBirthplace string      `json:"student_birthplace"`
 	StudentPesel      pgtype.Text `json:"student_pesel"`
-	CompanyID         pgtype.Int8 `json:"company_id"`
 	CompanyName       pgtype.Text `json:"company_name"`
 	CourseDateStart   pgtype.Date `json:"course_date_start"`
 	CourseDateEnd     pgtype.Date `json:"course_date_end"`
@@ -431,12 +495,12 @@ type UpdateCertificateRow struct {
 	RegistryYear      int64       `json:"registry_year"`
 	RegistryNumber    int64       `json:"registry_number"`
 	CourseID          int64       `json:"course_id"`
-	CourseMainname    pgtype.Text `json:"course_mainname"`
 	CourseName        string      `json:"course_name"`
 	CourseSymbol      string      `json:"course_symbol"`
 	CourseExpiryTime  pgtype.Text `json:"course_expiry_time"`
 	CourseProgram     string      `json:"course_program"`
-	CertFrontPage     pgtype.Text `json:"cert_front_page"`
+	CertFrontPage     string      `json:"cert_front_page"`
+	LanguageCode      string      `json:"language_code"`
 	JournalAttendeeID pgtype.Int8 `json:"journal_attendee_id"`
 	JournalID         pgtype.Int8 `json:"journal_id"`
 	JournalTitle      pgtype.Text `json:"journal_title"`
@@ -450,6 +514,13 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		arg.StudentID,
 		arg.CourseDateStart,
 		arg.CourseDateEnd,
+		arg.StudentFirstnameSnapshot,
+		arg.StudentSecondnameSnapshot,
+		arg.StudentLastnameSnapshot,
+		arg.StudentBirthdateSnapshot,
+		arg.StudentBirthplaceSnapshot,
+		arg.StudentPeselSnapshot,
+		arg.CompanyNameSnapshot,
 		arg.CertificateID,
 	)
 	var i UpdateCertificateRow
@@ -463,7 +534,6 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.StudentBirthdate,
 		&i.StudentBirthplace,
 		&i.StudentPesel,
-		&i.CompanyID,
 		&i.CompanyName,
 		&i.CourseDateStart,
 		&i.CourseDateEnd,
@@ -471,12 +541,12 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.RegistryYear,
 		&i.RegistryNumber,
 		&i.CourseID,
-		&i.CourseMainname,
 		&i.CourseName,
 		&i.CourseSymbol,
 		&i.CourseExpiryTime,
 		&i.CourseProgram,
 		&i.CertFrontPage,
+		&i.LanguageCode,
 		&i.JournalAttendeeID,
 		&i.JournalID,
 		&i.JournalTitle,

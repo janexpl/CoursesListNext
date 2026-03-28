@@ -24,6 +24,7 @@ func NullableTimestampz(value pgtype.Timestamptz) *string {
 	formatted := value.Time.Format(response.TimestampzFormat)
 	return &formatted
 }
+
 func NullableString(value any) *string {
 	switch v := value.(type) {
 	case nil:
@@ -74,4 +75,11 @@ func OptionalInt8(value *int64) pgtype.Int8 {
 		Int64: *value,
 		Valid: true,
 	}
+}
+
+func NullableInt64(value pgtype.Int8) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Int64
 }

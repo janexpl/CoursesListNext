@@ -18,14 +18,18 @@ import (
 )
 
 type fakeQuerier struct {
-	listCertificatesFunc   func(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error)
-	getCertificateByIDFunc func(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
-	updateCertificateFunc  func(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
-	softDeleteFunc         func(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
+	listCertificatesFunc                                   func(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error)
+	getCertificateByIDFunc                                 func(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
+	getCourseByIDFunc                                      func(ctx context.Context, id int64) (sqlc.Course, error)
+	listCourseCertificateTranslationsByCourseIDFunc        func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
+	getCourseCertificateTranslationByCourseAndLanguageFunc func(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error)
+	updateCertificateFunc                                  func(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
+	softDeleteFunc                                         func(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
 }
 
 type fakeCreator struct {
 	createFunc func(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error)
+	updateFunc func(ctx context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error)
 }
 
 func (f fakeQuerier) ListCertificates(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {
@@ -40,6 +44,27 @@ func (f fakeQuerier) GetCertificateByID(ctx context.Context, id int64) (sqlc.Get
 		return sqlc.GetCertificateByIDRow{}, errors.New("unexpected GetCertificateByID call")
 	}
 	return f.getCertificateByIDFunc(ctx, id)
+}
+
+func (f fakeQuerier) GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error) {
+	if f.getCourseByIDFunc == nil {
+		return sqlc.Course{}, errors.New("unexpected GetCourseByID call")
+	}
+	return f.getCourseByIDFunc(ctx, id)
+}
+
+func (f fakeQuerier) ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error) {
+	if f.listCourseCertificateTranslationsByCourseIDFunc == nil {
+		return nil, errors.New("unexpected ListCourseCertificateTranslationsByCourseID call")
+	}
+	return f.listCourseCertificateTranslationsByCourseIDFunc(ctx, courseID)
+}
+
+func (f fakeQuerier) GetCourseCertificateTranslationByCourseAndLanguage(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error) {
+	if f.getCourseCertificateTranslationByCourseAndLanguageFunc == nil {
+		return sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow{}, errors.New("unexpected GetCourseCertificateTranslationByCourseAndLanguage call")
+	}
+	return f.getCourseCertificateTranslationByCourseAndLanguageFunc(ctx, arg)
 }
 
 func (f fakeQuerier) UpdateCertificate(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
@@ -61,6 +86,13 @@ func (f fakeCreator) Create(ctx context.Context, input CreateCertificateInput) (
 		return CreateCertificateResult{}, errors.New("unexpected Create call")
 	}
 	return f.createFunc(ctx, input)
+}
+
+func (f fakeCreator) Update(ctx context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+	if f.updateFunc == nil {
+		return sqlc.UpdateCertificateRow{}, errors.New("unexpected Update call")
+	}
+	return f.updateFunc(ctx, certificateID, input)
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
@@ -261,11 +293,13 @@ func TestGetReturnsCertificateDetails(t *testing.T) {
 		CourseDateEnd:     pgtype.Date{Time: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), Valid: true},
 		RegistryYear:      2026,
 		RegistryNumber:    17,
+		CourseID:          3,
 		CourseName:        "Szkolenie BHP",
 		CourseSymbol:      "BHP",
 		CourseExpiryTime:  pgtype.Text{String: "3", Valid: true},
 		CourseProgram:     `{"sections":["intro"]}`,
-		CertFrontPage:     pgtype.Text{String: "<p>Front</p>", Valid: true},
+		CertFrontPage:     "<p>Front</p>",
+		LanguageCode:      "pl",
 		JournalAttendeeID: pgtype.Int8{Int64: 7, Valid: true},
 		JournalID:         pgtype.Int8{Int64: 4, Valid: true},
 		JournalTitle:      pgtype.Text{String: "Szkolenie okresowe BHP - marzec 2026", Valid: true},
@@ -279,6 +313,27 @@ func TestGetReturnsCertificateDetails(t *testing.T) {
 				t.Fatalf("expected certificate id %d, got %d", 21, id)
 			}
 			return row, nil
+		},
+		getCourseByIDFunc: func(_ context.Context, id int64) (sqlc.Course, error) {
+			if id != 3 {
+				t.Fatalf("expected course id %d, got %d", 3, id)
+			}
+			return sqlc.Course{
+				ID:            3,
+				Name:          "Szkolenie BHP",
+				Courseprogram: []byte(`[ {"Subject":"Podstawy"} ]`),
+				Certfrontpage: pgtype.Text{String: "<p>Polski szablon</p>", Valid: true},
+			}, nil
+		},
+		listCourseCertificateTranslationsByCourseIDFunc: func(_ context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error) {
+			return []sqlc.ListCourseCertificateTranslationsByCourseIDRow{
+				{
+					LanguageCode:  "en",
+					CourseName:    "Health and Safety Training",
+					CourseProgram: `[ {"Subject":"Intro"} ]`,
+					CertFrontPage: "<p>English template</p>",
+				},
+			}, nil
 		},
 	}, nil)
 
@@ -318,6 +373,12 @@ func TestGetReturnsCertificateDetails(t *testing.T) {
 	}
 	if responseBody.Data.Journal.ID != 4 || responseBody.Data.Journal.Title != "Szkolenie okresowe BHP - marzec 2026" || responseBody.Data.Journal.Status != "closed" {
 		t.Fatalf("unexpected journal payload: %+v", responseBody.Data.Journal)
+	}
+	if len(responseBody.Data.PrintVariants) != 2 {
+		t.Fatalf("expected 2 print variants, got %+v", responseBody.Data.PrintVariants)
+	}
+	if !responseBody.Data.PrintVariants[0].IsOriginal || responseBody.Data.PrintVariants[0].LanguageCode != responseBody.Data.LanguageCode {
+		t.Fatalf("expected original variant to be first, got %+v", responseBody.Data.PrintVariants[0])
 	}
 }
 
@@ -377,7 +438,7 @@ func TestPDFReturnsRenderedPDF(t *testing.T) {
 		CourseName:        "Szkolenie BHP",
 		CourseSymbol:      "BHP",
 		CourseProgram:     `[{"Subject":"Intro","TheoryTime":"2","PracticeTime":"1"}]`,
-		CertFrontPage:     pgtype.Text{String: "<p>{{ imie }} {{ nazwisko }}</p><p>{{ data_urodzenia }}</p><p>{{ numer_zaswiadczenia }}</p>", Valid: true},
+		CertFrontPage:     "<p>{{ imie }} {{ nazwisko }}</p><p>{{ data_urodzenia }}</p><p>{{ numer_zaswiadczenia }}</p>",
 	}
 
 	renderCertificatePDF = func(ctx context.Context, pageHTML string) ([]byte, error) {
@@ -425,6 +486,70 @@ func TestPDFReturnsRenderedPDF(t *testing.T) {
 	}
 }
 
+func TestPDFUsesRequestedLanguageVariant(t *testing.T) {
+	originalRenderer := renderCertificatePDF
+	t.Cleanup(func() {
+		renderCertificatePDF = originalRenderer
+	})
+
+	row := sqlc.GetCertificateByIDRow{
+		ID:                21,
+		Date:              pgtype.Date{Time: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), Valid: true},
+		StudentFirstname:  "Jan",
+		StudentLastname:   "Nowak",
+		StudentBirthdate:  pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true},
+		StudentBirthplace: "Warszawa",
+		CourseDateStart:   pgtype.Date{Time: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), Valid: true},
+		CourseDateEnd:     pgtype.Date{Time: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), Valid: true},
+		RegistryYear:      2026,
+		RegistryNumber:    17,
+		CourseID:          3,
+		CourseName:        "Szkolenie BHP",
+		CourseSymbol:      "BHP",
+		LanguageCode:      "pl",
+		CourseProgram:     `[{"Subject":"Podstawy","TheoryTime":"2","PracticeTime":"1"}]`,
+		CertFrontPage:     "<p>{{ nazwa_kursu }}</p>",
+	}
+
+	renderCertificatePDF = func(ctx context.Context, pageHTML string) ([]byte, error) {
+		if !strings.Contains(pageHTML, "Health and Safety Training") {
+			t.Fatalf("expected rendered HTML to use translated course name, got %q", pageHTML)
+		}
+		if !strings.Contains(pageHTML, "Training topic") {
+			t.Fatalf("expected rendered HTML to use translated program labels, got %q", pageHTML)
+		}
+		return []byte("%PDF-1.4 fake"), nil
+	}
+
+	handler := NewHandler(fakeQuerier{
+		getCertificateByIDFunc: func(_ context.Context, id int64) (sqlc.GetCertificateByIDRow, error) {
+			return row, nil
+		},
+		getCourseCertificateTranslationByCourseAndLanguageFunc: func(_ context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error) {
+			if arg.CourseID != 3 || arg.LanguageCode != "en" {
+				t.Fatalf("unexpected translation lookup: %+v", arg)
+			}
+			return sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow{
+				CourseID:      3,
+				LanguageCode:  "en",
+				CourseName:    "Health and Safety Training",
+				CourseProgram: `[{"Subject":"Introduction","TheoryTime":"2","PracticeTime":"1"}]`,
+				CertFrontPage: "<p>{{ nazwa_kursu }}</p>",
+			}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates/21/pdf?language=en", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.PDF(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
 func TestPDFReturnsBadRequestForInvalidID(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
 		getCertificateByIDFunc: func(_ context.Context, id int64) (sqlc.GetCertificateByIDRow, error) {
@@ -461,7 +586,7 @@ func TestPDFReturnsInternalServerErrorWhenRendererFails(t *testing.T) {
 				StudentBirthdate: pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true},
 				StudentFirstname: "Jan",
 				StudentLastname:  "Nowak",
-				CertFrontPage:    pgtype.Text{String: "<p>Test</p>", Valid: true},
+				CertFrontPage:    "<p>Test</p>",
 			}, nil
 		},
 	}, nil)
@@ -586,22 +711,22 @@ func TestCreateReturnsCreatedResponse(t *testing.T) {
 }
 
 func TestPatchReturnsUpdatedCertificateResponse(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
-			if arg.CertificateID != 21 {
-				t.Fatalf("expected certificate id 21, got %d", arg.CertificateID)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			if certificateID != 21 {
+				t.Fatalf("expected certificate id 21, got %d", certificateID)
 			}
-			if arg.StudentID != 12 {
-				t.Fatalf("expected student id 12, got %d", arg.StudentID)
+			if input.StudentID != 12 {
+				t.Fatalf("expected student id 12, got %d", input.StudentID)
 			}
-			if !arg.Date.Valid || arg.Date.Time.Format(response.DateFormat) != "2026-03-15" {
-				t.Fatalf("unexpected certificate date: %+v", arg.Date)
+			if input.CertificateDate != "2026-03-15" {
+				t.Fatalf("unexpected certificate date: %q", input.CertificateDate)
 			}
-			if !arg.CourseDateStart.Valid || arg.CourseDateStart.Time.Format(response.DateFormat) != "2026-03-10" {
-				t.Fatalf("unexpected course start date: %+v", arg.CourseDateStart)
+			if input.CourseDateStart != "2026-03-10" {
+				t.Fatalf("unexpected course start date: %q", input.CourseDateStart)
 			}
-			if !arg.CourseDateEnd.Valid || arg.CourseDateEnd.Time.Format(response.DateFormat) != "2026-03-15" {
-				t.Fatalf("unexpected course end date: %+v", arg.CourseDateEnd)
+			if input.CourseDateEnd == nil || *input.CourseDateEnd != "2026-03-15" {
+				t.Fatalf("unexpected course end date: %+v", input.CourseDateEnd)
 			}
 
 			return sqlc.UpdateCertificateRow{
@@ -623,11 +748,11 @@ func TestPatchReturnsUpdatedCertificateResponse(t *testing.T) {
 				CourseSymbol:      "BHP",
 				CourseExpiryTime:  pgtype.Text{String: "3", Valid: true},
 				CourseProgram:     `[{"Subject":"Intro","TheoryTime":"2","PracticeTime":"1"}]`,
-				CertFrontPage:     pgtype.Text{String: "<p>Front</p>", Valid: true},
+				CertFrontPage:     "<p>Front</p>",
 				ExpiryDate:        "2029-03-15",
 			}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
 		"studentId": 12,
@@ -668,12 +793,12 @@ func TestPatchReturnsUpdatedCertificateResponse(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForInvalidID(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
-			t.Fatalf("UpdateCertificate should not be called for invalid id, got %+v", arg)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			t.Fatalf("Update should not be called for invalid id, got id=%d input=%+v", certificateID, input)
 			return sqlc.UpdateCertificateRow{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/abc", strings.NewReader(`{}`))
 	req.SetPathValue("id", "abc")
@@ -685,12 +810,12 @@ func TestPatchReturnsBadRequestForInvalidID(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
-			t.Fatalf("UpdateCertificate should not be called for invalid JSON, got %+v", arg)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			t.Fatalf("Update should not be called for invalid JSON, got id=%d input=%+v", certificateID, input)
 			return sqlc.UpdateCertificateRow{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{`))
 	req.SetPathValue("id", "21")
@@ -702,12 +827,17 @@ func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForMissingRequiredFields(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
-			t.Fatalf("UpdateCertificate should not be called for invalid body, got %+v", arg)
-			return sqlc.UpdateCertificateRow{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			if certificateID != 21 {
+				t.Fatalf("expected certificate id 21, got %d", certificateID)
+			}
+			if input.StudentID != 0 || input.CertificateDate != "" || input.CourseDateStart != "" {
+				t.Fatalf("expected raw invalid body to be forwarded, got %+v", input)
+			}
+			return sqlc.UpdateCertificateRow{}, ErrInvalidInput
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
 		"studentId": 0,
@@ -723,12 +853,17 @@ func TestPatchReturnsBadRequestForMissingRequiredFields(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForInvalidDates(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
-			t.Fatalf("UpdateCertificate should not be called for invalid dates, got %+v", arg)
-			return sqlc.UpdateCertificateRow{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			if certificateID != 21 {
+				t.Fatalf("expected certificate id 21, got %d", certificateID)
+			}
+			if input.CourseDateEnd == nil || *input.CourseDateEnd != "2026-03-10" {
+				t.Fatalf("expected raw invalid courseDateEnd to be forwarded, got %+v", input.CourseDateEnd)
+			}
+			return sqlc.UpdateCertificateRow{}, ErrInvalidInput
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
 		"studentId": 12,
@@ -745,11 +880,11 @@ func TestPatchReturnsBadRequestForInvalidDates(t *testing.T) {
 }
 
 func TestPatchReturnsNotFoundWhenCertificateDoesNotExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
 			return sqlc.UpdateCertificateRow{}, pgx.ErrNoRows
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
 		"studentId": 12,
@@ -766,11 +901,11 @@ func TestPatchReturnsNotFoundWhenCertificateDoesNotExist(t *testing.T) {
 }
 
 func TestPatchReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		updateCertificateFunc: func(_ context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, certificateID int64, input UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
 			return sqlc.UpdateCertificateRow{}, errors.New("db error")
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
 		"studentId": 12,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
+
 definePageMeta({
   middleware: 'admin'
 })
@@ -24,7 +26,21 @@ const { data, pending, error, refresh } = await useAsyncData(
   }
 )
 
+const {
+  data: auditData,
+  pending: auditPending,
+  error: auditError,
+  refresh: refreshAudit
+} = await useAsyncData(
+  `admin-user-audit:${userId.value}`,
+  async () => await api.userAuditLog(userId.value)
+)
+
 const user = computed(() => data.value ?? null)
+const auditEntries = computed(() => auditData.value?.data ?? [])
+const auditErrorMessage = computed(() => {
+  return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian użytkownika.') : ''
+})
 const detailsLink = computed(() => '/admin/users')
 
 const form = reactive({
@@ -194,6 +210,10 @@ useUnsavedChangesWarning(() => {
 useSeoMeta({
   title: () => user.value ? `Edycja: ${user.value.firstName} ${user.value.lastName}` : 'Edycja użytkownika'
 })
+
+async function refreshAll() {
+  await Promise.all([refresh(), refreshAudit()])
+}
 </script>
 
 <template>
@@ -216,8 +236,8 @@ useSeoMeta({
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="outline"
-          :loading="pending"
-          @click="refresh()"
+          :loading="pending || auditPending"
+          @click="refreshAll()"
         >
           Odśwież
         </UButton>
@@ -458,6 +478,15 @@ useSeoMeta({
           </div>
         </form>
       </div>
+
+      <AuditHistoryPanel
+        :entries="auditEntries"
+        :pending="auditPending"
+        :error-message="auditErrorMessage"
+        title="Historia zmian użytkownika"
+        description="Zmiany danych konta, ról i operacji bezpieczeństwa zapisane przez audit log."
+        empty-message="Brak wpisów historii zmian dla tego użytkownika."
+      />
     </template>
   </section>
 </template>

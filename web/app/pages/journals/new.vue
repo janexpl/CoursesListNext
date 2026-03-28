@@ -12,7 +12,7 @@ useSeoMeta({
 const api = useApi()
 
 const form = reactive({
-  courseId: '',
+  courseSearch: '',
   companySearch: '',
   title: '',
   organizerName: '',
@@ -27,7 +27,31 @@ const form = reactive({
 
 const submitPending = ref(false)
 const errorMessage = ref('')
+const courseSearch = toRef(form, 'courseSearch')
 const companySearch = toRef(form, 'companySearch')
+
+const {
+  selectedOption: selectedCourse,
+  options: courseOptions,
+  pending: coursesPending,
+  error: courseSearchError,
+  showNoResults: showNoCourseResults,
+  selectOption: selectCourseOption,
+  clearSelection: clearCourseSearchSelection
+} = useSearchableSelect<CourseSummary>({
+  query: courseSearch,
+  fetchOptions: async (search) => {
+    const response = await api.courses({
+      search,
+      limit: 20
+    })
+
+    return response.data
+  },
+  getOptionLabel: courseLabel,
+  getErrorMessage: error => getApiErrorMessage(error, 'Nie udało się pobrać listy kursów.')
+})
+
 const {
   selectedOption: selectedCompany,
   options: companyOptions,
@@ -49,42 +73,16 @@ const {
   getOptionLabel: companyLabel,
   getErrorMessage: error => getApiErrorMessage(error, 'Nie udało się pobrać listy firm.')
 })
+
 const selectedCourseDetails = ref<CourseDetails | null>(null)
 const courseDetailsPending = ref(false)
-const courseDetailsError = ref('')
+const courseDetailsLoadError = ref('')
+const courseDetailsError = computed(() => courseSearchError.value || courseDetailsLoadError.value)
 const lastAutoTitle = ref('')
 let courseDetailsRequestId = 0
 
-const {
-  data: optionsData,
-  pending: optionsPending,
-  error: optionsError,
-  refresh: refreshOptions
-} = await useAsyncData(
-  'journal-form-options',
-  async () => {
-    const coursesResponse = await api.courses({ limit: 100 })
-
-    return {
-      courses: coursesResponse.data
-    }
-  }
-)
-
-const courses = computed(() => optionsData.value?.courses ?? [])
-
-const selectedCourseId = computed(() => {
-  const parsed = Number.parseInt(form.courseId, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-})
-
-const selectedCompanyId = computed(() => {
-  return selectedCompany.value?.id ?? null
-})
-
-const selectedCourse = computed(() => {
-  return courses.value.find(course => course.id === selectedCourseId.value) ?? null
-})
+const selectedCourseId = computed(() => selectedCourse.value?.id ?? null)
+const selectedCompanyId = computed(() => selectedCompany.value?.id ?? null)
 
 const trimmedTitle = computed(() => form.title.trim())
 const trimmedOrganizerName = computed(() => form.organizerName.trim())
@@ -179,7 +177,7 @@ function extractCourseProgramHours(courseProgram: string) {
 async function fetchSelectedCourseDetails(courseId: number) {
   const requestId = ++courseDetailsRequestId
   courseDetailsPending.value = true
-  courseDetailsError.value = ''
+  courseDetailsLoadError.value = ''
 
   try {
     const response = await api.course(courseId)
@@ -195,7 +193,7 @@ async function fetchSelectedCourseDetails(courseId: number) {
     }
 
     selectedCourseDetails.value = null
-    courseDetailsError.value = getApiErrorMessage(error, 'Nie udało się pobrać programu kursu.')
+    courseDetailsLoadError.value = getApiErrorMessage(error, 'Nie udało się pobrać programu kursu.')
   } finally {
     if (requestId === courseDetailsRequestId) {
       courseDetailsPending.value = false
@@ -205,7 +203,7 @@ async function fetchSelectedCourseDetails(courseId: number) {
 
 watch(selectedCourseId, (courseId) => {
   courseDetailsRequestId += 1
-  courseDetailsError.value = ''
+  courseDetailsLoadError.value = ''
 
   if (!courseId) {
     selectedCourseDetails.value = null
@@ -232,8 +230,19 @@ const formattedCalculatedHours = computed(() => {
   return `${calculatedHours.value.toString().replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} h`
 })
 
+function selectCourse(course: CourseSummary) {
+  selectCourseOption(course)
+  errorMessage.value = ''
+}
+
+function clearCourseSelection() {
+  clearCourseSearchSelection()
+  selectedCourseDetails.value = null
+  courseDetailsLoadError.value = ''
+}
+
 function resetForm() {
-  form.courseId = ''
+  clearCourseSelection()
   form.title = ''
   form.organizerName = ''
   form.organizerAddress = ''
@@ -352,25 +361,12 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
             form="journal-create-form"
             type="submit"
             class="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="!canSubmit || optionsPending"
+            :disabled="!canSubmit"
           >
             {{ submitPending ? 'Zapisywanie...' : 'Utwórz dziennik' }}
           </button>
         </div>
       </div>
-    </div>
-
-    <div
-      v-if="optionsError"
-      class="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <p>
-        Nie udało się pobrać listy kursów potrzebnych do formularza.
-      </p>
-
-      <UButton color="neutral" variant="outline" @click="refreshOptions()">
-        Spróbuj ponownie
-      </UButton>
     </div>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -415,33 +411,81 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
             <div class="mt-4 grid gap-4 md:grid-cols-2">
               <label class="block space-y-2 md:col-span-2">
                 <span class="text-sm font-medium text-slate-700">Kurs</span>
-                <div class="relative">
-                  <select
-                    v-model="form.courseId"
-                    class="h-[50px] w-full appearance-none rounded-md border border-slate-300 bg-white px-4 pr-10 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                    :disabled="optionsPending"
-                  >
-                    <option value="">
-                      Wybierz kurs
-                    </option>
-                    <option
-                      v-for="course in courses"
-                      :key="course.id"
-                      :value="String(course.id)"
-                    >
-                      {{ courseLabel(course) }}
-                    </option>
-                  </select>
-                  <span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-400">
-                    ˅
-                  </span>
-                </div>
-                <p
-                  v-if="!optionsPending && !courses.length"
-                  class="text-xs text-slate-500"
+                <input
+                  v-model="form.courseSearch"
+                  type="text"
+                  placeholder="Wpisz co najmniej 2 znaki, aby wyszukać kurs"
+                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
-                  Nie masz jeszcze kursów. Najpierw dodaj kurs w module „Kursy”.
-                </p>
+
+                <div
+                  v-if="selectedCourse"
+                  class="flex items-center justify-between rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
+                >
+                  <div>
+                    <p class="font-medium">
+                      {{ courseLabel(selectedCourse) }}
+                    </p>
+                    <p class="text-xs text-sky-700">
+                      ID {{ selectedCourse.id }}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="rounded-md border border-sky-200 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+                    @click="clearCourseSelection"
+                  >
+                    Usuń wybór
+                  </button>
+                </div>
+
+                <div
+                  v-if="courseSearchError"
+                  class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                >
+                  {{ courseSearchError }}
+                </div>
+
+                <div
+                  v-else-if="coursesPending"
+                  class="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500"
+                >
+                  Szukanie kursów...
+                </div>
+
+                <div
+                  v-else-if="showNoCourseResults"
+                  class="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500"
+                >
+                  Nie znaleziono kursu pasującego do podanej frazy.
+                </div>
+
+                <div
+                  v-else-if="courseOptions.length"
+                  class="overflow-hidden rounded-md border border-slate-200 bg-white"
+                >
+                  <button
+                    v-for="course in courseOptions"
+                    :key="course.id"
+                    type="button"
+                    class="flex w-full items-start justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-50"
+                    @click="selectCourse(course)"
+                  >
+                    <div>
+                      <p class="font-medium text-slate-900">
+                        {{ courseLabel(course) }}
+                      </p>
+                      <p class="text-xs text-slate-500">
+                        {{ course.expiryTime ? `Ważność: ${course.expiryTime} lat` : 'Brak okresu ważności' }}
+                      </p>
+                    </div>
+
+                    <span class="text-xs uppercase tracking-[0.16em] text-slate-400">
+                      ID {{ course.id }}
+                    </span>
+                  </button>
+                </div>
               </label>
 
               <label class="block space-y-2 md:col-span-2">

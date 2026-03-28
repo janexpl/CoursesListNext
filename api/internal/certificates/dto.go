@@ -12,30 +12,42 @@ type CertificateDTO struct {
 	CourseDateStart string  `json:"courseDateStart"`
 	CourseDateEnd   *string `json:"courseDateEnd"`
 	ExpiryDate      *string `json:"expiryDate"`
+	LanguageCode    string  `json:"languageCode"`
 }
 
 type CertificateDetailsDTO struct {
-	ID                int64                     `json:"id"`
-	Date              string                    `json:"date"`
-	StudentID         int64                     `json:"studentId"`
-	StudentName       string                    `json:"studentName"`
-	StudentSecondname string                    `json:"studentSecondname"`
-	StudentLastname   string                    `json:"studentLastname"`
-	StudentBirthdate  string                    `json:"studentBirthdate"`
-	StudentBirthplace string                    `json:"studentBirthplace"`
-	StudentPesel      string                    `json:"studentPesel"`
-	CompanyName       string                    `json:"companyName"`
-	CourseDateStart   string                    `json:"courseDateStart"`
-	CourseDateEnd     *string                   `json:"courseDateEnd"`
-	RegistryYear      int                       `json:"registryYear"`
-	RegistryNumber    int                       `json:"registryNumber"`
-	CourseName        string                    `json:"courseName"`
-	CourseSymbol      string                    `json:"courseSymbol"`
-	CourseExpiryTime  *int                      `json:"courseExpiryTime"`
-	CourseProgram     string                    `json:"courseProgram"`
-	CertFrontPage     string                    `json:"certFrontPage"`
-	ExpiryDate        *string                   `json:"expiryDate"`
-	Journal           *CertificateJournalRefDTO `json:"journal"`
+	ID                int64                        `json:"id"`
+	Date              string                       `json:"date"`
+	StudentID         int64                        `json:"studentId"`
+	CourseID          int64                        `json:"courseId"`
+	StudentName       string                       `json:"studentName"`
+	StudentSecondname string                       `json:"studentSecondname"`
+	StudentLastname   string                       `json:"studentLastname"`
+	StudentBirthdate  string                       `json:"studentBirthdate"`
+	StudentBirthplace string                       `json:"studentBirthplace"`
+	StudentPesel      string                       `json:"studentPesel"`
+	CompanyName       string                       `json:"companyName"`
+	CourseDateStart   string                       `json:"courseDateStart"`
+	CourseDateEnd     *string                      `json:"courseDateEnd"`
+	RegistryYear      int                          `json:"registryYear"`
+	RegistryNumber    int                          `json:"registryNumber"`
+	CourseName        string                       `json:"courseName"`
+	CourseSymbol      string                       `json:"courseSymbol"`
+	CourseExpiryTime  *int                         `json:"courseExpiryTime"`
+	CourseProgram     string                       `json:"courseProgram"`
+	CertFrontPage     string                       `json:"certFrontPage"`
+	ExpiryDate        *string                      `json:"expiryDate"`
+	Journal           *CertificateJournalRefDTO    `json:"journal"`
+	LanguageCode      string                       `json:"languageCode"`
+	PrintVariants     []CertificatePrintVariantDTO `json:"printVariants"`
+}
+
+type CertificatePrintVariantDTO struct {
+	LanguageCode  string `json:"languageCode"`
+	CourseName    string `json:"courseName"`
+	CourseProgram string `json:"courseProgram"`
+	CertFrontPage string `json:"certFrontPage"`
+	IsOriginal    bool   `json:"isOriginal"`
 }
 
 type ListCertificatesResponse struct {

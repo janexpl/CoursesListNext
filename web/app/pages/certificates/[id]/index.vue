@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -6,6 +8,7 @@ definePageMeta({
 const route = useRoute()
 const api = useApi()
 const auth = useAuth()
+const isAdmin = computed(() => auth.user.value?.role === 1)
 const previewFrame = ref<HTMLIFrameElement | null>(null)
 const showDeleteConfirmation = ref(false)
 const deleteReason = ref('')
@@ -28,9 +31,32 @@ const { data, pending, error, refresh } = await useAsyncData(
   }
 )
 
+const {
+  data: auditData,
+  pending: auditPending,
+  error: auditError,
+  refresh: refreshAudit
+} = await useAsyncData(
+  `certificate-audit:${certificateId.value}`,
+  async () => {
+    if (!isAdmin.value) {
+      return { data: [] }
+    }
+
+    return await api.certificateAuditLog(certificateId.value)
+  },
+  {
+    watch: [isAdmin]
+  }
+)
+
 const certificate = computed(() => data.value?.data ?? null)
 const editCertificateLink = computed(() => `/certificates/${certificateId.value}/edit`)
-const isAdmin = computed(() => auth.user.value?.role === 1)
+const auditEntries = computed(() => auditData.value?.data ?? [])
+const auditErrorMessage = computed(() => {
+  return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian zaświadczenia.') : ''
+})
+const selectedPrintLanguageCode = ref<string>('')
 const linkedJournalLink = computed(() => {
   if (!certificate.value?.journal) {
     return ''
@@ -43,6 +69,96 @@ type CourseProgramEntry = {
   Subject?: string
   TheoryTime?: string
   PracticeTime?: string
+}
+
+type CourseProgramLabels = {
+  index: string
+  subject: string
+  theoryHours: string
+  practiceHours: string
+  total: string
+}
+
+function formatLanguageLabel(value: string) {
+  const normalized = value.trim().toLowerCase()
+  const labels: Record<string, string> = {
+    pl: 'polski',
+    en: 'angielski',
+    de: 'niemiecki',
+    uk: 'ukraiński',
+    cs: 'czeski',
+    sk: 'słowacki',
+    lt: 'litewski'
+  }
+
+  if (!normalized) {
+    return 'domyślna'
+  }
+
+  return labels[normalized]
+    ? `${normalized.toUpperCase()} - ${labels[normalized]}`
+    : normalized.toUpperCase()
+}
+
+function getCourseProgramLabels(languageCode: string): CourseProgramLabels {
+  switch (languageCode.trim().toLowerCase()) {
+    case 'en':
+      return {
+        index: 'No.',
+        subject: 'Training topic',
+        theoryHours: 'Theory hours',
+        practiceHours: 'Practical hours',
+        total: 'TOTAL'
+      }
+    case 'de':
+      return {
+        index: 'Nr.',
+        subject: 'Schulungsthema',
+        theoryHours: 'Theoriestunden',
+        practiceHours: 'Praxisstunden',
+        total: 'SUMME'
+      }
+    case 'uk':
+      return {
+        index: '№',
+        subject: 'Тема навчання',
+        theoryHours: 'Теоретичні години',
+        practiceHours: 'Практичні години',
+        total: 'РАЗОМ'
+      }
+    case 'cs':
+      return {
+        index: 'Č.',
+        subject: 'Téma školení',
+        theoryHours: 'Teoretické hodiny',
+        practiceHours: 'Praktické hodiny',
+        total: 'CELKEM'
+      }
+    case 'sk':
+      return {
+        index: 'Č.',
+        subject: 'Téma školenia',
+        theoryHours: 'Teoretické hodiny',
+        practiceHours: 'Praktické hodiny',
+        total: 'SPOLU'
+      }
+    case 'lt':
+      return {
+        index: 'Nr.',
+        subject: 'Mokymo tema',
+        theoryHours: 'Teorijos valandos',
+        practiceHours: 'Praktikos valandos',
+        total: 'IŠ VISO'
+      }
+    default:
+      return {
+        index: 'Lp.',
+        subject: 'Temat szkolenia',
+        theoryHours: 'Liczba godzin zajęć teoretycznych',
+        practiceHours: 'Liczba godzin zajęć praktycznych',
+        total: 'RAZEM'
+      }
+  }
 }
 
 function formatPolishDate(value: string | null) {
@@ -80,22 +196,65 @@ const studentFullName = computed(() => {
     .join(' ')
 })
 
+watch(
+  certificate,
+  (value) => {
+    if (!value) {
+      selectedPrintLanguageCode.value = ''
+      return
+    }
+
+    if (
+      !value.printVariants.some(
+        variant => variant.languageCode === selectedPrintLanguageCode.value
+      )
+    ) {
+      selectedPrintLanguageCode.value = value.languageCode
+    }
+  },
+  { immediate: true }
+)
+
+const selectedPrintVariant = computed(() => {
+  if (!certificate.value) {
+    return null
+  }
+
+  return (
+    certificate.value.printVariants.find(
+      variant => variant.languageCode === selectedPrintLanguageCode.value
+    )
+    ?? certificate.value.printVariants[0]
+    ?? null
+  )
+})
+
+const selectedPrintVariantOptionLabel = computed(() => {
+  if (!selectedPrintVariant.value) {
+    return ''
+  }
+
+  return selectedPrintVariant.value.isOriginal
+    ? `${formatLanguageLabel(selectedPrintVariant.value.languageCode)} - wersja wystawiona`
+    : `${formatLanguageLabel(selectedPrintVariant.value.languageCode)} - wersja do wydruku`
+})
+
 function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replaceAll('\'', '&#39;')
 }
 
 const courseProgramEntries = computed(() => {
-  if (!certificate.value?.courseProgram) {
+  if (!selectedPrintVariant.value?.courseProgram) {
     return [] as CourseProgramEntry[]
   }
 
   try {
-    const parsed = JSON.parse(certificate.value.courseProgram)
+    const parsed = JSON.parse(selectedPrintVariant.value.courseProgram)
     if (!Array.isArray(parsed)) {
       return [] as CourseProgramEntry[]
     }
@@ -110,6 +269,8 @@ const courseProgramTableHtml = computed(() => {
   if (courseProgramEntries.value.length === 0) {
     return ''
   }
+
+  const labels = getCourseProgramLabels(selectedPrintLanguageCode.value)
 
   let theorySum = 0
   let practiceSum = 0
@@ -145,16 +306,16 @@ const courseProgramTableHtml = computed(() => {
         </colgroup>
         <thead>
           <tr>
-            <th>Lp.</th>
-            <th>Temat szkolenia</th>
-            <th>Liczba godzin zajęć teoretycznych</th>
-            <th>Liczba godzin zajęć praktycznych</th>
+            <th>${labels.index}</th>
+            <th>${labels.subject}</th>
+            <th>${labels.theoryHours}</th>
+            <th>${labels.practiceHours}</th>
           </tr>
         </thead>
         <tbody>
           ${rowsHtml}
           <tr>
-            <td colspan="2"><strong>RAZEM</strong></td>
+            <td colspan="2"><strong>${labels.total}</strong></td>
             <td class="hour-cell"><strong>${theorySum.toFixed(1)}</strong></td>
             <td class="hour-cell"><strong>${practiceSum.toFixed(1)}</strong></td>
           </tr>
@@ -165,7 +326,7 @@ const courseProgramTableHtml = computed(() => {
 })
 
 const certificatePreviewHtml = computed(() => {
-  if (!certificate.value?.certFrontPage) {
+  if (!certificate.value || !selectedPrintVariant.value?.certFrontPage) {
     return ''
   }
 
@@ -176,14 +337,14 @@ const certificatePreviewHtml = computed(() => {
     pesel: certificate.value.studentPesel || '',
     data_urodzenia: formatPolishDate(certificate.value.studentBirthdate),
     miejsce_urodzenia: certificate.value.studentBirthplace || '',
-    nazwa_kursu: certificate.value.courseName || '',
+    nazwa_kursu: selectedPrintVariant.value.courseName || '',
     data_rozpoczecia: formatPolishDate(certificate.value.courseDateStart),
     data_zakonczenia: formatPolishDate(certificate.value.courseDateEnd),
     data_wystawienia: formatPolishDate(certificate.value.date),
     numer_zaswiadczenia: certificateNumber.value
   }
 
-  return certificate.value.certFrontPage.replace(/{{(.*?)}}/g, (_, rawTag: string) => {
+  return selectedPrintVariant.value.certFrontPage.replace(/{{(.*?)}}/g, (_, rawTag: string) => {
     const normalizedTag = rawTag.replaceAll(/\s+/g, '')
     return values[normalizedTag] ?? ''
   })
@@ -232,7 +393,7 @@ const certificatePreviewDocument = computed(() => {
         width: min(210mm, 100%);
         min-height: 297mm;
         margin: 0 auto 20px auto;
-        padding: 16mm 14mm;
+        padding: 16mm 16mm;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
         background: white;
@@ -275,7 +436,7 @@ const certificatePreviewDocument = computed(() => {
       }
 
       h1 {
-        font-size: 32px;
+        font-size: 40px;
         font-weight: 700;
         letter-spacing: 0.02em;
       }
@@ -293,7 +454,7 @@ const certificatePreviewDocument = computed(() => {
       p {
         margin: 0 0 0.4rem;
         font-size: 15px;
-        line-height: 1.45;
+        line-height: 1.25;
       }
 
       ul, ol {
@@ -363,7 +524,7 @@ const certificatePreviewDocument = computed(() => {
           width: 210mm;
           min-height: 297mm;
           margin: 0;
-          padding: 0 25mm 12mm 25mm;
+          padding: 25mm 25mm 12mm 30mm;
           border: none;
           border-radius: 0;
           box-shadow: none;
@@ -381,15 +542,15 @@ const certificatePreviewDocument = computed(() => {
         }
 
         h1 {
-          font-size: 56px;
+          font-size: 40px;
         }
 
         h2 {
-          font-size: 48px;
+          font-size: 24px;
         }
 
         h3 {
-          font-size: 17px;
+          font-size: 18px;
         }
 
         .sheet-caption {
@@ -419,11 +580,16 @@ const certificatePreviewDocument = computed(() => {
 })
 
 const certificatePreviewHeightClass = computed(() => {
-  return courseProgramEntries.value.length > 0 ? 'h-[96rem]' : 'h-[72rem]'
+  return courseProgramEntries.value.length > 0 ? 'h-[84rem]' : 'h-[58rem]'
 })
 
 const pdfDownloadUrl = computed(() => {
-  return `/api/v1/certificates/${certificateId.value}/pdf`
+  const languageCode = selectedPrintVariant.value?.languageCode
+  if (!languageCode || languageCode === certificate.value?.languageCode) {
+    return `/api/v1/certificates/${certificateId.value}/pdf`
+  }
+
+  return `/api/v1/certificates/${certificateId.value}/pdf?language=${encodeURIComponent(languageCode)}`
 })
 
 function printCertificatePreview() {
@@ -452,6 +618,13 @@ async function onDeleteCertificate() {
   }
 }
 
+async function refreshAll() {
+  await Promise.all([
+    refresh(),
+    isAdmin.value ? refreshAudit() : Promise.resolve()
+  ])
+}
+
 useSeoMeta({
   title: () => certificateNumber.value || 'Szczegół zaświadczenia'
 })
@@ -477,8 +650,8 @@ useSeoMeta({
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="outline"
-          :loading="pending"
-          @click="refresh()"
+          :loading="pending || (isAdmin && auditPending)"
+          @click="refreshAll()"
         >
           Odśwież
         </UButton>
@@ -512,6 +685,29 @@ useSeoMeta({
         >
           Usuń zaświadczenie
         </button>
+
+        <label
+          v-if="certificate?.printVariants?.length"
+          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+        >
+          <span class="text-slate-500">Wersja wydruku</span>
+          <select
+            v-model="selectedPrintLanguageCode"
+            class="min-w-[14rem] border-0 bg-transparent p-0 text-sm font-medium text-slate-900 outline-none"
+          >
+            <option
+              v-for="variant in certificate.printVariants"
+              :key="`${variant.languageCode}-${variant.isOriginal}`"
+              :value="variant.languageCode"
+            >
+              {{
+                variant.isOriginal
+                  ? `${formatLanguageLabel(variant.languageCode)} - wersja wystawiona`
+                  : `${formatLanguageLabel(variant.languageCode)} - wersja do wydruku`
+              }}
+            </option>
+          </select>
+        </label>
 
         <a
           :href="pdfDownloadUrl"
@@ -715,7 +911,26 @@ useSeoMeta({
           </section>
 
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-            <h2 class="text-lg font-semibold text-slate-900">Podgląd zaświadczenia</h2>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="space-y-1">
+                <h2 class="text-lg font-semibold text-slate-900">Podgląd zaświadczenia</h2>
+                <p class="text-sm text-slate-500">
+                  Aktualnie oglądasz {{ selectedPrintVariantOptionLabel || 'wersję wystawioną' }}.
+                </p>
+              </div>
+
+              <span
+                v-if="selectedPrintVariant"
+                class="inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium"
+                :class="
+                  selectedPrintVariant.isOriginal
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-sky-200 bg-sky-50 text-sky-700'
+                "
+              >
+                {{ selectedPrintVariant.isOriginal ? 'Wersja wystawiona' : 'Wersja do wydruku' }}
+              </span>
+            </div>
 
             <div
               v-if="certificatePreviewDocument"
@@ -812,6 +1027,16 @@ useSeoMeta({
           </section>
         </aside>
       </div>
+
+      <AuditHistoryPanel
+        v-if="isAdmin"
+        :entries="auditEntries"
+        :pending="auditPending"
+        :error-message="auditErrorMessage"
+        title="Historia zmian zaświadczenia"
+        description="Zmiany zapisane dla tego zaświadczenia, w tym operacje administracyjne i wydrukowe."
+        empty-message="Brak wpisów historii zmian dla tego zaświadczenia."
+      />
     </template>
   </section>
 </template>

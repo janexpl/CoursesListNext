@@ -78,7 +78,7 @@ const attendanceSaveSuccess = ref('')
 const savingAttendanceKey = ref<string | null>(null)
 const bulkSavingAttendeeId = ref<number | null>(null)
 const attendanceDrafts = ref<Record<string, boolean>>({})
-const sessionDrafts = ref<Record<number, { sessionDate: string; trainerName: string }>>({})
+const sessionDrafts = ref<Record<number, { sessionDate: string, trainerName: string }>>({})
 const sessionSaveErrors = ref<Record<number, string>>({})
 const sessionUpdateSuccess = ref('')
 const savingSessionId = ref<number | null>(null)
@@ -184,22 +184,22 @@ const {
 
     return response.data
   },
-  getOptionLabel: (student) => `${student.lastName} ${student.firstName}`.trim(),
-  getErrorMessage: (error) => getApiErrorMessage(error, 'Nie udało się pobrać listy kursantów.')
+  getOptionLabel: student => `${student.lastName} ${student.firstName}`.trim(),
+  getErrorMessage: error => getApiErrorMessage(error, 'Nie udało się pobrać listy kursantów.')
 })
 const alreadyAddedStudentIds = computed(() => {
-  return new Set(attendees.value.map((attendee) => attendee.studentId))
+  return new Set(attendees.value.map(attendee => attendee.studentId))
 })
 const availableStudentOptions = computed(() => {
-  return studentOptions.value.filter((student) => !alreadyAddedStudentIds.value.has(student.id))
+  return studentOptions.value.filter(student => !alreadyAddedStudentIds.value.has(student.id))
 })
 const showNoAvailableStudentResults = computed(() => {
   return (
-    showNoStudentResults.value ||
-    (trimmedStudentSearch.value.length >= 2 &&
-      !studentsPending.value &&
-      !studentSearchError.value &&
-      availableStudentOptions.value.length === 0)
+    showNoStudentResults.value
+    || (trimmedStudentSearch.value.length >= 2
+      && !studentsPending.value
+      && !studentSearchError.value
+      && availableStudentOptions.value.length === 0)
   )
 })
 
@@ -226,7 +226,7 @@ watch(
 watch(
   sessions,
   (value) => {
-    const nextDrafts: Record<number, { sessionDate: string; trainerName: string }> = {}
+    const nextDrafts: Record<number, { sessionDate: string, trainerName: string }> = {}
 
     for (const session of value) {
       nextDrafts[session.id] = {
@@ -281,28 +281,28 @@ function isApiNotFoundError(error: unknown) {
   }
 
   if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    error.response &&
-    typeof error.response === 'object' &&
-    'status' in error.response &&
-    error.response.status === 404
+    error
+    && typeof error === 'object'
+    && 'response' in error
+    && error.response
+    && typeof error.response === 'object'
+    && 'status' in error.response
+    && error.response.status === 404
   ) {
     return true
   }
 
   if (
-    error &&
-    typeof error === 'object' &&
-    'data' in error &&
-    error.data &&
-    typeof error.data === 'object' &&
-    'error' in error.data &&
-    error.data.error &&
-    typeof error.data.error === 'object' &&
-    'code' in error.data.error &&
-    error.data.error.code === 'not_found'
+    error
+    && typeof error === 'object'
+    && 'data' in error
+    && error.data
+    && typeof error.data === 'object'
+    && 'error' in error.data
+    && error.data.error
+    && typeof error.data.error === 'object'
+    && 'code' in error.data.error
+    && error.data.error.code === 'not_found'
   ) {
     return true
   }
@@ -329,7 +329,7 @@ function escapeHtml(value: string) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+    .replaceAll('\'', '&#39;')
 }
 
 function shortenAttendanceTopic(topic: string, maxLength = 40) {
@@ -341,8 +341,8 @@ function shortenAttendanceTopic(topic: string, maxLength = 40) {
 
   const shortened = normalized.slice(0, maxLength).trimEnd()
   const lastSpace = shortened.lastIndexOf(' ')
-  const safeCut =
-    lastSpace > Math.floor(maxLength * 0.6) ? shortened.slice(0, lastSpace) : shortened
+  const safeCut
+    = lastSpace > Math.floor(maxLength * 0.6) ? shortened.slice(0, lastSpace) : shortened
 
   return `${safeCut}...`
 }
@@ -393,7 +393,7 @@ function formatProgramHours(value: string | undefined) {
 }
 
 const printProgramSplitBySortOrder = computed(() => {
-  const map: Record<number, { theory: string; practice: string }> = {}
+  const map: Record<number, { theory: string, practice: string }> = {}
 
   for (const session of sessions.value) {
     const entry = printCourseProgramEntries.value[session.sortOrder - 1]
@@ -416,7 +416,7 @@ const printProgramSplitBySortOrder = computed(() => {
 })
 
 const attendancePrintDays = computed(() => {
-  const days = new Map<string, { date: string; totalHours: number }>()
+  const days = new Map<string, { date: string, totalHours: number }>()
 
   for (const session of sessions.value) {
     const dateKey = session.sessionDate || ''
@@ -447,8 +447,8 @@ const attendancePrintDays = computed(() => {
 
 function certificateMatchesJournal(certificate: StudentCertificateSummary) {
   return (
-    certificate.courseSymbol === journal.value?.courseSymbol ||
-    certificate.courseName === journal.value?.courseName
+    certificate.courseSymbol === journal.value?.courseSymbol
+    || certificate.courseName === journal.value?.courseName
   )
 }
 
@@ -483,7 +483,7 @@ function onSelectAttendanceScanFile(file: File | null) {
   attendanceScanFile.value = file
 }
 
-function onUpdateAttendeeCertificateDraft(payload: { attendeeId: number; value: string }) {
+function onUpdateAttendeeCertificateDraft(payload: { attendeeId: number, value: string }) {
   attendeeCertificateDrafts.value = {
     ...attendeeCertificateDrafts.value,
     [payload.attendeeId]: payload.value
@@ -652,7 +652,7 @@ const journalPrintDocument = computed(() => {
 
   const participantRowsHtml = attendees.value
     .map(
-      (attendee) => `
+      attendee => `
       <tr>
         <td>${attendee.sortOrder}</td>
         <td>${escapeHtml(attendee.fullNameSnapshot)}</td>
@@ -666,7 +666,7 @@ const journalPrintDocument = computed(() => {
 
   const programRowsHtml = sessions.value
     .map(
-      (session) => `
+      session => `
       <tr>
         <td>${session.sortOrder}</td>
         <td>${escapeHtml(formatPrintDate(session.sessionDate))}</td>
@@ -681,7 +681,7 @@ const journalPrintDocument = computed(() => {
 
   const standardAttendanceHeadHtml = sessions.value
     .map(
-      (session) => `
+      session => `
       <th title="${escapeHtml(session.topic)}">
         <div class="attendance-heading">
           <div>${session.sortOrder}</div>
@@ -695,12 +695,12 @@ const journalPrintDocument = computed(() => {
 
   const standardAttendanceRowsHtml = attendees.value
     .map(
-      (attendee) => `
+      attendee => `
       <tr>
         <td class="attendee-cell">${escapeHtml(attendee.fullNameSnapshot)}</td>
         ${sessions.value
           .map(
-            (session) =>
+            session =>
               `<td class="text-center">${attendanceValue(session.id, attendee.id) ? 'X' : ''}</td>`
           )
           .join('')}
@@ -1030,7 +1030,7 @@ const attendanceListPrintDocument = computed(() => {
 
   const attendanceHeadHtml = attendancePrintDays.value
     .map(
-      (day) => `
+      day => `
       <th>
         <div class="attendance-heading">
           <div>Dzień ${day.order}</div>
@@ -1044,7 +1044,7 @@ const attendanceListPrintDocument = computed(() => {
 
   const attendeeRowsHtml = attendees.value
     .map(
-      (attendee) => `
+      attendee => `
       <tr>
         <td class="attendee-cell">${escapeHtml(attendee.fullNameSnapshot)}</td>
         ${attendancePrintDays.value
@@ -1343,8 +1343,8 @@ async function onCloseJournal() {
       refreshSessions(),
       refreshAttendance()
     ])
-    closeJournalSuccess.value =
-      'Dziennik został zamknięty. Możesz go teraz wydrukować jako finalną wersję.'
+    closeJournalSuccess.value
+      = 'Dziennik został zamknięty. Możesz go teraz wydrukować jako finalną wersję.'
   } catch (error) {
     closeJournalError.value = getApiErrorMessage(error, 'Nie udało się zamknąć dziennika.')
   } finally {
@@ -1422,7 +1422,7 @@ async function onStartAttendeeCertificateEdit(attendee: JournalAttendee) {
     const response = await api.studentCertificates(attendee.studentId)
     attendeeCertificateOptions.value = {
       ...attendeeCertificateOptions.value,
-      [attendee.id]: response.data.filter((certificate) => certificateMatchesJournal(certificate))
+      [attendee.id]: response.data.filter(certificate => certificateMatchesJournal(certificate))
     }
   } catch (error) {
     attendeeCertificateError.value = getApiErrorMessage(
@@ -1471,8 +1471,9 @@ async function onSaveAttendeeCertificate(attendee: JournalAttendee) {
 
   const rawValue = attendeeCertificateDrafts.value[attendee.id] ?? ''
   const certificateId = rawValue ? Number.parseInt(rawValue, 10) : null
+  const hasValidCertificateId = typeof certificateId === 'number' && Number.isFinite(certificateId) && certificateId > 0
 
-  if (rawValue && (!Number.isFinite(certificateId) || certificateId <= 0)) {
+  if (rawValue && !hasValidCertificateId) {
     attendeeCertificateError.value = 'Wybierz poprawne zaświadczenie.'
     savingAttendeeCertificateId.value = null
     return
@@ -1609,13 +1610,13 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
   attendanceSaveSuccess.value = ''
   bulkSavingAttendeeId.value = attendeeId
 
-  const previousValues = sessions.value.map((session) => ({
+  const previousValues = sessions.value.map(session => ({
     key: attendanceKey(session.id, attendeeId),
     value: attendanceValue(session.id, attendeeId)
   }))
 
   const changedSessions = sessions.value.filter(
-    (session) => attendanceValue(session.id, attendeeId) !== present
+    session => attendanceValue(session.id, attendeeId) !== present
   )
 
   if (changedSessions.length === 0) {

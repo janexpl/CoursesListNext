@@ -1,6 +1,7 @@
 package students
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -14,13 +15,32 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 )
 
-type Handler struct {
-	queries *dbsqlc.Queries
+type Querier interface {
+	GetStudentByID(ctx context.Context, id int64) (dbsqlc.GetStudentByIDRow, error)
+	ListStudents(ctx context.Context, arg dbsqlc.ListStudentsParams) ([]dbsqlc.ListStudentsRow, error)
+	ListCertificatesByStudentID(ctx context.Context, studentID int32) ([]dbsqlc.ListCertificatesByStudentIDRow, error)
+	ListStudentsByCompanyID(ctx context.Context, companyID pgtype.Int8) ([]dbsqlc.ListStudentsByCompanyIDRow, error)
 }
 
-func NewHandler(queries *dbsqlc.Queries) *Handler {
+type Creator interface {
+	Create(ctx context.Context, req CreateStudentRequest) (StudentDetailsDTO, error)
+	Update(ctx context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error)
+}
+
+type Handler struct {
+	querier Querier
+	creator Creator
+}
+
+func NewHandler(querier Querier, creators ...Creator) *Handler {
+	var creator Creator
+	if len(creators) > 0 {
+		creator = creators[0]
+	}
+
 	return &Handler{
-		queries: queries,
+		querier: querier,
+		creator: creator,
 	}
 }
 
@@ -31,33 +51,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	student, err := h.queries.GetStudentByID(r.Context(), id)
+	student, err := h.querier.GetStudentByID(r.Context(), id)
 	if err != nil {
 		response.HandleDBError(w, err, "student")
 		return
 	}
 
-	dto := StudentDetailsDTO{
-		ID:            student.ID,
-		FirstName:     student.Firstname,
-		LastName:      student.Lastname,
-		BirthDate:     student.Birthdate.Time.Format(response.DateFormat),
-		BirthPlace:    student.Birthplace,
-		Pesel:         pgutil.NullableString(student.Pesel),
-		AddressStreet: pgutil.NullableString(student.Addressstreet),
-		AddressCity:   pgutil.NullableString(student.Addresscity),
-		AddressZip:    pgutil.NullableString(student.Addresszip),
-		Telephone:     pgutil.NullableString(student.Telephoneno),
-		SecondName:    pgutil.NullableString(student.Secondname),
-	}
-	if student.CompanyID.Valid && student.CompanyName.Valid {
-		dto.Company = &CompanyDTO{
-			ID:   student.CompanyID.Int64,
-			Name: student.CompanyName.String,
-		}
-	}
-
-	resp := StudentDetailsResponse{Data: dto}
+	resp := StudentDetailsResponse{Data: mapStudentGetRow(student)}
 	response.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -85,7 +85,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.queries.ListStudents(r.Context(), dbsqlc.ListStudentsParams{
+	rows, err := h.querier.ListStudents(r.Context(), dbsqlc.ListStudentsParams{
 		Search:     pgSearch,
 		CompanyID:  cIDint,
 		LimitCount: limitInt,
@@ -117,7 +117,7 @@ func (h *Handler) ListCertificatesByStudent(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rows, err := h.queries.ListCertificatesByStudentID(r.Context(), int32(id))
+	rows, err := h.querier.ListCertificatesByStudentID(r.Context(), int32(id))
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list certificates for student")
 		return
@@ -143,7 +143,7 @@ func (h *Handler) ListStudentsByCompanyId(w http.ResponseWriter, r *http.Request
 		Valid: true,
 	}
 
-	rows, err := h.queries.ListStudentsByCompanyID(r.Context(), idPgType)
+	rows, err := h.querier.ListStudentsByCompanyID(r.Context(), idPgType)
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list students")
 		return
@@ -186,31 +186,31 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
-	date, err := time.Parse(response.DateFormat, birthDate)
-	if err != nil {
+	if _, err := time.Parse(response.DateFormat, birthDate); err != nil {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
-	row, err := h.queries.UpdateStudent(r.Context(), dbsqlc.UpdateStudentParams{
-		Firstname:     firstName,
-		Lastname:      lastName,
-		Secondname:    pgutil.OptionalText(req.SecondName),
-		Birthdate:     pgtype.Date{Time: date, InfinityModifier: 0, Valid: true},
-		Birthplace:    birthPlace,
-		Pesel:         pgutil.OptionalText(req.Pesel),
-		Addressstreet: pgutil.OptionalText(req.AddressStreet),
-		Addresscity:   pgutil.OptionalText(req.AddressCity),
-		Addresszip:    pgutil.OptionalText(req.AddressZip),
-		Telephoneno:   pgutil.OptionalText(req.Telephone),
-		CompanyID:     pgutil.OptionalInt8(req.CompanyID),
-		StudentID:     idInt,
+	row, err := h.creator.Update(r.Context(), idInt, UpdateStudentRequest{
+		studentPayload: studentPayload{
+			FirstName:     firstName,
+			LastName:      lastName,
+			SecondName:    req.SecondName,
+			BirthDate:     birthDate,
+			BirthPlace:    birthPlace,
+			Pesel:         req.Pesel,
+			AddressStreet: req.AddressStreet,
+			AddressCity:   req.AddressCity,
+			AddressZip:    req.AddressZip,
+			Telephone:     req.Telephone,
+			CompanyID:     req.CompanyID,
+		},
 	})
 	if err != nil {
 		response.HandleDBError(w, err, "student")
 		return
 	}
 	resp := StudentDetailsResponse{
-		Data: mapStudentDetailsRow(row),
+		Data: row,
 	}
 	response.WriteJSON(w, http.StatusOK, resp)
 
@@ -239,24 +239,25 @@ func (h *Handler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	date, err := time.Parse(response.DateFormat, birthDate)
-	if err != nil {
+	if _, err := time.Parse(response.DateFormat, birthDate); err != nil {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
 
-	row, err := h.queries.CreateStudent(r.Context(), dbsqlc.CreateStudentParams{
-		Firstname:     firstName,
-		Lastname:      lastName,
-		Secondname:    pgutil.OptionalText(req.SecondName),
-		Birthdate:     pgtype.Date{Time: date, InfinityModifier: 0, Valid: true},
-		Birthplace:    birthPlace,
-		Pesel:         pgutil.OptionalText(req.Pesel),
-		Addressstreet: pgutil.OptionalText(req.AddressStreet),
-		Addresscity:   pgutil.OptionalText(req.AddressCity),
-		Addresszip:    pgutil.OptionalText(req.AddressZip),
-		Telephoneno:   pgutil.OptionalText(req.Telephone),
-		CompanyID:     pgutil.OptionalInt8(req.CompanyID),
+	row, err := h.creator.Create(r.Context(), CreateStudentRequest{
+		studentPayload: studentPayload{
+			FirstName:     firstName,
+			LastName:      lastName,
+			SecondName:    req.SecondName,
+			BirthDate:     birthDate,
+			BirthPlace:    birthPlace,
+			Pesel:         req.Pesel,
+			AddressStreet: req.AddressStreet,
+			AddressCity:   req.AddressCity,
+			AddressZip:    req.AddressZip,
+			Telephone:     req.Telephone,
+			CompanyID:     req.CompanyID,
+		},
 	})
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create student")
@@ -264,7 +265,7 @@ func (h *Handler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusCreated, StudentDetailsResponse{
-		Data: mapCreateStudentRow(row),
+		Data: row,
 	})
 
 }

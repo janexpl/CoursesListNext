@@ -142,12 +142,17 @@ const createStudentError = ref('')
 let courseSearchTimer: ReturnType<typeof setTimeout> | undefined
 let courseRequestId = 0
 
-function readQueryValue(value: string | string[] | undefined) {
+function readQueryValue(value: string | null | Array<string | null> | undefined) {
   if (Array.isArray(value)) {
-    return value[0] ?? ''
+    return value.find((entry): entry is string => typeof entry === 'string') ?? ''
   }
 
   return value ?? ''
+}
+
+function optionalValue(value: string) {
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
 }
 
 async function fetchCourses(query: string) {

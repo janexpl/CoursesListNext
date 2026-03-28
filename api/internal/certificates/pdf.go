@@ -18,16 +18,26 @@ type courseProgramEntry struct {
 	PracticeTime string `json:"PracticeTime"`
 }
 
+type courseProgramPageLabels struct {
+	Index            string
+	Subject          string
+	TheoryHours      string
+	PracticeHours    string
+	Total            string
+	HTMLLanguageCode string
+}
+
 var certificatePlaceholderPattern = regexp.MustCompile(`{{(.*?)}}`)
 
 var renderCertificatePDF = pdfutil.RenderHTMLToPDF
 
 func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
 	front := substituteCertificateTemplate(certificate)
-	back := buildCourseProgramPage(certificate.CourseProgram)
+	back := buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode)
+	labels := getCourseProgramPageLabels(certificate.LanguageCode)
 
 	return `<!doctype html>
-<html lang="pl">
+<html lang="` + labels.HTMLLanguageCode + `">
 <head>
   <meta charset="utf-8">
   <title>ZAŚWIADCZENIE</title>
@@ -48,7 +58,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     body {
       display: block;
       margin: 15mm;
-      padding: 14mm 12mm;
+      padding: 14mm 16mm;
       line-height: 1.4;
     }
 
@@ -73,25 +83,25 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     }
 
     h1 {
-      font-size: 28px;
+      font-size: 48px;
       font-weight: 700;
       letter-spacing: 0.02em;
     }
 
     h2 {
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 700;
     }
 
     h3 {
-      font-size: 17px;
+      font-size: 18px;
       font-weight: 700;
     }
 
     p {
       margin: 0 0 0.32rem;
       font-size: 14px;
-      line-height: 1.45;
+      line-height: 1.25;
     }
 
     ul, ol {
@@ -161,7 +171,7 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) strin
 		"numer_zaswiadczenia": buildCertificateNumber(certificate.RegistryNumber, certificate.CourseSymbol, certificate.RegistryYear),
 	}
 
-	return certificatePlaceholderPattern.ReplaceAllStringFunc(certificate.CertFrontPage.String, func(token string) string {
+	return certificatePlaceholderPattern.ReplaceAllStringFunc(certificate.CertFrontPage, func(token string) string {
 		matches := certificatePlaceholderPattern.FindStringSubmatch(token)
 		if len(matches) != 2 {
 			return ""
@@ -172,10 +182,12 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) strin
 	})
 }
 
-func buildCourseProgramPage(raw string) string {
+func buildCourseProgramPage(raw string, languageCode string) string {
 	if raw == "" {
 		return ""
 	}
+
+	labels := getCourseProgramPageLabels(languageCode)
 
 	var entries []courseProgramEntry
 	if err := json.Unmarshal([]byte(raw), &entries); err != nil || len(entries) == 0 {
@@ -204,7 +216,8 @@ func buildCourseProgramPage(raw string) string {
 	}
 
 	rows.WriteString(fmt.Sprintf(
-		"<tr><td colspan='2'>RAZEM</td><td class='hour'>%.1f</td><td class='hour'>%.1f</td></tr>",
+		"<tr><td colspan='2'>%s</td><td class='hour'>%.1f</td><td class='hour'>%.1f</td></tr>",
+		html.EscapeString(labels.Total),
 		theorySum,
 		practiceSum,
 	))
@@ -221,14 +234,82 @@ func buildCourseProgramPage(raw string) string {
   </colgroup>
   <thead>
     <tr>
-      <th>Lp.</th>
-      <th>Temat szkolenia</th>
-      <th>Liczba godzin zajęć teoretycznych (wykładów)</th>
-      <th>Liczba godzin zajęć praktycznych (ćwiczeń)</th>
+	      <th>` + html.EscapeString(labels.Index) + `</th>
+	      <th>` + html.EscapeString(labels.Subject) + `</th>
+	      <th>` + html.EscapeString(labels.TheoryHours) + `</th>
+	      <th>` + html.EscapeString(labels.PracticeHours) + `</th>
     </tr>
   </thead>
   <tbody>` + rows.String() + `</tbody>
 </table>`
+}
+
+func getCourseProgramPageLabels(languageCode string) courseProgramPageLabels {
+	switch strings.ToLower(strings.TrimSpace(languageCode)) {
+	case "en":
+		return courseProgramPageLabels{
+			Index:            "No.",
+			Subject:          "Training topic",
+			TheoryHours:      "Theory hours",
+			PracticeHours:    "Practical hours",
+			Total:            "TOTAL",
+			HTMLLanguageCode: "en",
+		}
+	case "de":
+		return courseProgramPageLabels{
+			Index:            "Nr.",
+			Subject:          "Schulungsthema",
+			TheoryHours:      "Theoriestunden",
+			PracticeHours:    "Praxisstunden",
+			Total:            "SUMME",
+			HTMLLanguageCode: "de",
+		}
+	case "uk":
+		return courseProgramPageLabels{
+			Index:            "№",
+			Subject:          "Тема навчання",
+			TheoryHours:      "Теоретичні години",
+			PracticeHours:    "Практичні години",
+			Total:            "РАЗОМ",
+			HTMLLanguageCode: "uk",
+		}
+	case "cs":
+		return courseProgramPageLabels{
+			Index:            "Č.",
+			Subject:          "Téma školení",
+			TheoryHours:      "Teoretické hodiny",
+			PracticeHours:    "Praktické hodiny",
+			Total:            "CELKEM",
+			HTMLLanguageCode: "cs",
+		}
+	case "sk":
+		return courseProgramPageLabels{
+			Index:            "Č.",
+			Subject:          "Téma školenia",
+			TheoryHours:      "Teoretické hodiny",
+			PracticeHours:    "Praktické hodiny",
+			Total:            "SPOLU",
+			HTMLLanguageCode: "sk",
+		}
+	case "lt":
+		return courseProgramPageLabels{
+			Index:            "Nr.",
+			Subject:          "Mokymo tema",
+			TheoryHours:      "Teorijos valandos",
+			PracticeHours:    "Praktikos valandos",
+			Total:            "IŠ VISO",
+			HTMLLanguageCode: "lt",
+		}
+	default:
+		return courseProgramPageLabels{
+			Index:            "Lp.",
+			Subject:          "Temat szkolenia",
+			TheoryHours:      "Liczba godzin zajęć teoretycznych (wykładów)",
+			PracticeHours:    "Liczba godzin zajęć praktycznych (ćwiczeń)",
+			Total:            "RAZEM",
+			HTMLLanguageCode: "pl",
+		}
+	}
 }
 
 func formatPolishDate(value pgtype.Date) string {

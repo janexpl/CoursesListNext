@@ -25,6 +25,9 @@ type fakeQuerier struct {
 
 type fakeCreator struct {
 	createFunc               func(ctx context.Context, req CreateUserRequest) (UserDTO, error)
+	updateFunc               func(ctx context.Context, userID int64, req UpdateUserRequest) (UserDTO, error)
+	updateProfileFunc        func(ctx context.Context, req UpdateProfileRequest) (UserDTO, error)
+	deleteFunc               func(ctx context.Context, userID int64) (int64, error)
 	patchPasswordFunc        func(ctx context.Context, req UpdatePasswordRequest) error
 	patchPasswordByAdminFunc func(ctx context.Context, userID int64, newPassword string) error
 }
@@ -69,6 +72,27 @@ func (f fakeCreator) Create(ctx context.Context, req CreateUserRequest) (UserDTO
 		return UserDTO{}, errors.New("unexpected Create call")
 	}
 	return f.createFunc(ctx, req)
+}
+
+func (f fakeCreator) Update(ctx context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+	if f.updateFunc == nil {
+		return UserDTO{}, errors.New("unexpected Update call")
+	}
+	return f.updateFunc(ctx, userID, req)
+}
+
+func (f fakeCreator) UpdateProfile(ctx context.Context, req UpdateProfileRequest) (UserDTO, error) {
+	if f.updateProfileFunc == nil {
+		return UserDTO{}, errors.New("unexpected UpdateProfile call")
+	}
+	return f.updateProfileFunc(ctx, req)
+}
+
+func (f fakeCreator) Delete(ctx context.Context, userID int64) (int64, error) {
+	if f.deleteFunc == nil {
+		return 0, errors.New("unexpected Delete call")
+	}
+	return f.deleteFunc(ctx, userID)
 }
 
 func (f fakeCreator) PatchPassword(ctx context.Context, req UpdatePasswordRequest) error {
@@ -297,27 +321,14 @@ func TestListReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 }
 
 func TestDeleteReturnsDeletedUserResponse(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			if id != 15 {
-				t.Fatalf("expected target id 15, got %d", id)
-			}
-			return sqlc.User{
-				ID:   15,
-				Role: 2,
-			}, nil
-		},
-		deleteUserFunc: func(_ context.Context, id int64) (int64, error) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, id int64) (int64, error) {
 			if id != 15 {
 				t.Fatalf("expected delete id 15, got %d", id)
 			}
 			return 1, nil
 		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
-			t.Fatalf("CountAdminUsers should not be called for non-admin target, got role %d", role)
-			return 0, nil
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -344,12 +355,12 @@ func TestDeleteReturnsDeletedUserResponse(t *testing.T) {
 }
 
 func TestDeleteReturnsBadRequestForInvalidID(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for invalid id, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
+			t.Fatalf("Delete should not be called for invalid id, got %d", userID)
+			return 0, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -361,12 +372,11 @@ func TestDeleteReturnsBadRequestForInvalidID(t *testing.T) {
 }
 
 func TestDeleteReturnsUnauthorizedWithoutUserInContext(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called without current user, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
+			return 0, ErrUnauthorized
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -378,12 +388,11 @@ func TestDeleteReturnsUnauthorizedWithoutUserInContext(t *testing.T) {
 }
 
 func TestDeleteReturnsForbiddenForCurrentUser(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for self-delete, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
+			return 0, ErrCannotDeleteCurrentUser
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/1", nil)
 	req.SetPathValue("id", "1")
@@ -399,11 +408,11 @@ func TestDeleteReturnsForbiddenForCurrentUser(t *testing.T) {
 }
 
 func TestDeleteReturnsNotFoundWhenUserDoesNotExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{}, pgx.ErrNoRows
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
+			return 0, pgx.ErrNoRows
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -419,24 +428,11 @@ func TestDeleteReturnsNotFoundWhenUserDoesNotExist(t *testing.T) {
 }
 
 func TestDeleteReturnsForbiddenWhenDeletingLastAdmin(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: auth.RoleAdmin,
-			}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
+			return 0, ErrCannotDeleteLastAdmin
 		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
-			if role != auth.RoleAdmin {
-				t.Fatalf("expected admin role %d, got %d", auth.RoleAdmin, role)
-			}
-			return 1, nil
-		},
-		deleteUserFunc: func(_ context.Context, id int64) (int64, error) {
-			t.Fatalf("DeleteUser should not be called for last admin, got %d", id)
-			return 0, nil
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -452,17 +448,11 @@ func TestDeleteReturnsForbiddenWhenDeletingLastAdmin(t *testing.T) {
 }
 
 func TestDeleteReturnsInternalServerErrorWhenCountAdminsFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: auth.RoleAdmin,
-			}, nil
-		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
 			return 0, errors.New("db error")
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -478,17 +468,11 @@ func TestDeleteReturnsInternalServerErrorWhenCountAdminsFails(t *testing.T) {
 }
 
 func TestDeleteReturnsInternalServerErrorWhenDeleteFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: 2,
-			}, nil
-		},
-		deleteUserFunc: func(_ context.Context, id int64) (int64, error) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		deleteFunc: func(_ context.Context, userID int64) (int64, error) {
 			return 0, errors.New("db error")
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/15", nil)
 	req.SetPathValue("id", "15")
@@ -504,33 +488,20 @@ func TestDeleteReturnsInternalServerErrorWhenDeleteFails(t *testing.T) {
 }
 
 func TestPatchReturnsUpdatedUserResponse(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			if id != 15 {
-				t.Fatalf("expected target id 15, got %d", id)
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			if userID != 15 || req.Email != "edited@example.com" || req.Firstname != "Jan" || req.Lastname != "Nowak" || req.Role != 2 {
+				t.Fatalf("unexpected update request: userID=%d req=%+v", userID, req)
 			}
-			return sqlc.User{
-				ID:   15,
-				Role: 2,
-			}, nil
-		},
-		updateUserFunc: func(_ context.Context, arg sqlc.UpdateUserParams) (sqlc.UpdateUserRow, error) {
-			if arg.ID != 15 || arg.Email != "edited@example.com" || arg.Firstname != "Jan" || arg.Lastname != "Nowak" || arg.Role != 2 {
-				t.Fatalf("unexpected update params: %+v", arg)
-			}
-			return sqlc.UpdateUserRow{
+			return UserDTO{
 				ID:        15,
-				Email:     arg.Email,
-				Firstname: arg.Firstname,
-				Lastname:  arg.Lastname,
-				Role:      arg.Role,
+				Email:     req.Email,
+				Firstname: req.Firstname,
+				Lastname:  req.Lastname,
+				Role:      req.Role,
 			}, nil
 		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
-			t.Fatalf("CountAdminUsers should not be called for non-admin target, got role %d", role)
-			return 0, nil
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": " edited@example.com ",
@@ -566,12 +537,12 @@ func TestPatchReturnsUpdatedUserResponse(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForInvalidID(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for invalid id, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			t.Fatalf("Update should not be called for invalid id, got %d %+v", userID, req)
+			return UserDTO{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/abc", strings.NewReader(`{}`))
 	req.SetPathValue("id", "abc")
@@ -583,12 +554,12 @@ func TestPatchReturnsBadRequestForInvalidID(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for invalid JSON, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			t.Fatalf("Update should not be called for invalid JSON, got %d %+v", userID, req)
+			return UserDTO{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{`))
 	req.SetPathValue("id", "15")
@@ -600,12 +571,12 @@ func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForMissingRequiredFields(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for invalid body, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			t.Fatalf("Update should not be called for invalid body, got %d %+v", userID, req)
+			return UserDTO{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "",
@@ -622,12 +593,12 @@ func TestPatchReturnsBadRequestForMissingRequiredFields(t *testing.T) {
 }
 
 func TestPatchReturnsBadRequestForUnknownField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called for unknown field, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			t.Fatalf("Update should not be called for unknown field, got %d %+v", userID, req)
+			return UserDTO{}, nil
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -645,12 +616,11 @@ func TestPatchReturnsBadRequestForUnknownField(t *testing.T) {
 }
 
 func TestPatchReturnsUnauthorizedWithoutUserInContext(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			t.Fatalf("GetUserByID should not be called without current user, got %d", id)
-			return sqlc.User{}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, ErrUnauthorized
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -667,11 +637,11 @@ func TestPatchReturnsUnauthorizedWithoutUserInContext(t *testing.T) {
 }
 
 func TestPatchReturnsNotFoundWhenUserDoesNotExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{}, pgx.ErrNoRows
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, pgx.ErrNoRows
 		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -692,24 +662,11 @@ func TestPatchReturnsNotFoundWhenUserDoesNotExist(t *testing.T) {
 }
 
 func TestPatchReturnsForbiddenWhenUpdatingLastAdminRole(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: auth.RoleAdmin,
-			}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, ErrCannotUpdateLastAdminRole
 		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
-			if role != auth.RoleAdmin {
-				t.Fatalf("expected role %d, got %d", auth.RoleAdmin, role)
-			}
-			return 1, nil
-		},
-		updateUserFunc: func(_ context.Context, arg sqlc.UpdateUserParams) (sqlc.UpdateUserRow, error) {
-			t.Fatalf("UpdateUser should not be called when demoting last admin, got %+v", arg)
-			return sqlc.UpdateUserRow{}, nil
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -730,17 +687,11 @@ func TestPatchReturnsForbiddenWhenUpdatingLastAdminRole(t *testing.T) {
 }
 
 func TestPatchReturnsInternalServerErrorWhenCountAdminsFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: auth.RoleAdmin,
-			}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, errors.New("db error")
 		},
-		countAdminUsersFunc: func(_ context.Context, role int32) (int64, error) {
-			return 0, errors.New("db error")
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -761,17 +712,11 @@ func TestPatchReturnsInternalServerErrorWhenCountAdminsFails(t *testing.T) {
 }
 
 func TestPatchReturnsNotFoundWhenUpdateQueryDoesNotFindUser(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: 2,
-			}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, pgx.ErrNoRows
 		},
-		updateUserFunc: func(_ context.Context, arg sqlc.UpdateUserParams) (sqlc.UpdateUserRow, error) {
-			return sqlc.UpdateUserRow{}, pgx.ErrNoRows
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",
@@ -792,17 +737,11 @@ func TestPatchReturnsNotFoundWhenUpdateQueryDoesNotFindUser(t *testing.T) {
 }
 
 func TestPatchReturnsInternalServerErrorWhenUpdateFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
-		getUserByIDFunc: func(_ context.Context, id int64) (sqlc.User, error) {
-			return sqlc.User{
-				ID:   15,
-				Role: 2,
-			}, nil
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(_ context.Context, userID int64, req UpdateUserRequest) (UserDTO, error) {
+			return UserDTO{}, errors.New("db error")
 		},
-		updateUserFunc: func(_ context.Context, arg sqlc.UpdateUserParams) (sqlc.UpdateUserRow, error) {
-			return sqlc.UpdateUserRow{}, errors.New("db error")
-		},
-	}, nil)
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/15", strings.NewReader(`{
 		"email": "edited@example.com",

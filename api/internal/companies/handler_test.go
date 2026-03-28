@@ -17,22 +17,22 @@ import (
 )
 
 type fakeDB struct {
-	query    func(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	queryRow func(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	query    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	queryRow func(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func (f fakeDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+func (f fakeDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, errors.New("unexpected exec call")
 }
 
-func (f fakeDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+func (f fakeDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if f.query == nil {
 		return nil, errors.New("unexpected query call")
 	}
 	return f.query(ctx, sql, args...)
 }
 
-func (f fakeDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+func (f fakeDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	if f.queryRow == nil {
 		return fakeRow{err: errors.New("unexpected query row call")}
 	}
@@ -44,7 +44,7 @@ type fakeRow struct {
 	scan func(dest ...any) error
 }
 
-func (r fakeRow) Scan(dest ...interface{}) error {
+func (r fakeRow) Scan(dest ...any) error {
 	if r.scan != nil {
 		return r.scan(dest...)
 	}
@@ -55,6 +55,11 @@ type fakeRows struct {
 	index int
 	scans []func(dest ...any) error
 	err   error
+}
+
+type fakeCreator struct {
+	createFunc func(ctx context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error)
+	updateFunc func(ctx context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error)
 }
 
 func (r *fakeRows) Close() {}
@@ -96,6 +101,24 @@ func (r *fakeRows) RawValues() [][]byte {
 
 func (r *fakeRows) Conn() *pgx.Conn {
 	return nil
+}
+
+func (f fakeCreator) Create(ctx context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error) {
+	if f.createFunc == nil {
+		return CompanyDetailsDTO{}, errors.New("unexpected Create call")
+	}
+	return f.createFunc(ctx, req)
+}
+
+func (f fakeCreator) Update(ctx context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+	if f.updateFunc == nil {
+		return CompanyDetailsDTO{}, errors.New("unexpected Update call")
+	}
+	return f.updateFunc(ctx, companyID, req)
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
@@ -144,7 +167,7 @@ func TestListReturnsCompaniesResponse(t *testing.T) {
 	}
 
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+		query: func(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
 			if len(args) != 2 {
 				t.Fatalf("expected 2 query args, got %d", len(args))
 			}
@@ -209,7 +232,7 @@ func TestListReturnsCompaniesResponse(t *testing.T) {
 
 func TestListReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+		query: func(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
 			if len(args) != 2 {
 				t.Fatalf("expected 2 query args, got %d", len(args))
 			}
@@ -227,7 +250,7 @@ func TestListReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 
 func TestListReturnsBadRequestForInvalidLimit(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		query: func(context.Context, string, ...interface{}) (pgx.Rows, error) {
+		query: func(context.Context, string, ...any) (pgx.Rows, error) {
 			t.Fatal("query should not be called for invalid limit")
 			return nil, nil
 		},
@@ -243,7 +266,7 @@ func TestListReturnsBadRequestForInvalidLimit(t *testing.T) {
 
 func TestListReturnsBadRequestForOutOfRangeLimit(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		query: func(context.Context, string, ...interface{}) (pgx.Rows, error) {
+		query: func(context.Context, string, ...any) (pgx.Rows, error) {
 			t.Fatal("query should not be called for invalid limit")
 			return nil, nil
 		},
@@ -261,7 +284,7 @@ func TestListPassesFiltersToQuery(t *testing.T) {
 	rows := &fakeRows{}
 
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+		query: func(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
 			if len(args) != 2 {
 				t.Fatalf("expected 2 query args, got %d", len(args))
 			}
@@ -292,7 +315,7 @@ func TestListPassesFiltersToQuery(t *testing.T) {
 
 func TestGetReturnsCompanyDetailsResponse(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, args ...any) pgx.Row {
 			if len(args) != 1 {
 				t.Fatalf("expected 1 query arg, got %d", len(args))
 			}
@@ -367,7 +390,7 @@ func TestGetReturnsBadRequestForInvalidCompanyID(t *testing.T) {
 
 func TestGetReturnsNotFoundWhenCompanyDoesNotExist(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
+		queryRow: func(context.Context, string, ...any) pgx.Row {
 			return fakeRow{err: pgx.ErrNoRows}
 		},
 	}))
@@ -383,7 +406,7 @@ func TestGetReturnsNotFoundWhenCompanyDoesNotExist(t *testing.T) {
 
 func TestGetReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
+		queryRow: func(context.Context, string, ...any) pgx.Row {
 			return fakeRow{err: errors.New("db error")}
 		},
 	}))
@@ -398,67 +421,31 @@ func TestGetReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 }
 
 func TestPatchReturnsUpdatedCompanyResponse(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
-			if len(args) != 10 {
-				t.Fatalf("expected 10 query args, got %d", len(args))
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			if companyID != 15 {
+				t.Fatalf("expected company id 15, got %d", companyID)
 			}
-
-			if got, ok := args[0].(int64); !ok || got != 15 {
-				t.Fatalf("expected company id 15, got %+v", args[0])
+			if req.Name != "ABC Sp. z o.o." || req.Street != "Koszykowa 1" || req.City != "Warszawa" || req.Zipcode != "00-001" || req.Nip != "1234567890" || req.Telephone != "500600700" {
+				t.Fatalf("unexpected update request: %+v", req)
 			}
-			if got, ok := args[1].(string); !ok || got != "ABC Sp. z o.o." {
-				t.Fatalf("expected trimmed name, got %+v", args[1])
+			if req.Email == nil || *req.Email != "  biuro@abc.pl " {
+				t.Fatalf("expected raw email pointer, got %+v", req.Email)
 			}
-			if got, ok := args[2].(string); !ok || got != "Koszykowa 1" {
-				t.Fatalf("expected trimmed street, got %+v", args[2])
-			}
-			if got, ok := args[3].(string); !ok || got != "Warszawa" {
-				t.Fatalf("expected trimmed city, got %+v", args[3])
-			}
-			if got, ok := args[4].(string); !ok || got != "00-001" {
-				t.Fatalf("expected trimmed zipcode, got %+v", args[4])
-			}
-			if got, ok := args[5].(string); !ok || got != "1234567890" {
-				t.Fatalf("expected trimmed nip, got %+v", args[5])
-			}
-
-			emailArg, ok := args[6].(pgtype.Text)
-			if !ok || !emailArg.Valid || emailArg.String != "biuro@abc.pl" {
-				t.Fatalf("expected email arg to be valid, got %+v", args[6])
-			}
-
-			contactArg, ok := args[7].(pgtype.Text)
-			if !ok || !contactArg.Valid || contactArg.String != "Jan Nowak" {
-				t.Fatalf("expected contact arg to be valid, got %+v", args[7])
-			}
-
-			if got, ok := args[8].(string); !ok || got != "500600700" {
-				t.Fatalf("expected trimmed telephone, got %+v", args[8])
-			}
-
-			noteArg, ok := args[9].(pgtype.Text)
-			if !ok || !noteArg.Valid || noteArg.String != "Kluczowy klient" {
-				t.Fatalf("expected note arg to be valid, got %+v", args[9])
-			}
-
-			return fakeRow{
-				scan: func(dest ...any) error {
-					*(dest[0].(*int64)) = 15
-					*(dest[1].(*string)) = "ABC Sp. z o.o."
-					*(dest[2].(*string)) = "Koszykowa 1"
-					*(dest[3].(*string)) = "Warszawa"
-					*(dest[4].(*string)) = "00-001"
-					*(dest[5].(*string)) = "1234567890"
-					*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "biuro@abc.pl", Valid: true}
-					*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
-					*(dest[8].(*string)) = "500600700"
-					*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
-					return nil
-				},
-			}
+			return CompanyDetailsDTO{
+				ID:            15,
+				Name:          "ABC Sp. z o.o.",
+				Street:        "Koszykowa 1",
+				City:          "Warszawa",
+				Zipcode:       "00-001",
+				Nip:           "1234567890",
+				Email:         ptrString("biuro@abc.pl"),
+				Contactperson: ptrString("Jan Nowak"),
+				Telephoneno:   "500600700",
+				Note:          ptrString("Kluczowy klient"),
+			}, nil
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/15", strings.NewReader(`{
 		"name": "  ABC Sp. z o.o.  ",
@@ -499,7 +486,7 @@ func TestPatchReturnsUpdatedCompanyResponse(t *testing.T) {
 
 func TestPatchReturnsBadRequestForInvalidCompanyID(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid company id")
 			return fakeRow{}
 		},
@@ -516,7 +503,7 @@ func TestPatchReturnsBadRequestForInvalidCompanyID(t *testing.T) {
 
 func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid body")
 			return fakeRow{}
 		},
@@ -533,7 +520,7 @@ func TestPatchReturnsBadRequestForInvalidJSON(t *testing.T) {
 
 func TestPatchReturnsBadRequestForUnknownField(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid body")
 			return fakeRow{}
 		},
@@ -558,7 +545,7 @@ func TestPatchReturnsBadRequestForUnknownField(t *testing.T) {
 
 func TestPatchReturnsBadRequestForMissingRequiredField(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid body")
 			return fakeRow{}
 		},
@@ -581,40 +568,22 @@ func TestPatchReturnsBadRequestForMissingRequiredField(t *testing.T) {
 }
 
 func TestPatchAllowsNilOptionalFields(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
-			emailArg, ok := args[6].(pgtype.Text)
-			if !ok || emailArg.Valid {
-				t.Fatalf("expected email arg to be null, got %+v", args[6])
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			if req.Email != nil || req.ContactPerson != nil || req.Note != nil {
+				t.Fatalf("expected nil optional fields, got %+v", req)
 			}
-
-			contactArg, ok := args[7].(pgtype.Text)
-			if !ok || contactArg.Valid {
-				t.Fatalf("expected contact arg to be null, got %+v", args[7])
-			}
-
-			noteArg, ok := args[9].(pgtype.Text)
-			if !ok || noteArg.Valid {
-				t.Fatalf("expected note arg to be null, got %+v", args[9])
-			}
-
-			return fakeRow{
-				scan: func(dest ...any) error {
-					*(dest[0].(*int64)) = 15
-					*(dest[1].(*string)) = "ABC"
-					*(dest[2].(*string)) = "Koszykowa 1"
-					*(dest[3].(*string)) = "Warszawa"
-					*(dest[4].(*string)) = "00-001"
-					*(dest[5].(*string)) = "1234567890"
-					*(dest[6].(*pgtype.Text)) = pgtype.Text{}
-					*(dest[7].(*pgtype.Text)) = pgtype.Text{}
-					*(dest[8].(*string)) = "500600700"
-					*(dest[9].(*pgtype.Text)) = pgtype.Text{}
-					return nil
-				},
-			}
+			return CompanyDetailsDTO{
+				ID:          15,
+				Name:        "ABC",
+				Street:      "Koszykowa 1",
+				City:        "Warszawa",
+				Zipcode:     "00-001",
+				Nip:         "1234567890",
+				Telephoneno: "500600700",
+			}, nil
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/15", strings.NewReader(`{
 		"name": "ABC",
@@ -638,11 +607,11 @@ func TestPatchAllowsNilOptionalFields(t *testing.T) {
 }
 
 func TestPatchReturnsNotFoundWhenCompanyDoesNotExist(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
-			return fakeRow{err: pgx.ErrNoRows}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, pgx.ErrNoRows
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/99", strings.NewReader(`{
 		"name": "ABC",
@@ -661,11 +630,11 @@ func TestPatchReturnsNotFoundWhenCompanyDoesNotExist(t *testing.T) {
 }
 
 func TestPatchReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
-			return fakeRow{err: errors.New("db error")}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, errors.New("db error")
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/15", strings.NewReader(`{
 		"name": "ABC",
@@ -683,65 +652,62 @@ func TestPatchReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
 
-func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
-			if len(args) != 9 {
-				t.Fatalf("expected 9 query args, got %d", len(args))
-			}
-
-			if got, ok := args[0].(string); !ok || got != "ABC Sp. z o.o." {
-				t.Fatalf("expected trimmed name, got %+v", args[0])
-			}
-			if got, ok := args[1].(string); !ok || got != "Koszykowa 1" {
-				t.Fatalf("expected trimmed street, got %+v", args[1])
-			}
-			if got, ok := args[2].(string); !ok || got != "Warszawa" {
-				t.Fatalf("expected trimmed city, got %+v", args[2])
-			}
-			if got, ok := args[3].(string); !ok || got != "00-001" {
-				t.Fatalf("expected trimmed zipcode, got %+v", args[3])
-			}
-			if got, ok := args[4].(string); !ok || got != "1234567890" {
-				t.Fatalf("expected trimmed nip, got %+v", args[4])
-			}
-
-			emailArg, ok := args[5].(pgtype.Text)
-			if !ok || !emailArg.Valid || emailArg.String != "biuro@abc.pl" {
-				t.Fatalf("expected email arg to be valid, got %+v", args[5])
-			}
-
-			contactArg, ok := args[6].(pgtype.Text)
-			if !ok || !contactArg.Valid || contactArg.String != "Jan Nowak" {
-				t.Fatalf("expected contact arg to be valid, got %+v", args[6])
-			}
-
-			if got, ok := args[7].(string); !ok || got != "500600700" {
-				t.Fatalf("expected trimmed telephone, got %+v", args[7])
-			}
-
-			noteArg, ok := args[8].(pgtype.Text)
-			if !ok || !noteArg.Valid || noteArg.String != "Kluczowy klient" {
-				t.Fatalf("expected note arg to be valid, got %+v", args[8])
-			}
-
-			return fakeRow{
-				scan: func(dest ...any) error {
-					*(dest[0].(*int64)) = 15
-					*(dest[1].(*string)) = "ABC Sp. z o.o."
-					*(dest[2].(*string)) = "Koszykowa 1"
-					*(dest[3].(*string)) = "Warszawa"
-					*(dest[4].(*string)) = "00-001"
-					*(dest[5].(*string)) = "1234567890"
-					*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "biuro@abc.pl", Valid: true}
-					*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
-					*(dest[8].(*string)) = "500600700"
-					*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
-					return nil
-				},
-			}
+func TestPatchReturnsConflictWhenNIPAlreadyExists(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, &pgconn.PgError{Code: "23505", ConstraintName: "check_unique_nip"}
 		},
-	}))
+	})
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/15", strings.NewReader(`{
+		"name": "ABC",
+		"street": "Koszykowa 1",
+		"city": "Warszawa",
+		"zipcode": "00-001",
+		"nip": "1234567890",
+		"telephone": "500600700"
+	}`))
+	req.SetPathValue("id", "15")
+	rec := httptest.NewRecorder()
+
+	handler.Patch(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+
+	var responseBody response.ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if responseBody.Error.Code != response.CodeConflict {
+		t.Fatalf("expected error code %q, got %q", response.CodeConflict, responseBody.Error.Code)
+	}
+	if responseBody.Error.Message != "company with this NIP already exists" {
+		t.Fatalf("expected unique NIP error message, got %q", responseBody.Error.Message)
+	}
+}
+
+func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error) {
+			if req.Name != "ABC Sp. z o.o." || req.Street != "Koszykowa 1" || req.City != "Warszawa" || req.Zipcode != "00-001" || req.Nip != "1234567890" || req.Telephone != "500600700" {
+				t.Fatalf("unexpected create request: %+v", req)
+			}
+			return CompanyDetailsDTO{
+				ID:            15,
+				Name:          "ABC Sp. z o.o.",
+				Street:        "Koszykowa 1",
+				City:          "Warszawa",
+				Zipcode:       "00-001",
+				Nip:           "1234567890",
+				Email:         ptrString("biuro@abc.pl"),
+				Contactperson: ptrString("Jan Nowak"),
+				Telephoneno:   "500600700",
+				Note:          ptrString("Kluczowy klient"),
+			}, nil
+		},
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/companies", strings.NewReader(`{
 		"name": "  ABC Sp. z o.o.  ",
@@ -781,7 +747,7 @@ func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
 
 func TestCreateCompanyReturnsBadRequestForInvalidJSON(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid json")
 			return fakeRow{}
 		},
@@ -797,7 +763,7 @@ func TestCreateCompanyReturnsBadRequestForInvalidJSON(t *testing.T) {
 
 func TestCreateCompanyReturnsBadRequestForUnknownField(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid body")
 			return fakeRow{}
 		},
@@ -821,7 +787,7 @@ func TestCreateCompanyReturnsBadRequestForUnknownField(t *testing.T) {
 
 func TestCreateCompanyReturnsBadRequestForMissingRequiredField(t *testing.T) {
 	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+		queryRow: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			t.Fatal("query row should not be called for invalid body")
 			return fakeRow{}
 		},
@@ -843,11 +809,11 @@ func TestCreateCompanyReturnsBadRequestForMissingRequiredField(t *testing.T) {
 }
 
 func TestCreateCompanyReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
-	handler := NewHandler(dbsqlc.New(fakeDB{
-		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
-			return fakeRow{err: errors.New("db error")}
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, errors.New("db error")
 		},
-	}))
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/companies", strings.NewReader(`{
 		"name": "ABC",
@@ -862,4 +828,39 @@ func TestCreateCompanyReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 	handler.CreateCompany(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestCreateCompanyReturnsConflictWhenNIPAlreadyExists(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, &pgconn.PgError{Code: "23505", ConstraintName: "check_unique_nip"}
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/companies", strings.NewReader(`{
+		"name": "ABC",
+		"street": "Koszykowa 1",
+		"city": "Warszawa",
+		"zipcode": "00-001",
+		"nip": "1234567890",
+		"telephone": "500600700"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.CreateCompany(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+
+	var responseBody response.ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if responseBody.Error.Code != response.CodeConflict {
+		t.Fatalf("expected error code %q, got %q", response.CodeConflict, responseBody.Error.Code)
+	}
+	if responseBody.Error.Message != "company with this NIP already exists" {
+		t.Fatalf("expected unique NIP error message, got %q", responseBody.Error.Message)
+	}
 }

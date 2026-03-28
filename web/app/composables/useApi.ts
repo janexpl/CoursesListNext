@@ -65,6 +65,25 @@ export interface DeleteUserResponse {
   }
 }
 
+export interface AuditLogEntry {
+  id: number
+  entityType: string
+  entityId: number
+  action: string
+  actorUserId: number | null
+  actorUserEmail: string | null
+  actorUserName: string | null
+  requestId: string | null
+  before: unknown | null
+  after: unknown | null
+  metadata: unknown | null
+  createdAt: string
+}
+
+export interface AuditLogResponse {
+  data: AuditLogEntry[]
+}
+
 export interface LoginPayload {
   email: string
   password: string
@@ -233,6 +252,13 @@ export interface CoursesResponse {
   data: CourseSummary[]
 }
 
+export interface CourseCertificateTranslation {
+  languageCode: string
+  courseName: string
+  courseProgram: string
+  certFrontPage: string
+}
+
 export interface CourseDetails {
   id: number
   mainName: string
@@ -241,6 +267,7 @@ export interface CourseDetails {
   expiryTime: string | null
   courseProgram: string
   certFrontPage: string
+  certificateTranslations: CourseCertificateTranslation[]
 }
 
 export interface CourseResponse {
@@ -254,6 +281,7 @@ export interface UpdateCoursePayload {
   expiryTime: string
   courseProgram: string
   certFrontPage: string
+  certificateTranslations: CourseCertificateTranslation[]
 }
 
 export type CreateCoursePayload = UpdateCoursePayload
@@ -429,6 +457,10 @@ export interface JournalSessionsResponse {
   data: JournalSession[]
 }
 
+export interface JournalSessionResponse {
+  data: JournalSession
+}
+
 export interface GenerateJournalSessionsResponse {
   data: {
     generatedCount: number
@@ -509,6 +541,7 @@ export interface CertificateDetails {
   id: number
   date: string
   studentId: number
+  courseId: number
   studentName: string
   studentSecondname: string
   studentLastname: string
@@ -531,6 +564,14 @@ export interface CertificateDetails {
     title: string
     status: string
   } | null
+  languageCode: string
+  printVariants: Array<{
+    languageCode: string
+    courseName: string
+    courseProgram: string
+    certFrontPage: string
+    isOriginal: boolean
+  }>
 }
 
 export interface CertificateResponse {
@@ -637,6 +678,7 @@ export function useApi() {
     deleteUser: async (id: number) => await request<DeleteUserResponse>(`/api/v1/admin/users/${id}`, {
       method: 'DELETE'
     }),
+    userAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/admin/users/${id}/audit-log`),
     dashboard: async () => await request<DashboardResponse>('/api/v1/dashboard'),
     companies: async (params: { search?: string, limit?: number } = {}) => await request<CompaniesResponse>('/api/v1/companies', {
       query: {
@@ -653,6 +695,7 @@ export function useApi() {
       method: 'PATCH',
       body: payload
     }),
+    companyAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/companies/${id}/audit-log`),
     companyStudents: async (id: number) => await request<CompanyStudentsResponse>(`/api/v1/companies/${id}/students`),
     students: async (params: { search?: string, companyId?: number, limit?: number } = {}) => await request<StudentsResponse>('/api/v1/students', {
       query: {
@@ -670,6 +713,7 @@ export function useApi() {
       method: 'PATCH',
       body: payload
     }),
+    studentAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/students/${id}/audit-log`),
     studentCertificates: async (id: number) => await request<StudentCertificatesResponse>(`/api/v1/students/${id}/certificates`),
     courses: async (params: { search?: string, limit?: number } = {}) => await request<CoursesResponse>('/api/v1/courses', {
       query: {
@@ -686,6 +730,7 @@ export function useApi() {
       method: 'PATCH',
       body: payload
     }),
+    courseAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/courses/${id}/audit-log`),
     nextRegistryNumber: async (params: { courseId: number, year: number }) => await request<RegistryNumberResponse>('/api/v1/registries/next-number', {
       query: {
         courseId: params.courseId,
@@ -776,6 +821,7 @@ export function useApi() {
       method: 'POST'
     }),
     certificate: async (id: number) => await request<CertificateResponse>(`/api/v1/certificates/${id}`),
+    certificateAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/certificates/${id}/audit-log`),
     updateCertificate: async (id: number, payload: UpdateCertificatePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}`, {
       method: 'PATCH',
       body: payload

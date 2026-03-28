@@ -8,6 +8,7 @@ type CreateCertificateRequest struct {
 	CourseDateEnd   *string `json:"courseDateEnd"`
 	RegistryYear    int64   `json:"registryYear"`
 	RegistryNumber  int32   `json:"registryNumber"`
+	LanguageCode    string  `json:"languageCode,omitempty"`
 }
 
 type CreateCertificateResponse struct {
