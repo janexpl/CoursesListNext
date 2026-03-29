@@ -158,6 +158,25 @@ export interface CompanyDetailsResponse {
   data: CompanyDetails
 }
 
+export interface GUSCompanyDetails {
+  nip: string
+  regon: string
+  name: string
+  voivodeship: string
+  county: string
+  commune: string
+  city: string
+  postalCode: string
+  street: string
+  houseNumber: string
+  apartment: string
+  status: string
+}
+
+export interface GUSCompanyDetailsResponse {
+  data: GUSCompanyDetails
+}
+
 export interface UpdateCompanyPayload {
   name: string
   street: string
@@ -595,7 +614,53 @@ export interface DeleteCertificateResponse {
   }
 }
 
-export function getApiErrorMessage(error: unknown, fallback = 'Wystąpił błąd.') {
+const apiErrorMessages: Record<string, string> = {
+  // auth
+  'invalid_credentials:invalid credentials': 'Nieprawidłowy adres e-mail lub hasło.',
+  'too_many_requests:too many requests, please try again later': 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
+
+  // users
+  'forbidden:cannot delete current user': 'Nie można usunąć aktualnie zalogowanego użytkownika.',
+  'forbidden:cannot delete last admin': 'Nie można usunąć ostatniego administratora.',
+  'forbidden:cannot reset current user password via admin endpoint': 'Nie można zresetować hasła aktualnie zalogowanego użytkownika.',
+  'forbidden:cannot remove your own last admin access': 'Nie można odebrać sobie ostatniego dostępu administratora.',
+  'forbidden:cannot update last admin role': 'Nie można zmienić roli ostatniego administratora.',
+  'bad_request:invalid email format': 'Nieprawidłowy format adresu e-mail.',
+  'bad_request:invalid current password': 'Nieprawidłowe aktualne hasło.',
+
+  // companies
+  'conflict:company with this NIP already exists': 'Firma o podanym NIP już istnieje.',
+  'bad_request:no nip value in request': 'Podaj NIP, aby pobrać dane z GUS.',
+  'bad_request:nip validation error: nip must contain exactly 10 digits': 'NIP musi zawierać dokładnie 10 cyfr.',
+  'bad_request:nip validation error: invalid nip checksum': 'Podany NIP ma nieprawidłową sumę kontrolną.',
+  'not_found:company not found': 'Nie znaleziono firmy dla podanego NIP.',
+  'internal_error:gus lookup is not configured': 'Pobieranie danych z GUS nie jest skonfigurowane.',
+
+  // courses
+  'conflict:failed to create course: symbol exist': 'Kurs o podanym symbolu już istnieje.',
+
+  // certificates
+  'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',
+  'bad_request:invalid certificate data': 'Nieprawidłowe dane zaświadczenia.',
+
+  // journals
+  'conflict:journal is already closed': 'Dziennik jest już zamknięty.',
+  'conflict:journal is closed': 'Dziennik jest zamknięty.',
+  'conflict:unable to change header because journal is closed': 'Nie można zmienić nagłówka — dziennik jest zamknięty.',
+  'conflict:student already added to journal': 'Kursant jest już dodany do dziennika.',
+  'conflict:certificate already linked to journal attendee': 'Zaświadczenie jest już powiązane z uczestnikiem dziennika.',
+  'conflict:certificate already linked to another journal attendee': 'Zaświadczenie jest już powiązane z innym uczestnikiem dziennika.',
+  'conflict:journal sessions already exist': 'Pozycje programu dziennika już istnieją.',
+  'conflict:session outside range': 'Pozycja programu jest poza zakresem dat dziennika.',
+  'bad_request:course program is empty': 'Program kursu jest pusty.',
+  'bad_request:file is too large': 'Plik jest za duży.',
+  'bad_request:file is required': 'Plik jest wymagany.',
+  'bad_request:unsupported file type': 'Nieobsługiwany typ pliku.',
+  'not_found:journal attendee not found': 'Nie znaleziono uczestnika dziennika.',
+  'not_found:journal or student not found': 'Nie znaleziono dziennika lub kursanta.'
+}
+
+function parseApiError(error: unknown): { code: string, message: string } | null {
   if (
     error
     && typeof error === 'object'
@@ -605,13 +670,22 @@ export function getApiErrorMessage(error: unknown, fallback = 'Wystąpił błąd
     && 'error' in error.data
     && error.data.error
     && typeof error.data.error === 'object'
+    && 'code' in error.data.error
+    && typeof error.data.error.code === 'string'
     && 'message' in error.data.error
     && typeof error.data.error.message === 'string'
   ) {
-    return error.data.error.message
+    return { code: error.data.error.code, message: error.data.error.message }
   }
+  return null
+}
 
-  return fallback
+export function getApiErrorMessage(error: unknown, fallback = 'Wystąpił błąd.') {
+  const parsed = parseApiError(error)
+  if (!parsed) return fallback
+
+  const key = `${parsed.code}:${parsed.message}`
+  return apiErrorMessages[key] ?? fallback
 }
 
 export function useApi() {
@@ -687,6 +761,9 @@ export function useApi() {
       }
     }),
     company: async (id: number) => await request<CompanyDetailsResponse>(`/api/v1/companies/${id}`),
+    lookupCompanyByNIP: async (nip: string) => await request<GUSCompanyDetailsResponse>('/api/v1/companies/lookup-by-nip', {
+      query: { nip }
+    }),
     createCompany: async (payload: CreateCompanyPayload) => await request<CompanyDetailsResponse>('/api/v1/companies', {
       method: 'POST',
       body: payload

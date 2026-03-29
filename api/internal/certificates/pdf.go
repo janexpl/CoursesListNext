@@ -83,7 +83,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     }
 
     h1 {
-      font-size: 48px;
+      font-size: 54px;
       font-weight: 700;
       letter-spacing: 0.02em;
     }

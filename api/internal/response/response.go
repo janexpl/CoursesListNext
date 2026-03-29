@@ -19,8 +19,10 @@ const (
 	CodeConflict           = "conflict"
 )
 
-const DateFormat = "2006-01-02"
-const TimestampzFormat = "2006-01-02 15:04:05"
+const (
+	DateFormat       = "2006-01-02"
+	TimestampzFormat = "2006-01-02 15:04:05"
+)
 
 func WriteJSON(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")

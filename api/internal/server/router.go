@@ -17,6 +17,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/courses"
 	"github.com/janexpl/CoursesListNext/api/internal/dashboard"
 	dbsql "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
+	"github.com/janexpl/CoursesListNext/api/internal/gusclient"
 	"github.com/janexpl/CoursesListNext/api/internal/journals"
 	"github.com/janexpl/CoursesListNext/api/internal/registries"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
@@ -53,7 +54,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	journalService := journals.NewService(deps.Pool, deps.Queries, recorder)
 	journalHandler := journals.NewHandler(deps.Queries, journalService)
 	auditLogHandler := auditlog.NewHandler(deps.Queries)
-
+	gusclientHandler := gusclient.NewHandler(deps.Config)
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -90,6 +91,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/companies/{id}/students", studentHandler.ListStudentsByCompanyId)
 			r.Patch("/companies/{id}", companyHandler.Patch)
 			r.Post("/companies", companyHandler.CreateCompany)
+			r.Get("/companies/lookup-by-nip", gusclientHandler.FindCompany)
 
 			r.Get("/certificates", certificateHandler.List)
 			r.Post("/certificates", certificateHandler.Create)

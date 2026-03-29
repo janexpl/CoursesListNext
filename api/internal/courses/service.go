@@ -116,7 +116,7 @@ func (s *Service) Create(ctx context.Context, input CreateCourseInput) (CourseDe
 	}
 	row, err := tx.queries.CreateCourse(ctx, courseParams)
 	if err != nil {
-		return CourseDetailDTO{}, ErrDatabaseTransactionError
+		return CourseDetailDTO{}, err
 	}
 
 	if err := syncCourseCertificateTranslations(ctx, tx.queries, row.ID, translations); err != nil {

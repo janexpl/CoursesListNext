@@ -1,3 +1,4 @@
+// Package pgutil - utils for slqc pgtype
 package pgutil
 
 import (

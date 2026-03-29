@@ -24,6 +24,8 @@ type Config struct {
 	SessionCookieSecure bool
 	CORSAllowedOrigins  []string
 	LoginRateLimit      float64
+	GUSUrl              string
+	GUSToken            string
 }
 
 func Load() Config {
@@ -93,6 +95,11 @@ func Load() Config {
 			loginRateLimit = parsed
 		}
 	}
+	gusUrl := os.Getenv("GUS_URL")
+	if gusUrl == "" {
+		gusUrl = "https://wyszukiwarkaregontest.stat.gov.pl/wsbir/uslugabirzewnpubl.svc"
+	}
+	gusToken := strings.TrimSpace(os.Getenv("GUS_TOKEN"))
 
 	return Config{
 		Port:                port,
@@ -107,6 +114,8 @@ func Load() Config {
 		SessionCookieSecure: sessionCookieSecureBool,
 		CORSAllowedOrigins:  corsOriginsList,
 		LoginRateLimit:      loginRateLimit,
+		GUSUrl:              gusUrl,
+		GUSToken:            gusToken,
 	}
 }
 

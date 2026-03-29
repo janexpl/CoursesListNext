@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 )
@@ -169,8 +170,8 @@ func (h *Handler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 			return
 		}
-		if errors.Is(err, pgx.ErrNoRows) {
-			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "course not found")
+		if isCourseSymbolConflict(err) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "failed to create course: symbol exist")
 			return
 		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create course")
@@ -212,6 +213,11 @@ func makeCourseDetailDTO(row sqlc.Course, translations []sqlc.ListCourseCertific
 		CertFrontPage:           row.Certfrontpage.String,
 		CertificateTranslations: makeCourseCertificateTranslationsDTO(translations),
 	}
+}
+
+func isCourseSymbolConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "check_unique_symbol"
 }
 
 func makeCourseCertificateTranslationsDTO(

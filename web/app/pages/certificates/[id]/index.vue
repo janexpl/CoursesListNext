@@ -436,7 +436,7 @@ const certificatePreviewDocument = computed(() => {
       }
 
       h1 {
-        font-size: 40px;
+        font-size: 54px;
         font-weight: 700;
         letter-spacing: 0.02em;
       }
@@ -542,7 +542,7 @@ const certificatePreviewDocument = computed(() => {
         }
 
         h1 {
-          font-size: 40px;
+          font-size: 54px;
         }
 
         h2 {

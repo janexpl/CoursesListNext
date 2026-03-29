@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/janexpl/guslookup v0.1.0
 	github.com/joho/godotenv v1.5.1
 	golang.org/x/crypto v0.49.0
 )

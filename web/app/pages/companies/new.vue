@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { GUSCompanyDetails } from '~/composables/useApi'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -19,6 +21,9 @@ const form = reactive({
 
 const submitPending = ref(false)
 const errorMessage = ref('')
+const lookupPending = ref(false)
+const lookupError = ref('')
+const lookupSuccess = ref('')
 
 const trimmedName = computed(() => form.name.trim())
 const trimmedStreet = computed(() => form.street.trim())
@@ -26,6 +31,7 @@ const trimmedCity = computed(() => form.city.trim())
 const trimmedZipcode = computed(() => form.zipcode.trim())
 const trimmedNip = computed(() => form.nip.trim())
 const trimmedTelephone = computed(() => form.telephone.trim())
+const normalizedNip = computed(() => form.nip.replaceAll(/\D/g, ''))
 const requiredCompanyDataComplete = computed(() => {
   return !!(
     trimmedName.value
@@ -59,8 +65,14 @@ const payload = computed(() => ({
 
 const isDirty = computed(() => Object.values(form).some(value => value.trim() !== ''))
 const canSubmit = computed(() => !submitPending.value && isDirty.value)
+const canLookupCompanyByNip = computed(() => !lookupPending.value && !submitPending.value && normalizedNip.value.length > 0)
 
 useUnsavedChangesWarning(() => isDirty.value && !submitPending.value)
+
+watch(() => form.nip, () => {
+  lookupError.value = ''
+  lookupSuccess.value = ''
+})
 
 function resetForm() {
   form.name = ''
@@ -73,6 +85,47 @@ function resetForm() {
   form.telephone = ''
   form.note = ''
   errorMessage.value = ''
+  lookupError.value = ''
+  lookupSuccess.value = ''
+}
+
+function buildStreetFromGUS(company: GUSCompanyDetails) {
+  const housePart = [company.houseNumber, company.apartment ? `/${company.apartment}` : '']
+    .filter(Boolean)
+    .join('')
+
+  return [company.street.trim(), housePart.trim()].filter(Boolean).join(' ').trim()
+}
+
+function applyCompanyLookup(company: GUSCompanyDetails) {
+  form.nip = company.nip
+  form.name = company.name
+  form.street = buildStreetFromGUS(company)
+  form.city = company.city
+  form.zipcode = company.postalCode
+}
+
+async function onLookupCompanyByNip() {
+  errorMessage.value = ''
+  lookupError.value = ''
+  lookupSuccess.value = ''
+
+  if (!normalizedNip.value) {
+    lookupError.value = 'Wpisz NIP, aby pobrać dane z GUS.'
+    return
+  }
+
+  lookupPending.value = true
+
+  try {
+    const response = await api.lookupCompanyByNIP(form.nip)
+    applyCompanyLookup(response.data)
+    lookupSuccess.value = `Uzupełniono dane firmy ${response.data.name} na podstawie rejestru GUS.`
+  } catch (error) {
+    lookupError.value = getApiErrorMessage(error, 'Nie udało się pobrać danych firmy z GUS.')
+  } finally {
+    lookupPending.value = false
+  }
 }
 
 async function onSubmit() {
@@ -231,13 +284,30 @@ useSeoMeta({
 
               <label class="block space-y-2">
                 <span class="text-sm font-medium text-slate-700">NIP</span>
-                <input
-                  v-model="form.nip"
-                  type="text"
-                  inputmode="numeric"
-                  placeholder="np. 5210000000"
-                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                >
+                <div class="space-y-3">
+                  <input
+                    v-model="form.nip"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="np. 5210000000"
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  >
+
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-xs leading-5 text-slate-500">
+                      Nazwa i adres mogą zostać uzupełnione automatycznie na podstawie rejestru GUS.
+                    </p>
+
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      :disabled="!canLookupCompanyByNip"
+                      @click="onLookupCompanyByNip"
+                    >
+                      {{ lookupPending ? 'Sprawdzanie...' : 'Pobierz z GUS' }}
+                    </button>
+                  </div>
+                </div>
               </label>
 
               <label class="block space-y-2">
@@ -250,6 +320,20 @@ useSeoMeta({
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
+
+              <div
+                v-if="lookupError"
+                class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2"
+              >
+                {{ lookupError }}
+              </div>
+
+              <div
+                v-else-if="lookupSuccess"
+                class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 md:col-span-2"
+              >
+                {{ lookupSuccess }}
+              </div>
 
               <label class="block space-y-2 md:col-span-2">
                 <span class="text-sm font-medium text-slate-700">Ulica</span>

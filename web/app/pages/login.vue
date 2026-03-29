@@ -9,6 +9,7 @@ useSeoMeta({
 
 const auth = useAuth()
 const route = useRoute()
+const formRef = ref<HTMLFormElement | null>(null)
 
 const form = reactive({
   email: '',
@@ -27,12 +28,25 @@ const successMessage = computed(() => {
 
 async function onSubmit() {
   errorMessage.value = ''
+
+  if (formRef.value && !formRef.value.reportValidity()) {
+    return
+  }
+
+  const email = form.email.trim()
+  const password = form.password
+
+  if (!email || !password) {
+    errorMessage.value = 'Uzupełnij adres e-mail i hasło.'
+    return
+  }
+
   pending.value = true
 
   try {
     await auth.login({
-      email: form.email,
-      password: form.password
+      email,
+      password
     })
 
     await navigateTo('/')
@@ -75,6 +89,7 @@ async function onSubmit() {
         </div>
 
         <form
+          ref="formRef"
           class="space-y-5"
           @submit.prevent="onSubmit"
         >
