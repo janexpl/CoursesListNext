@@ -200,7 +200,7 @@ type UpdateJournalHeaderRequest struct {
 	Notes            *string `json:"notes"`
 }
 
-type JournalAttendanceScanDTO struct {
+type JournalScanDTO struct {
 	ID               int64  `json:"id"`
 	FileName         string `json:"fileName"`
 	ContentType      string `json:"contentType"`
@@ -210,6 +210,6 @@ type JournalAttendanceScanDTO struct {
 	UpdatedAt        string `json:"updatedAt"`
 }
 
-type JournalAttendanceScanResponse struct {
-	Data JournalAttendanceScanDTO `json:"data"`
+type JournalScanResponse struct {
+	Data JournalScanDTO `json:"data"`
 }

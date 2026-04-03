@@ -279,7 +279,7 @@ function companyLabel(journal: JournalSummary) {
 
       <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p class="text-xs leading-5 text-slate-500">
-          Filtry działają po stronie backendu, więc wynik nie ogranicza się tylko do pierwszych widocznych wpisów.
+          Filtry obejmują całą listę dzienników, nie tylko wpisy widoczne na ekranie.
         </p>
 
         <button

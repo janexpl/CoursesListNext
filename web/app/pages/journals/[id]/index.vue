@@ -2,6 +2,7 @@
 import type {
   CourseDetails,
   JournalAttendanceScan,
+  JournalSignedScan,
   JournalAttendee,
   JournalSession,
   StudentCertificateSummary,
@@ -52,7 +53,14 @@ const attendanceScanActionSuccess = ref('')
 const attendanceScanUploadPending = ref(false)
 const attendanceScanDeletePending = ref(false)
 const attendanceScanFile = ref<File | null>(null)
-const attendanceScanInputKey = ref(0)
+const signedScanActionError = ref('')
+const signedScanActionSuccess = ref('')
+const signedScanUploadPending = ref(false)
+const signedScanDeletePending = ref(false)
+const signedScanFile = ref<File | null>(null)
+const uploadPickerRef = ref<HTMLInputElement | null>(null)
+const activeUploadPickerTarget = ref<'attendance' | 'signed' | null>(null)
+const addAttendeeCardRef = ref<{ focusSearchInput: () => void } | null>(null)
 const studentSearch = ref('')
 const addAttendeeError = ref('')
 const addAttendeeSuccess = ref('')
@@ -140,6 +148,23 @@ const {
   }
 })
 
+const {
+  data: signedScanData,
+  pending: signedScanPending,
+  error: signedScanError,
+  refresh: refreshSignedScan
+} = await useAsyncData(`journal-signed-scan-${journalId}`, async () => {
+  try {
+    return await api.journalSignedScanMeta(journalId)
+  } catch (error) {
+    if (isApiNotFoundError(error)) {
+      return null
+    }
+
+    throw error
+  }
+})
+
 const journal = computed(() => journalData.value?.data ?? null)
 const attendees = computed(() => attendeesData.value?.data ?? [])
 const sessions = computed(() => sessionsData.value?.data ?? [])
@@ -147,9 +172,15 @@ const attendanceEntries = computed(() => attendanceData.value?.data ?? [])
 const attendanceScan = computed<JournalAttendanceScan | null>(
   () => attendanceScanData.value?.data ?? null
 )
+const signedScan = computed<JournalSignedScan | null>(
+  () => signedScanData.value?.data ?? null
+)
 const journalPdfDownloadUrl = computed(() => `/api/v1/journals/${journalId}/pdf`)
 const journalAttendanceScanDownloadUrl = computed(
   () => `/api/v1/journals/${journalId}/attendance-scan`
+)
+const journalSignedScanDownloadUrl = computed(
+  () => `/api/v1/journals/${journalId}/signed-scan`
 )
 const editJournalLink = computed(() => `/journals/${journalId}/edit`)
 const attendeeCount = computed(() => attendees.value.length)
@@ -167,8 +198,7 @@ const {
   options: studentOptions,
   pending: studentsPending,
   error: studentSearchError,
-  showNoResults: showNoStudentResults,
-  clearSelection: clearStudentSearch
+  showNoResults: showNoStudentResults
 } = useSearchableSelect<StudentSummary>({
   query: studentSearch,
   fetchOptions: async (search) => {
@@ -474,13 +504,40 @@ function attendanceValue(sessionId: number, attendeeId: number) {
 
 function resetAttendanceScanSelection() {
   attendanceScanFile.value = null
-  attendanceScanInputKey.value += 1
 }
 
-function onSelectAttendanceScanFile(file: File | null) {
-  attendanceScanActionError.value = ''
-  attendanceScanActionSuccess.value = ''
-  attendanceScanFile.value = file
+function resetSignedScanSelection() {
+  signedScanFile.value = null
+}
+
+function openUploadPicker(target: 'attendance' | 'signed') {
+  activeUploadPickerTarget.value = target
+
+  if (uploadPickerRef.value) {
+    uploadPickerRef.value.value = ''
+    uploadPickerRef.value.click()
+  }
+}
+
+function onSharedUploadFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0] ?? null
+
+  if (!file || !activeUploadPickerTarget.value) {
+    return
+  }
+
+  if (activeUploadPickerTarget.value === 'attendance') {
+    attendanceScanActionError.value = ''
+    attendanceScanActionSuccess.value = ''
+    attendanceScanFile.value = file
+  } else {
+    signedScanActionError.value = ''
+    signedScanActionSuccess.value = ''
+    signedScanFile.value = file
+  }
+
+  activeUploadPickerTarget.value = null
 }
 
 function onUpdateAttendeeCertificateDraft(payload: { attendeeId: number, value: string }) {
@@ -612,6 +669,62 @@ async function onDeleteAttendanceScan() {
     )
   } finally {
     attendanceScanDeletePending.value = false
+  }
+}
+
+async function onUploadSignedScan() {
+  if (!signedScanFile.value) {
+    signedScanActionError.value = 'Wybierz plik do załączenia.'
+    return
+  }
+
+  const hadExistingScan = Boolean(signedScan.value)
+  signedScanActionError.value = ''
+  signedScanActionSuccess.value = ''
+  signedScanUploadPending.value = true
+
+  try {
+    await api.uploadJournalSignedScan(journalId, signedScanFile.value)
+    await refreshSignedScan()
+    signedScanActionSuccess.value = hadExistingScan
+      ? 'Podmieniono skan podpisanego dziennika.'
+      : 'Załączono skan podpisanego dziennika.'
+    resetSignedScanSelection()
+  } catch (error) {
+    signedScanActionError.value = getApiErrorMessage(
+      error,
+      'Nie udało się załączyć skanu podpisanego dziennika.'
+    )
+  } finally {
+    signedScanUploadPending.value = false
+  }
+}
+
+async function onDeleteSignedScan() {
+  if (!signedScan.value) {
+    return
+  }
+
+  if (!window.confirm(`Usunąć skan „${signedScan.value.fileName}”?`)) {
+    return
+  }
+
+  signedScanActionError.value = ''
+  signedScanActionSuccess.value = ''
+  signedScanDeletePending.value = true
+
+  try {
+    await api.deleteJournalSignedScan(journalId)
+    await refreshSignedScan()
+    signedScanActionSuccess.value = 'Usunięto skan podpisanego dziennika.'
+    resetSignedScanSelection()
+  } catch (error) {
+    signedScanActionError.value = getApiErrorMessage(
+      error,
+      'Nie udało się usunąć skanu podpisanego dziennika.'
+    )
+  } finally {
+    signedScanDeletePending.value = false
   }
 }
 
@@ -962,7 +1075,7 @@ const journalPrintDocument = computed(() => {
 
       <article class="print-sheet">
         <h2>Lista uczestników</h2>
-        <p class="section-lead">Snapshot uczestników przypisanych do tego szkolenia.</p>
+        <p class="section-lead">Lista uczestników przypisanych do tego szkolenia.</p>
         <table class="print-table">
           <thead>
             <tr>
@@ -1368,8 +1481,10 @@ async function onAddAttendee(student: StudentSummary) {
       studentId: student.id
     })
 
-    clearStudentSearch()
     await Promise.all([refreshJournal(), refreshAttendees(), refreshAttendance()])
+    studentSearch.value = ''
+    await nextTick()
+    addAttendeeCardRef.value?.focusSearchInput()
     addAttendeeSuccess.value = `Dodano kursanta ${student.firstName} ${student.lastName} do dziennika.`
   } catch (error) {
     addAttendeeError.value = getApiErrorMessage(error, 'Nie udało się dodać kursanta do dziennika.')
@@ -1748,43 +1863,90 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
 
         <JournalBasicInfoCard :journal="journal" />
 
-        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]">
-          <JournalAddAttendeeCard
-            :journal="journal"
-            :is-closed="isClosed"
-            :student-search="studentSearch"
-            :students-pending="studentsPending"
-            :student-search-error="studentSearchError"
-            :add-attendee-error="addAttendeeError"
-            :add-attendee-success="addAttendeeSuccess"
-            :show-no-student-results="showNoAvailableStudentResults"
-            :available-student-options="availableStudentOptions"
-            :adding-student-id="addingStudentId"
-            @update:student-search="studentSearch = $event"
-            @add-attendee="onAddAttendee"
-          />
+        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+          <section class="rounded-xl border border-slate-200 bg-white/90 p-5 shadow-sm">
+            <input
+              ref="uploadPickerRef"
+              type="file"
+              accept=".pdf,image/png,image/jpeg,application/pdf"
+              class="hidden"
+              @change="onSharedUploadFileChange"
+            >
 
-          <div class="space-y-6">
-            <JournalAttendanceScanCard
-              :scan="attendanceScan"
-              :pending="attendanceScanPending"
-              :has-error="Boolean(attendanceScanError)"
-              :action-error="attendanceScanActionError"
-              :action-success="attendanceScanActionSuccess"
-              :upload-pending="attendanceScanUploadPending"
-              :delete-pending="attendanceScanDeletePending"
-              :input-key="attendanceScanInputKey"
-              :selected-file-name="attendanceScanFile?.name || ''"
-              :download-url="journalAttendanceScanDownloadUrl"
-              @file-selected="onSelectAttendanceScanFile"
-              @upload="onUploadAttendanceScan"
-              @clear-selection="resetAttendanceScanSelection"
-              @delete-scan="onDeleteAttendanceScan"
-            />
+            <div class="space-y-1">
+              <h2 class="text-lg font-semibold text-slate-900">
+                Załączniki dziennika
+              </h2>
+              <p class="text-xs leading-5 text-slate-500">
+                Podpisana lista obecności i podpisany dziennik.
+              </p>
+            </div>
 
+            <div class="mt-4 grid gap-3 lg:grid-cols-2">
+              <JournalAttendanceScanCard
+                embedded
+                title="Podpisana lista obecności"
+                description="PDF lub zdjęcie listy obecności."
+                load-error-message="Nie udało się pobrać informacji o skanie listy obecności."
+                empty-state-message="Nie załączono jeszcze skanu podpisanej listy obecności."
+                :scan="attendanceScan"
+                :pending="attendanceScanPending"
+                :has-error="Boolean(attendanceScanError)"
+                :action-error="attendanceScanActionError"
+                :action-success="attendanceScanActionSuccess"
+                :upload-pending="attendanceScanUploadPending"
+                :delete-pending="attendanceScanDeletePending"
+                :selected-file-name="attendanceScanFile?.name || ''"
+                :download-url="journalAttendanceScanDownloadUrl"
+                @choose-file="openUploadPicker('attendance')"
+                @upload="onUploadAttendanceScan"
+                @clear-selection="resetAttendanceScanSelection"
+                @delete-scan="onDeleteAttendanceScan"
+              />
+
+              <JournalAttendanceScanCard
+                embedded
+                title="Podpisany dziennik"
+                description="PDF lub zdjęcie podpisanego dziennika."
+                load-error-message="Nie udało się pobrać informacji o skanie podpisanego dziennika."
+                empty-state-message="Nie załączono jeszcze skanu podpisanego dziennika."
+                :scan="signedScan"
+                :pending="signedScanPending"
+                :has-error="Boolean(signedScanError)"
+                :action-error="signedScanActionError"
+                :action-success="signedScanActionSuccess"
+                :upload-pending="signedScanUploadPending"
+                :delete-pending="signedScanDeletePending"
+                :selected-file-name="signedScanFile?.name || ''"
+                :download-url="journalSignedScanDownloadUrl"
+                @choose-file="openUploadPicker('signed')"
+                @upload="onUploadSignedScan"
+                @clear-selection="resetSignedScanSelection"
+                @delete-scan="onDeleteSignedScan"
+              />
+            </div>
+          </section>
+
+          <div class="xl:sticky xl:top-4">
             <JournalTechnicalInfoCard :journal="journal" />
           </div>
         </div>
+
+        <JournalAddAttendeeCard
+          ref="addAttendeeCardRef"
+          :journal="journal"
+          :is-closed="isClosed"
+          :student-search="studentSearch"
+          :students-pending="studentsPending"
+          :student-search-error="studentSearchError"
+          :add-attendee-error="addAttendeeError"
+          :add-attendee-success="addAttendeeSuccess"
+          :show-no-student-results="showNoAvailableStudentResults"
+          :available-student-options="availableStudentOptions"
+          :adding-student-id="addingStudentId"
+          @update:student-search="studentSearch = $event"
+          @add-attendee="onAddAttendee"
+        />
 
         <JournalAttendeesSection
           :attendees="attendees"

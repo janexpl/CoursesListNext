@@ -35,7 +35,7 @@ function formatSessionHours(value: string) {
       <div class="space-y-1">
         <h2 class="text-lg font-semibold text-slate-900">Program szkolenia</h2>
         <p class="text-sm text-slate-500">
-          Snapshot tematów i godzin skopiowanych z programu kursu do konkretnego dziennika.
+          Tematy i liczba godzin skopiowane z programu kursu do tego dziennika.
         </p>
       </div>
 
@@ -65,8 +65,7 @@ function formatSessionHours(value: string) {
     <p
       class="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500"
     >
-      Na tym etapie edytujesz tylko datę realizacji i prowadzącego. Kolumnę czasu zegarowego
-      ukryłem, bo obecnie dziennik operuje na dacie i liczbie godzin, bez dokładnych godzin od-do.
+      Możesz zaktualizować datę realizacji i prowadzącego dla każdej pozycji programu.
     </p>
 
     <div

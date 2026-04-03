@@ -445,7 +445,7 @@ export interface JournalAttendanceResponse {
   data: JournalAttendance
 }
 
-export interface JournalAttendanceScan {
+export interface JournalScan {
   id: number
   fileName: string
   contentType: string
@@ -455,8 +455,11 @@ export interface JournalAttendanceScan {
   updatedAt: string
 }
 
-export interface JournalAttendanceScanResponse {
-  data: JournalAttendanceScan
+export type JournalAttendanceScan = JournalScan
+export type JournalSignedScan = JournalScan
+
+export interface JournalScanResponse {
+  data: JournalScan
 }
 
 export interface JournalSession {
@@ -864,17 +867,30 @@ export function useApi() {
     deleteJournalAttendee: async (journalId: number, attendeeId: number) => await request<DeleteJournalAttendeeResponse>(`/api/v1/journals/${journalId}/attendees/${attendeeId}`, {
       method: 'DELETE'
     }),
-    journalAttendanceScanMeta: async (id: number) => await request<JournalAttendanceScanResponse>(`/api/v1/journals/${id}/attendance-scan/meta`),
+    journalAttendanceScanMeta: async (id: number) => await request<JournalScanResponse>(`/api/v1/journals/${id}/attendance-scan/meta`),
     uploadJournalAttendanceScan: async (id: number, file: File) => {
       const formData = new FormData()
       formData.append('file', file)
 
-      return await request<JournalAttendanceScanResponse>(`/api/v1/journals/${id}/attendance-scan`, {
+      return await request<JournalScanResponse>(`/api/v1/journals/${id}/attendance-scan`, {
         method: 'POST',
         body: formData
       })
     },
     deleteJournalAttendanceScan: async (id: number) => await request(`/api/v1/journals/${id}/attendance-scan`, {
+      method: 'DELETE'
+    }),
+    journalSignedScanMeta: async (id: number) => await request<JournalScanResponse>(`/api/v1/journals/${id}/signed-scan/meta`),
+    uploadJournalSignedScan: async (id: number, file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      return await request<JournalScanResponse>(`/api/v1/journals/${id}/signed-scan`, {
+        method: 'POST',
+        body: formData
+      })
+    },
+    deleteJournalSignedScan: async (id: number) => await request(`/api/v1/journals/${id}/signed-scan`, {
       method: 'DELETE'
     }),
     journalAttendance: async (id: number) => await request<JournalAttendanceResponseList>(`/api/v1/journals/${id}/attendance`),

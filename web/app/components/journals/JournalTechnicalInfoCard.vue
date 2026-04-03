@@ -24,7 +24,7 @@ function formatDateTime(value: string | null) {
     <div class="space-y-1">
       <h2 class="text-lg font-semibold text-slate-900">Informacje techniczne</h2>
       <p class="text-sm text-slate-500">
-        Snapshot danych i informacje administracyjne dla tego dziennika.
+        Daty systemowe i informacje administracyjne dla tego dziennika.
       </p>
     </div>
 

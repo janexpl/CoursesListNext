@@ -50,7 +50,7 @@ function formatCertificateNumber(certificate: {
       <div class="space-y-1">
         <h2 class="text-lg font-semibold text-slate-900">Uczestnicy dziennika</h2>
         <p class="text-sm text-slate-500">
-          Lista snapshotów kursantów przypisanych do tego szkolenia.
+          Lista uczestników przypisanych do tego szkolenia.
         </p>
       </div>
 

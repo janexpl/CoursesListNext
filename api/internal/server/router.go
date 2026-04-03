@@ -130,6 +130,10 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/journals/{id}/attendance-scan/meta", journalHandler.GetJournalAttendanceScanMeta)
 			r.Get("/journals/{id}/attendance-scan", journalHandler.GetJournalAttendanceScanFile)
 			r.Delete("/journals/{id}/attendance-scan", journalHandler.DeleteJournalAttendanceScanFile)
+			r.Post("/journals/{id}/signed-scan", journalHandler.UpsertJournalSignedScan)
+			r.Get("/journals/{id}/signed-scan/meta", journalHandler.GetJournalSignedScanMeta)
+			r.Get("/journals/{id}/signed-scan", journalHandler.GetJournalSignedScanFile)
+			r.Delete("/journals/{id}/signed-scan", journalHandler.DeleteJournalSignedScanFile)
 			r.Patch("/journals/{id}", journalHandler.UpdateHeader)
 
 			r.Group(func(r chi.Router) {

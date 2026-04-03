@@ -227,6 +227,27 @@ function runTemplateCommand(command: string, value?: string) {
   onTemplateEditorInput()
 }
 
+function onTemplateEditorKeydown(event: KeyboardEvent) {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey) {
+    return
+  }
+
+  switch (event.key.toLowerCase()) {
+    case 'b':
+      event.preventDefault()
+      runTemplateCommand('bold')
+      break
+    case 'i':
+      event.preventDefault()
+      runTemplateCommand('italic')
+      break
+    case 'u':
+      event.preventDefault()
+      runTemplateCommand('underline')
+      break
+  }
+}
+
 function applyTemplateFontSize(fontSize: string) {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
@@ -579,7 +600,7 @@ function buildTemplatePreviewDocument(html: string) {
             v-if="activeTranslation.hasInvalidStoredProgram"
             class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700"
           >
-            W tej wersji zapisany był program w nieobsługiwanym formacie. Zmień program i zapisz kurs, aby go ujednolicić.
+            Program w tej wersji językowej wymaga ponownego zapisania. Wprowadź zmiany i zapisz kurs.
           </div>
 
           <div
@@ -596,7 +617,7 @@ function buildTemplatePreviewDocument(html: string) {
               Szablon w wybranym języku
             </h3>
             <p class="text-sm text-slate-500">
-              Edytuj wizualnie front zaświadczenia i wstawiaj placeholdery bez pisania kodu HTML.
+              Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie.
             </p>
           </div>
 
@@ -713,7 +734,7 @@ function buildTemplatePreviewDocument(html: string) {
 
             <div class="space-y-3">
               <p class="text-sm font-medium text-slate-700">
-                Placeholdery
+                Dane automatyczne
               </p>
 
               <div class="flex flex-wrap gap-2">
@@ -738,6 +759,7 @@ function buildTemplatePreviewDocument(html: string) {
                   :contenteditable="!disabled"
                   class="min-h-[24rem] w-full rounded-lg px-4 py-4 text-slate-900 outline-none"
                   @input="onTemplateEditorInput"
+                  @keydown="onTemplateEditorKeydown"
                 />
               </div>
             </ClientOnly>

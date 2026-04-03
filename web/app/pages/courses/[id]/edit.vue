@@ -239,6 +239,27 @@ function runTemplateCommand(command: string, value?: string) {
   onTemplateEditorInput()
 }
 
+function onTemplateEditorKeydown(event: KeyboardEvent) {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey) {
+    return
+  }
+
+  switch (event.key.toLowerCase()) {
+    case 'b':
+      event.preventDefault()
+      runTemplateCommand('bold')
+      break
+    case 'i':
+      event.preventDefault()
+      runTemplateCommand('italic')
+      break
+    case 'u':
+      event.preventDefault()
+      runTemplateCommand('underline')
+      break
+  }
+}
+
 function insertTemplatePlaceholder(placeholder: string) {
   focusTemplateEditor()
   document.execCommand('insertText', false, placeholder)
@@ -973,7 +994,7 @@ useSeoMeta({
               v-if="hasInvalidStoredProgram"
               class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700"
             >
-              W bazie zapisany był program w nieobsługiwanym formacie. Kreator załadował pustą listę tematów.
+              Program trzeba uzupełnić ponownie. Lista tematów została wczytana jako pusta.
             </div>
 
             <div
@@ -1079,7 +1100,7 @@ useSeoMeta({
                 Szablon zaświadczenia
               </h2>
               <p class="text-sm text-slate-500">
-                Edytuj wizualnie front zaświadczenia i wstawiaj placeholdery bez pisania kodu.
+                Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie.
               </p>
             </div>
 
@@ -1181,7 +1202,7 @@ useSeoMeta({
 
               <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                  Placeholdery
+                  Dane automatyczne
                 </p>
                 <div class="mt-3 flex flex-wrap gap-2">
                   <button
@@ -1203,6 +1224,7 @@ useSeoMeta({
                   contenteditable="true"
                   class="min-h-[28rem] rounded-lg border border-slate-300 bg-white px-5 py-4 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   @input="onTemplateEditorInput"
+                  @keydown="onTemplateEditorKeydown"
                 />
               </ClientOnly>
 

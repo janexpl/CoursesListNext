@@ -701,3 +701,60 @@
   DELETE FROM training_journal_attendance_scans
   WHERE journal_id = $1;
 
+
+-- name: GetJournalSignedScanMeta :one
+  SELECT
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      uploaded_by_user_id,
+      created_at,
+      updated_at
+  FROM training_journal_signed_scans
+  WHERE journal_id = $1;
+
+-- name: GetJournalSignedScanFile :one
+  SELECT
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_data
+  FROM training_journal_signed_scans
+  WHERE journal_id = $1;
+
+-- name: UpsertJournalSignedScan :one
+  INSERT INTO training_journal_signed_scans (
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      file_data,
+      uploaded_by_user_id
+  ) VALUES (
+      $1, $2, $3, $4, $5, $6
+  )
+  ON CONFLICT (journal_id) DO UPDATE
+  SET
+      file_name = EXCLUDED.file_name,
+      content_type = EXCLUDED.content_type,
+      file_size = EXCLUDED.file_size,
+      file_data = EXCLUDED.file_data,
+      uploaded_by_user_id = EXCLUDED.uploaded_by_user_id,
+      updated_at = now()
+  RETURNING
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      uploaded_by_user_id,
+      created_at,
+      updated_at;
+
+-- name: DeleteJournalSignedScan :execrows
+  DELETE FROM training_journal_signed_scans
+  WHERE journal_id = $1;
+

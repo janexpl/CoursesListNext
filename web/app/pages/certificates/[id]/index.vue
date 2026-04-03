@@ -915,7 +915,7 @@ useSeoMeta({
               <div class="space-y-1">
                 <h2 class="text-lg font-semibold text-slate-900">Podgląd zaświadczenia</h2>
                 <p class="text-sm text-slate-500">
-                  Aktualnie oglądasz {{ selectedPrintVariantOptionLabel || 'wersję wystawioną' }}.
+                  Wyświetlasz {{ selectedPrintVariantOptionLabel || 'wersję wystawioną' }}.
                 </p>
               </div>
 

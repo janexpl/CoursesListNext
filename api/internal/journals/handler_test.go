@@ -42,6 +42,10 @@ type fakeQuerier struct {
 	getJournalAttendanceScanFileFunc     func(ctx context.Context, journalID int64) (sqlc.GetJournalAttendanceScanFileRow, error)
 	getJournalAttendanceScanMetaFunc     func(ctx context.Context, journalID int64) (sqlc.GetJournalAttendanceScanMetaRow, error)
 	deleteJournalAttendanceScanFunc      func(ctx context.Context, journalID int64) (int64, error)
+	upsertSignedScanFunc                 func(ctx context.Context, arg sqlc.UpsertJournalSignedScanParams) (sqlc.UpsertJournalSignedScanRow, error)
+	getJournalSignedScanFileFunc         func(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error)
+	getJournalSignedScanMetaFunc         func(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error)
+	deleteJournalSignedScanFunc          func(ctx context.Context, journalID int64) (int64, error)
 }
 
 type fakeCertificateGenerator struct {
@@ -214,6 +218,38 @@ func (f fakeQuerier) DeleteJournalAttendanceScan(ctx context.Context, journalID 
 	}
 
 	return f.deleteJournalAttendanceScanFunc(ctx, journalID)
+}
+
+func (f fakeQuerier) UpsertJournalSignedScan(ctx context.Context, arg sqlc.UpsertJournalSignedScanParams) (sqlc.UpsertJournalSignedScanRow, error) {
+	if f.upsertSignedScanFunc == nil {
+		return sqlc.UpsertJournalSignedScanRow{}, errors.New("unexpected UpsertJournalSignedScan call")
+	}
+
+	return f.upsertSignedScanFunc(ctx, arg)
+}
+
+func (f fakeQuerier) GetJournalSignedScanFile(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error) {
+	if f.getJournalSignedScanFileFunc == nil {
+		return sqlc.GetJournalSignedScanFileRow{}, errors.New("unexpected GetJournalSignedScanFile call")
+	}
+
+	return f.getJournalSignedScanFileFunc(ctx, journalID)
+}
+
+func (f fakeQuerier) GetJournalSignedScanMeta(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error) {
+	if f.getJournalSignedScanMetaFunc == nil {
+		return sqlc.GetJournalSignedScanMetaRow{}, errors.New("unexpected GetJournalSignedScanMeta call")
+	}
+
+	return f.getJournalSignedScanMetaFunc(ctx, journalID)
+}
+
+func (f fakeQuerier) DeleteJournalSignedScan(ctx context.Context, journalID int64) (int64, error) {
+	if f.deleteJournalSignedScanFunc == nil {
+		return 0, errors.New("unexpected DeleteJournalSignedScan call")
+	}
+
+	return f.deleteJournalSignedScanFunc(ctx, journalID)
 }
 
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, expectedStatus int, expectedCode string) {
@@ -2934,7 +2970,7 @@ func TestUpsertJournalAttendanceScanReturnsMetadata(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var responseBody JournalAttendanceScanResponse
+	var responseBody JournalScanResponse
 	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -3103,7 +3139,7 @@ func TestGetJournalAttendanceScanMetaReturnsMetadata(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var responseBody JournalAttendanceScanResponse
+	var responseBody JournalScanResponse
 	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -3306,6 +3342,439 @@ func TestDeleteJournalAttendanceScanReturnsInternalServerError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.DeleteJournalAttendanceScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestUpsertJournalSignedScanReturnsMetadata(t *testing.T) {
+	pdfBytes := []byte("%PDF-1.4 fake signed journal scan")
+
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			if id != 21 {
+				t.Fatalf("unexpected journal id: %d", id)
+			}
+			return sqlc.GetJournalByIDRow{ID: 21}, nil
+		},
+		upsertSignedScanFunc: func(_ context.Context, arg sqlc.UpsertJournalSignedScanParams) (sqlc.UpsertJournalSignedScanRow, error) {
+			if arg.JournalID != 21 {
+				t.Fatalf("unexpected journal id: %d", arg.JournalID)
+			}
+			if arg.FileName != "dziennik.pdf" {
+				t.Fatalf("unexpected file name: %s", arg.FileName)
+			}
+			if arg.ContentType != "application/pdf" {
+				t.Fatalf("unexpected content type: %s", arg.ContentType)
+			}
+			if arg.FileSize != int64(len(pdfBytes)) {
+				t.Fatalf("unexpected file size: %d", arg.FileSize)
+			}
+			if !bytes.Equal(arg.FileData, pdfBytes) {
+				t.Fatalf("unexpected file bytes: %q", arg.FileData)
+			}
+			if arg.UploadedByUserID != 7 {
+				t.Fatalf("unexpected uploadedByUserID: %d", arg.UploadedByUserID)
+			}
+
+			return sqlc.UpsertJournalSignedScanRow{
+				ID:               8,
+				JournalID:        21,
+				FileName:         "dziennik.pdf",
+				ContentType:      "application/pdf",
+				FileSize:         int64(len(pdfBytes)),
+				UploadedByUserID: 7,
+				CreatedAt:        pgtype.Timestamptz{Time: time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC), Valid: true},
+				UpdatedAt:        pgtype.Timestamptz{Time: time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC), Valid: true},
+			}, nil
+		},
+	})
+
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.pdf", pdfBytes)
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody JournalScanResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if responseBody.Data.ID != 8 {
+		t.Fatalf("expected scan id 8, got %d", responseBody.Data.ID)
+	}
+	if responseBody.Data.FileName != "dziennik.pdf" {
+		t.Fatalf("unexpected file name: %s", responseBody.Data.FileName)
+	}
+	if responseBody.Data.ContentType != "application/pdf" {
+		t.Fatalf("unexpected content type: %s", responseBody.Data.ContentType)
+	}
+}
+
+func TestUpsertJournalSignedScanReturnsBadRequestForInvalidJournalID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/journals/foo/signed-journal-scan", nil)
+	req.SetPathValue("id", "foo")
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestUpsertJournalSignedScanReturnsBadRequestWhenFileMissing(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id}, nil
+		},
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/journals/21/signed-journal-scan", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestUpsertJournalSignedScanReturnsUnauthorizedWithoutUser(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id}, nil
+		},
+	})
+
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.pdf", []byte("%PDF-1.4 fake"))
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusUnauthorized, response.CodeUnauthorized)
+}
+
+func TestUpsertJournalSignedScanReturnsBadRequestForUnsupportedFileType(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id}, nil
+		},
+	})
+
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.txt", []byte("plain text"))
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestUpsertJournalSignedScanReturnsNotFoundForMissingJournal(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{}, pgx.ErrNoRows
+		},
+	})
+
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.pdf", []byte("%PDF-1.4 fake"))
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestUpsertJournalSignedScanReturnsBadRequestForFileTooLarge(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id}, nil
+		},
+	})
+
+	tooLarge := bytes.Repeat([]byte("a"), (16<<20)+1)
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.pdf", tooLarge)
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestUpsertJournalSignedScanReturnsInternalServerErrorWhenSaveFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id}, nil
+		},
+		upsertSignedScanFunc: func(_ context.Context, _ sqlc.UpsertJournalSignedScanParams) (sqlc.UpsertJournalSignedScanRow, error) {
+			return sqlc.UpsertJournalSignedScanRow{}, errors.New("db error")
+		},
+	})
+
+	req, _ := newMultipartFileRequest(t, http.MethodPost, "/api/v1/journals/21/signed-journal-scan", "file", "dziennik.pdf", []byte("%PDF-1.4 fake"))
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 2}))
+	rec := httptest.NewRecorder()
+
+	handler.UpsertJournalSignedScan(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestGetJournalSignedScanMetaReturnsMetadata(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanMetaFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error) {
+			if journalID != 21 {
+				t.Fatalf("unexpected journal id: %d", journalID)
+			}
+			return sqlc.GetJournalSignedScanMetaRow{
+				ID:               9,
+				JournalID:        21,
+				FileName:         "podpisany-dziennik.pdf",
+				ContentType:      "application/pdf",
+				FileSize:         4096,
+				UploadedByUserID: 7,
+				CreatedAt:        pgtype.Timestamptz{Time: time.Date(2026, 4, 3, 11, 0, 0, 0, time.UTC), Valid: true},
+				UpdatedAt:        pgtype.Timestamptz{Time: time.Date(2026, 4, 3, 11, 15, 0, 0, time.UTC), Valid: true},
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan/meta", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanMeta(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody JournalScanResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if responseBody.Data.ID != 9 {
+		t.Fatalf("expected scan id 9, got %d", responseBody.Data.ID)
+	}
+	if responseBody.Data.FileName != "podpisany-dziennik.pdf" {
+		t.Fatalf("unexpected file name: %s", responseBody.Data.FileName)
+	}
+	if responseBody.Data.FileSize != 4096 {
+		t.Fatalf("unexpected file size: %d", responseBody.Data.FileSize)
+	}
+	if responseBody.Data.UpdatedAt != "2026-04-03 11:15:00" {
+		t.Fatalf("unexpected updatedAt: %s", responseBody.Data.UpdatedAt)
+	}
+}
+
+func TestGetJournalSignedScanMetaReturnsBadRequestForInvalidJournalID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/foo/signed-journal-scan/meta", nil)
+	req.SetPathValue("id", "foo")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanMeta(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestGetJournalSignedScanMetaReturnsNotFound(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanMetaFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error) {
+			return sqlc.GetJournalSignedScanMetaRow{}, pgx.ErrNoRows
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan/meta", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanMeta(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestGetJournalSignedScanMetaReturnsInternalServerError(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanMetaFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error) {
+			return sqlc.GetJournalSignedScanMetaRow{}, errors.New("db error")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan/meta", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanMeta(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestGetJournalSignedScanFileReturnsAttachment(t *testing.T) {
+	fileBytes := []byte("%PDF-1.4 signed journal scan")
+
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanFileFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error) {
+			if journalID != 21 {
+				t.Fatalf("unexpected journal id: %d", journalID)
+			}
+			return sqlc.GetJournalSignedScanFileRow{
+				ID:          10,
+				JournalID:   21,
+				FileName:    "dziennik.pdf",
+				ContentType: "application/pdf",
+				FileData:    fileBytes,
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("expected content type application/pdf, got %q", got)
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, `attachment; filename="dziennik.pdf"`) {
+		t.Fatalf("expected attachment content disposition, got %q", got)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), fileBytes) {
+		t.Fatalf("unexpected file body: %q", rec.Body.Bytes())
+	}
+}
+
+func TestGetJournalSignedScanFileReturnsBadRequestForInvalidJournalID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/foo/signed-journal-scan", nil)
+	req.SetPathValue("id", "foo")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestGetJournalSignedScanFileReturnsNotFound(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanFileFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error) {
+			return sqlc.GetJournalSignedScanFileRow{}, pgx.ErrNoRows
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestGetJournalSignedScanFileReturnsInternalServerError(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalSignedScanFileFunc: func(_ context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error) {
+			return sqlc.GetJournalSignedScanFileRow{}, errors.New("db error")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.GetJournalSignedScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestDeleteJournalSignedScanReturnsNoContent(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		deleteJournalSignedScanFunc: func(_ context.Context, journalID int64) (int64, error) {
+			if journalID != 21 {
+				t.Fatalf("unexpected journal id: %d", journalID)
+			}
+			return 1, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.DeleteJournalSignedScanFile(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestDeleteJournalSignedScanReturnsBadRequestForInvalidJournalID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/journals/foo/signed-journal-scan", nil)
+	req.SetPathValue("id", "foo")
+	rec := httptest.NewRecorder()
+
+	handler.DeleteJournalSignedScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestDeleteJournalSignedScanReturnsNotFoundWhenRowsAffectedIsZero(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		deleteJournalSignedScanFunc: func(_ context.Context, journalID int64) (int64, error) {
+			return 0, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.DeleteJournalSignedScanFile(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestDeleteJournalSignedScanReturnsInternalServerError(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		deleteJournalSignedScanFunc: func(_ context.Context, journalID int64) (int64, error) {
+			return 0, errors.New("db error")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/journals/21/signed-journal-scan", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.DeleteJournalSignedScanFile(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }

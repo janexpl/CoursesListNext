@@ -43,6 +43,10 @@ type Querier interface {
 	GetJournalAttendanceScanFile(ctx context.Context, journalID int64) (sqlc.GetJournalAttendanceScanFileRow, error)
 	GetJournalAttendanceScanMeta(ctx context.Context, journalID int64) (sqlc.GetJournalAttendanceScanMetaRow, error)
 	DeleteJournalAttendanceScan(ctx context.Context, journalID int64) (int64, error)
+	UpsertJournalSignedScan(ctx context.Context, arg sqlc.UpsertJournalSignedScanParams) (sqlc.UpsertJournalSignedScanRow, error)
+	GetJournalSignedScanFile(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanFileRow, error)
+	GetJournalSignedScanMeta(ctx context.Context, journalID int64) (sqlc.GetJournalSignedScanMetaRow, error)
+	DeleteJournalSignedScan(ctx context.Context, journalID int64) (int64, error)
 }
 
 type Handler struct {
@@ -198,7 +202,6 @@ func (h *Handler) AddJournalAttendee(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusCreated, AddJournalAttendeeResponse{
 		Data: mapJournalAttendeesRowFromAdd(row),
 	})
-
 }
 
 func (h *Handler) GenerateAttendeeCertificate(w http.ResponseWriter, r *http.Request) {
@@ -554,7 +557,6 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, JournalDetailResponse{
 		Data: mapJournalDetailsRow(sqlc.CreateJournalRow(row)),
 	})
-
 }
 
 func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
@@ -669,7 +671,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusCreated, JournalDetailResponse{
 		Data: mapJournalDetailsRow(row),
 	})
-
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -750,7 +751,6 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, resp)
-
 }
 
 func (h *Handler) UpdateHeader(w http.ResponseWriter, r *http.Request) {
@@ -843,7 +843,6 @@ func (h *Handler) UpdateHeader(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, JournalDetailResponse{
 		Data: mapJournalDetailsRow(sqlc.CreateJournalRow(row)),
 	})
-
 }
 
 func (h *Handler) UpsertJournalAttendanceScan(w http.ResponseWriter, r *http.Request) {
@@ -906,7 +905,7 @@ func (h *Handler) UpsertJournalAttendanceScan(w http.ResponseWriter, r *http.Req
 			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to upload file")
 			return
 		}
-		response.WriteJSON(w, http.StatusOK, JournalAttendanceScanResponse{
+		response.WriteJSON(w, http.StatusOK, JournalScanResponse{
 			Data: mapUpsertJournalAttendanceScanRow(row),
 		})
 	default:
@@ -928,7 +927,7 @@ func (h *Handler) GetJournalAttendanceScanMeta(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, JournalAttendanceScanResponse{
+	response.WriteJSON(w, http.StatusOK, JournalScanResponse{
 		Data: mapUpsertJournalAttendanceScanRow(sqlc.UpsertJournalAttendanceScanRow(row)),
 	})
 }
@@ -952,7 +951,6 @@ func (h *Handler) GetJournalAttendanceScanFile(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		log.Printf("failed to write file response: %v", err)
 	}
-
 }
 
 func (h *Handler) DeleteJournalAttendanceScanFile(w http.ResponseWriter, r *http.Request) {
@@ -974,9 +972,147 @@ func (h *Handler) DeleteJournalAttendanceScanFile(w http.ResponseWriter, r *http
 	response.WriteNoContent(w)
 }
 
-func mapUpsertJournalAttendanceScanRow(row sqlc.UpsertJournalAttendanceScanRow) JournalAttendanceScanDTO {
+func (h *Handler) UpsertJournalSignedScan(w http.ResponseWriter, r *http.Request) {
+	const maxFileSize = 16 << 20
 
-	return JournalAttendanceScanDTO{
+	journalID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid journal id")
+		return
+	}
+
+	_, err = h.querier.GetJournalByID(r.Context(), journalID)
+	if err != nil {
+		response.HandleDBError(w, err, "journal")
+		return
+	}
+
+	err = r.ParseMultipartForm(maxFileSize)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+	fileByte, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+	if err != nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "unable to read file")
+		return
+	}
+	if int64(len(fileByte)) > maxFileSize {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "file is too large")
+		return
+	}
+	if len(fileByte) == 0 {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "file is required")
+		return
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
+		return
+	}
+	contentType := http.DetectContentType(fileByte)
+	switch contentType {
+	case "application/pdf", "image/jpeg", "image/png":
+		row, err := h.querier.UpsertJournalSignedScan(r.Context(), sqlc.UpsertJournalSignedScanParams{
+			JournalID:        journalID,
+			FileName:         header.Filename,
+			ContentType:      contentType,
+			FileSize:         int64(len(fileByte)),
+			FileData:         fileByte,
+			UploadedByUserID: user.ID,
+		})
+		if err != nil {
+			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to upload file")
+			return
+		}
+		response.WriteJSON(w, http.StatusOK, JournalScanResponse{
+			Data: JournalScanDTO(mapUpsertJournalSignedScanRow(row)),
+		})
+	default:
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "unsupported file type")
+		return
+	}
+}
+
+func (h *Handler) GetJournalSignedScanMeta(w http.ResponseWriter, r *http.Request) {
+	journalID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid journal id")
+		return
+	}
+
+	row, err := h.querier.GetJournalSignedScanMeta(r.Context(), journalID)
+	if err != nil {
+		response.HandleDBError(w, err, "file")
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, JournalScanResponse{
+		Data: mapUpsertJournalSignedScanRow(sqlc.UpsertJournalSignedScanRow(row)),
+	})
+}
+
+func (h *Handler) GetJournalSignedScanFile(w http.ResponseWriter, r *http.Request) {
+	journalID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid journal id")
+		return
+	}
+	row, err := h.querier.GetJournalSignedScanFile(r.Context(), journalID)
+	if err != nil {
+		response.HandleDBError(w, err, "file")
+		return
+	}
+
+	w.Header().Set("Content-Type", row.ContentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+row.FileName+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(row.FileData)
+	if err != nil {
+		log.Printf("failed to write file response: %v", err)
+	}
+}
+
+func (h *Handler) DeleteJournalSignedScanFile(w http.ResponseWriter, r *http.Request) {
+	journalID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid journal id")
+		return
+	}
+
+	rowsAffected, err := h.querier.DeleteJournalSignedScan(r.Context(), journalID)
+	if err != nil {
+		response.HandleDBError(w, err, "file")
+		return
+	}
+	if rowsAffected == 0 {
+		response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "file not found")
+		return
+	}
+	response.WriteNoContent(w)
+}
+
+func mapUpsertJournalAttendanceScanRow(row sqlc.UpsertJournalAttendanceScanRow) JournalScanDTO {
+	return JournalScanDTO{
+		ID:               row.ID,
+		FileName:         row.FileName,
+		ContentType:      row.ContentType,
+		FileSize:         row.FileSize,
+		UploadedByUserID: row.UploadedByUserID,
+		CreatedAt:        row.CreatedAt.Time.Format(response.TimestampzFormat),
+		UpdatedAt:        row.UpdatedAt.Time.Format(response.TimestampzFormat),
+	}
+}
+
+func mapUpsertJournalSignedScanRow(row sqlc.UpsertJournalSignedScanRow) JournalScanDTO {
+	return JournalScanDTO{
 		ID:               row.ID,
 		FileName:         row.FileName,
 		ContentType:      row.ContentType,
@@ -1029,6 +1165,7 @@ func mapJournalDetailsRow(row sqlc.CreateJournalRow) JournalDetailsDTO {
 		SessionsCount:    row.SessionsCount,
 	}
 }
+
 func mapJournalListRow(row sqlc.ListJournalsRow) JournalListItemDTO {
 	var company *CompanyRefDTO
 	if row.CompanyID.Valid {

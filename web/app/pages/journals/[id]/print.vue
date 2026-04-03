@@ -323,7 +323,7 @@ onMounted(() => {
       <article class="print-sheet">
         <div class="mb-4 space-y-1">
           <h2 class="text-xl font-semibold text-slate-900">Lista uczestników</h2>
-          <p class="text-sm text-slate-500">Snapshot uczestników przypisanych do tego szkolenia.</p>
+          <p class="text-sm text-slate-500">Lista uczestników przypisanych do tego szkolenia.</p>
         </div>
 
         <div class="overflow-x-auto">

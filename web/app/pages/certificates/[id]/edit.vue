@@ -165,7 +165,7 @@ useSeoMeta({
           Edycja zaświadczenia
         </h1>
         <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Możesz skorygować kursanta i daty. Kurs oraz numer rejestru pozostają na tym etapie tylko do podglądu.
+          Możesz skorygować kursanta i daty. Kurs oraz numer rejestru są tutaj tylko do podglądu.
         </p>
       </div>
 

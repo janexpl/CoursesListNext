@@ -307,7 +307,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
         </h1>
         <p class="max-w-3xl text-sm leading-6 text-slate-600">
           Załóż nagłówek dziennika, a potem uzupełnisz uczestników i przebieg zajęć.
-          Na tym etapie zapisujesz podstawowe informacje potrzebne do dalszej pracy.
+          Teraz wpisujesz podstawowe informacje o szkoleniu.
         </p>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">

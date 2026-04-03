@@ -404,6 +404,19 @@ func (q *Queries) DeleteJournalAttendee(ctx context.Context, arg DeleteJournalAt
 	return result.RowsAffected(), nil
 }
 
+const deleteJournalSignedScan = `-- name: DeleteJournalSignedScan :execrows
+  DELETE FROM training_journal_signed_scans
+  WHERE journal_id = $1
+`
+
+func (q *Queries) DeleteJournalSignedScan(ctx context.Context, journalID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteJournalSignedScan, journalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromCourse :execrows
   WITH journal_source AS (
       SELECT
@@ -719,6 +732,79 @@ func (q *Queries) GetJournalByID(ctx context.Context, id int64) (GetJournalByIDR
 		&i.ClosedAt,
 		&i.AttendeesCount,
 		&i.SessionsCount,
+	)
+	return i, err
+}
+
+const getJournalSignedScanFile = `-- name: GetJournalSignedScanFile :one
+  SELECT
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_data
+  FROM training_journal_signed_scans
+  WHERE journal_id = $1
+`
+
+type GetJournalSignedScanFileRow struct {
+	ID          int64  `json:"id"`
+	JournalID   int64  `json:"journal_id"`
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	FileData    []byte `json:"file_data"`
+}
+
+func (q *Queries) GetJournalSignedScanFile(ctx context.Context, journalID int64) (GetJournalSignedScanFileRow, error) {
+	row := q.db.QueryRow(ctx, getJournalSignedScanFile, journalID)
+	var i GetJournalSignedScanFileRow
+	err := row.Scan(
+		&i.ID,
+		&i.JournalID,
+		&i.FileName,
+		&i.ContentType,
+		&i.FileData,
+	)
+	return i, err
+}
+
+const getJournalSignedScanMeta = `-- name: GetJournalSignedScanMeta :one
+  SELECT
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      uploaded_by_user_id,
+      created_at,
+      updated_at
+  FROM training_journal_signed_scans
+  WHERE journal_id = $1
+`
+
+type GetJournalSignedScanMetaRow struct {
+	ID               int64              `json:"id"`
+	JournalID        int64              `json:"journal_id"`
+	FileName         string             `json:"file_name"`
+	ContentType      string             `json:"content_type"`
+	FileSize         int64              `json:"file_size"`
+	UploadedByUserID int64              `json:"uploaded_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetJournalSignedScanMeta(ctx context.Context, journalID int64) (GetJournalSignedScanMetaRow, error) {
+	row := q.db.QueryRow(ctx, getJournalSignedScanMeta, journalID)
+	var i GetJournalSignedScanMetaRow
+	err := row.Scan(
+		&i.ID,
+		&i.JournalID,
+		&i.FileName,
+		&i.ContentType,
+		&i.FileSize,
+		&i.UploadedByUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1459,6 +1545,79 @@ func (q *Queries) UpsertJournalAttendanceScan(ctx context.Context, arg UpsertJou
 		arg.UploadedByUserID,
 	)
 	var i UpsertJournalAttendanceScanRow
+	err := row.Scan(
+		&i.ID,
+		&i.JournalID,
+		&i.FileName,
+		&i.ContentType,
+		&i.FileSize,
+		&i.UploadedByUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertJournalSignedScan = `-- name: UpsertJournalSignedScan :one
+  INSERT INTO training_journal_signed_scans (
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      file_data,
+      uploaded_by_user_id
+  ) VALUES (
+      $1, $2, $3, $4, $5, $6
+  )
+  ON CONFLICT (journal_id) DO UPDATE
+  SET
+      file_name = EXCLUDED.file_name,
+      content_type = EXCLUDED.content_type,
+      file_size = EXCLUDED.file_size,
+      file_data = EXCLUDED.file_data,
+      uploaded_by_user_id = EXCLUDED.uploaded_by_user_id,
+      updated_at = now()
+  RETURNING
+      id,
+      journal_id,
+      file_name,
+      content_type,
+      file_size,
+      uploaded_by_user_id,
+      created_at,
+      updated_at
+`
+
+type UpsertJournalSignedScanParams struct {
+	JournalID        int64  `json:"journal_id"`
+	FileName         string `json:"file_name"`
+	ContentType      string `json:"content_type"`
+	FileSize         int64  `json:"file_size"`
+	FileData         []byte `json:"file_data"`
+	UploadedByUserID int64  `json:"uploaded_by_user_id"`
+}
+
+type UpsertJournalSignedScanRow struct {
+	ID               int64              `json:"id"`
+	JournalID        int64              `json:"journal_id"`
+	FileName         string             `json:"file_name"`
+	ContentType      string             `json:"content_type"`
+	FileSize         int64              `json:"file_size"`
+	UploadedByUserID int64              `json:"uploaded_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpsertJournalSignedScan(ctx context.Context, arg UpsertJournalSignedScanParams) (UpsertJournalSignedScanRow, error) {
+	row := q.db.QueryRow(ctx, upsertJournalSignedScan,
+		arg.JournalID,
+		arg.FileName,
+		arg.ContentType,
+		arg.FileSize,
+		arg.FileData,
+		arg.UploadedByUserID,
+	)
+	var i UpsertJournalSignedScanRow
 	err := row.Scan(
 		&i.ID,
 		&i.JournalID,
