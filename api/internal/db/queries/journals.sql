@@ -58,7 +58,7 @@
           sqlc.narg(date_to)::date IS NULL
           OR j.date_end <= sqlc.narg(date_to)::date
       )
-  ORDER BY j.date_start DESC, j.id DESC
+  ORDER BY j.created_at DESC, j.id DESC
   LIMIT sqlc.arg(limit_count);
 
 
