@@ -54,57 +54,49 @@ function formatCertificateNumber(certificate: {
         </p>
       </div>
 
-      <UButton
-        icon="i-lucide-refresh-cw"
-        color="neutral"
-        variant="outline"
-        :loading="attendeesPending"
-        @click="emit('refresh')"
-      >
-        Odśwież
-      </UButton>
-    </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <span
+          class="hidden w-[22rem] truncate text-right text-xs font-medium transition-opacity sm:inline-block"
+          :class="
+            deleteAttendeeError || attendeeCertificateError || generateAttendeeCertificateError
+              ? 'text-red-600 opacity-100'
+              : deleteAttendeeSuccess || attendeeCertificateSuccess || generateAttendeeCertificateSuccess
+                ? 'text-emerald-600 opacity-100'
+                : attendeesPending && attendees.length > 0
+                  ? 'text-slate-400 opacity-100'
+                  : 'opacity-0'
+          "
+          :title="
+            deleteAttendeeError
+              || attendeeCertificateError
+              || generateAttendeeCertificateError
+              || deleteAttendeeSuccess
+              || attendeeCertificateSuccess
+              || generateAttendeeCertificateSuccess
+              || (attendeesPending && attendees.length > 0 ? 'Odświeżanie...' : '')
+          "
+        >
+          {{
+            deleteAttendeeError || attendeeCertificateError || generateAttendeeCertificateError
+              ? 'Nie zapisano'
+              : deleteAttendeeSuccess || attendeeCertificateSuccess || generateAttendeeCertificateSuccess
+                ? 'Zapisano'
+                : attendeesPending && attendees.length > 0
+                  ? 'Odświeżanie...'
+                  : 'Status sekcji'
+          }}
+        </span>
 
-    <div
-      v-if="deleteAttendeeError"
-      class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-    >
-      {{ deleteAttendeeError }}
-    </div>
-
-    <div
-      v-if="deleteAttendeeSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ deleteAttendeeSuccess }}
-    </div>
-
-    <div
-      v-if="attendeeCertificateError"
-      class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-    >
-      {{ attendeeCertificateError }}
-    </div>
-
-    <div
-      v-if="attendeeCertificateSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ attendeeCertificateSuccess }}
-    </div>
-
-    <div
-      v-if="generateAttendeeCertificateError"
-      class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-    >
-      {{ generateAttendeeCertificateError }}
-    </div>
-
-    <div
-      v-if="generateAttendeeCertificateSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ generateAttendeeCertificateSuccess }}
+        <UButton
+          icon="i-lucide-refresh-cw"
+          color="neutral"
+          variant="outline"
+          :loading="attendeesPending"
+          @click="emit('refresh')"
+        >
+          Odśwież
+        </UButton>
+      </div>
     </div>
 
     <div
@@ -115,7 +107,7 @@ function formatCertificateNumber(certificate: {
     </div>
 
     <div
-      v-else-if="attendeesPending"
+      v-else-if="attendeesPending && attendees.length === 0"
       class="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500"
     >
       Ładowanie uczestników...

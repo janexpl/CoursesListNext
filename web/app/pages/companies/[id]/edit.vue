@@ -291,6 +291,8 @@ useSeoMeta({
       <form
         id="company-edit-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -316,6 +318,7 @@ useSeoMeta({
               <input
                 v-model="form.name"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -327,6 +330,7 @@ useSeoMeta({
                   v-model="form.nip"
                   type="text"
                   inputmode="numeric"
+                  required
                   placeholder="np. 5210000000"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
@@ -354,6 +358,7 @@ useSeoMeta({
                 v-model="form.telephone"
                 type="text"
                 inputmode="tel"
+                required
                 placeholder="np. 600 700 800"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
@@ -411,6 +416,7 @@ useSeoMeta({
               <input
                 v-model="form.street"
                 type="text"
+                required
                 placeholder="np. ul. Kwiatowa 12"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
@@ -422,6 +428,7 @@ useSeoMeta({
                 v-model="form.zipcode"
                 type="text"
                 inputmode="numeric"
+                required
                 placeholder="np. 00-001"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
@@ -432,6 +439,7 @@ useSeoMeta({
               <input
                 v-model="form.city"
                 type="text"
+                required
                 placeholder="np. Warszawa"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >

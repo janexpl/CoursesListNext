@@ -103,6 +103,27 @@ function isValidHoursValue(value: string) {
   return /^\d+(\.\d+)?$/.test(value)
 }
 
+function rowHasAnyValue(row: CourseProgramRow) {
+  return !!(row.subject.trim() || row.theoryTime.trim() || row.practiceTime.trim())
+}
+
+function isProgramSubjectInvalid(row: CourseProgramRow, index: number) {
+  if (!errorMessage.value || row.subject.trim()) {
+    return false
+  }
+
+  if (!courseProgramEntries.value.length) {
+    return index === 0
+  }
+
+  return rowHasAnyValue(row)
+}
+
+function isProgramHoursInvalid(value: string) {
+  const normalized = normalizeHours(value)
+  return !!normalized && !isValidHoursValue(normalized)
+}
+
 function addProgramRow() {
   programRows.value.push(createProgramRow())
 }
@@ -440,29 +461,33 @@ const cancelLink = computed(() => {
 async function onSubmit() {
   errorMessage.value = ''
 
-  if (
-    !trimmedMainName.value
-    || !trimmedName.value
-    || !trimmedSymbol.value
-    || !trimmedExpiryTime.value
-    || !form.certFrontPage.trim()
-  ) {
+  if (!trimmedMainName.value || !trimmedName.value || !trimmedSymbol.value || !trimmedExpiryTime.value) {
     errorMessage.value = 'Uzupełnij wszystkie wymagane pola.'
+    activeTab.value = 'general'
+    return
+  }
+
+  if (!form.certFrontPage.trim()) {
+    errorMessage.value = 'Uzupełnij wszystkie wymagane pola.'
+    activeTab.value = 'template'
     return
   }
 
   if (!/^\d+$/.test(trimmedExpiryTime.value)) {
     errorMessage.value = 'Okres ważności musi być dodatnią liczbą całkowitą.'
+    activeTab.value = 'general'
     return
   }
 
   if (!courseProgramEntries.value.length) {
     errorMessage.value = 'Dodaj przynajmniej jeden temat programu kursu.'
+    activeTab.value = 'program'
     return
   }
 
   if (hasInvalidCourseProgram.value) {
     errorMessage.value = 'Uzupełnij temat oraz popraw godziny teorii i praktyki w programie kursu.'
+    activeTab.value = 'program'
     return
   }
 
@@ -689,7 +714,13 @@ useSeoMeta({
       {{ errorMessage }}
     </div>
 
-    <form id="course-create-form" class="space-y-6" @submit.prevent="onSubmit">
+    <form
+      id="course-create-form"
+      class="space-y-6"
+      novalidate
+      :data-show-validation="errorMessage ? 'true' : null"
+      @submit.prevent="onSubmit"
+    >
       <div v-if="activeTab === 'general'" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
@@ -703,6 +734,7 @@ useSeoMeta({
               <input
                 v-model="form.mainName"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -712,6 +744,7 @@ useSeoMeta({
               <input
                 v-model="form.name"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -721,6 +754,7 @@ useSeoMeta({
               <input
                 v-model="form.symbol"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -731,6 +765,7 @@ useSeoMeta({
                 v-model="form.expiryTime"
                 type="text"
                 inputmode="numeric"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -845,6 +880,7 @@ useSeoMeta({
                     <textarea
                       v-model="row.subject"
                       rows="5"
+                      :data-manual-invalid="isProgramSubjectInvalid(row, index) ? 'true' : null"
                       class="w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                       placeholder="Np. Zasady bezpiecznej obsługi urządzenia"
                     />
@@ -857,6 +893,7 @@ useSeoMeta({
                         v-model="row.theoryTime"
                         type="text"
                         inputmode="decimal"
+                        :data-manual-invalid="isProgramHoursInvalid(row.theoryTime) ? 'true' : null"
                         class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                         placeholder="0"
                       >
@@ -868,6 +905,7 @@ useSeoMeta({
                         v-model="row.practiceTime"
                         type="text"
                         inputmode="decimal"
+                        :data-manual-invalid="isProgramHoursInvalid(row.practiceTime) ? 'true' : null"
                         class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                         placeholder="0"
                       >
@@ -1064,7 +1102,10 @@ useSeoMeta({
               </div>
             </div>
 
-            <div class="mt-5 rounded-lg border border-slate-200 bg-white">
+            <div
+              class="mt-5 rounded-lg border border-slate-200 bg-white"
+              :data-manual-invalid="errorMessage && !form.certFrontPage.trim() ? 'true' : null"
+            >
               <div
                 ref="templateEditorRef"
                 contenteditable="true"
@@ -1090,6 +1131,8 @@ useSeoMeta({
                 <textarea
                   v-model="form.certFrontPage"
                   rows="12"
+                  required
+                  :data-manual-invalid="errorMessage && !form.certFrontPage.trim() ? 'true' : null"
                   class="w-full rounded-md border border-slate-300 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-100 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />
               </label>

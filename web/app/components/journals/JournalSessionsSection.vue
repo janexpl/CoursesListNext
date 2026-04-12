@@ -40,6 +40,35 @@ function formatSessionHours(value: string) {
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
+        <span
+          class="hidden w-[18rem] truncate text-right text-xs font-medium transition-opacity sm:inline-block"
+          :class="
+            generateSessionsError
+              ? 'text-red-600 opacity-100'
+              : generateSessionsSuccess || sessionUpdateSuccess
+                ? 'text-emerald-600 opacity-100'
+                : sessionsPending && sessions.length > 0
+                  ? 'text-slate-400 opacity-100'
+                  : 'opacity-0'
+          "
+          :title="
+            generateSessionsError
+              || generateSessionsSuccess
+              || sessionUpdateSuccess
+              || (sessionsPending && sessions.length > 0 ? 'Odświeżanie...' : '')
+          "
+        >
+          {{
+            generateSessionsError
+              ? 'Nie zapisano'
+              : generateSessionsSuccess || sessionUpdateSuccess
+                ? 'Zapisano'
+                : sessionsPending && sessions.length > 0
+                  ? 'Odświeżanie...'
+                  : 'Status sekcji'
+          }}
+        </span>
+
         <button
           v-if="!sessionsPending && sessions.length === 0 && !isClosed"
           type="button"
@@ -69,27 +98,6 @@ function formatSessionHours(value: string) {
     </p>
 
     <div
-      v-if="generateSessionsError"
-      class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-    >
-      {{ generateSessionsError }}
-    </div>
-
-    <div
-      v-if="generateSessionsSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ generateSessionsSuccess }}
-    </div>
-
-    <div
-      v-if="sessionUpdateSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ sessionUpdateSuccess }}
-    </div>
-
-    <div
       v-if="hasError"
       class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
     >
@@ -97,7 +105,7 @@ function formatSessionHours(value: string) {
     </div>
 
     <div
-      v-else-if="sessionsPending"
+      v-else-if="sessionsPending && sessions.length === 0"
       class="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500"
     >
       Ładowanie programu szkolenia...

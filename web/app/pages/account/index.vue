@@ -227,7 +227,12 @@ useSeoMeta({
           </span>
         </div>
 
-        <form class="space-y-5" @submit.prevent="onProfileSubmit">
+        <form
+          class="space-y-5"
+          novalidate
+          :data-show-validation="profileErrorMessage ? 'true' : null"
+          @submit.prevent="onProfileSubmit"
+        >
           <label class="block space-y-2">
             <span class="text-sm font-medium text-slate-700">E-mail</span>
             <input
@@ -315,7 +320,12 @@ useSeoMeta({
           </p>
         </div>
 
-        <form class="space-y-5" @submit.prevent="onPasswordSubmit">
+        <form
+          class="space-y-5"
+          novalidate
+          :data-show-validation="passwordErrorMessage ? 'true' : null"
+          @submit.prevent="onPasswordSubmit"
+        >
           <label class="block space-y-2">
             <span class="text-sm font-medium text-slate-700">Aktualne hasło</span>
             <input

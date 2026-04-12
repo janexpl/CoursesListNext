@@ -373,6 +373,8 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
       <form
         id="journal-create-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -415,6 +417,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                   v-model="form.courseSearch"
                   type="text"
                   placeholder="Wpisz co najmniej 2 znaki, aby wyszukać kurs"
+                  :data-manual-invalid="errorMessage && !selectedCourseId ? 'true' : null"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
 
@@ -493,6 +496,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.title"
                   type="text"
+                  required
                   placeholder="np. Szkolenie okresowe BHP dla pracowników administracyjno-biurowych"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
@@ -503,6 +507,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.organizerName"
                   type="text"
+                  required
                   placeholder="np. CoursesList"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
@@ -513,6 +518,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.location"
                   type="text"
+                  required
                   placeholder="np. Warszawa, sala 2"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
@@ -523,6 +529,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.formOfTraining"
                   type="text"
+                  required
                   placeholder="np. kurs stacjonarny"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
@@ -533,6 +540,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.dateStart"
                   type="date"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -542,6 +550,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <input
                   v-model="form.dateEnd"
                   type="date"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -551,6 +560,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                 <textarea
                   v-model="form.legalBasis"
                   rows="3"
+                  required
                   placeholder="np. Rozporządzenie Ministra Gospodarki i Pracy z dnia..."
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />

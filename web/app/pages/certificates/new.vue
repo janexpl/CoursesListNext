@@ -565,6 +565,8 @@ async function onSubmit() {
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <form
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <section class="rounded-lg border border-slate-200 bg-white/90 p-6 shadow-sm">
@@ -595,6 +597,7 @@ async function onSubmit() {
               type="text"
               autocomplete="off"
               placeholder="Nazwisko, imię lub PESEL"
+              :data-manual-invalid="errorMessage && (!selectedStudent || !form.studentId) ? 'true' : null"
               class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
             >
           </label>
@@ -691,6 +694,7 @@ async function onSubmit() {
           <section
             v-if="showCreateStudentForm"
             class="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-5"
+            :data-show-validation="createStudentError ? 'true' : null"
           >
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -740,6 +744,7 @@ async function onSubmit() {
                   <input
                     v-model="createStudentForm.firstName"
                     type="text"
+                    required
                     class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   >
                 </label>
@@ -749,6 +754,7 @@ async function onSubmit() {
                   <input
                     v-model="createStudentForm.lastName"
                     type="text"
+                    required
                     class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   >
                 </label>
@@ -758,6 +764,7 @@ async function onSubmit() {
                   <input
                     v-model="createStudentForm.birthDate"
                     type="date"
+                    required
                     class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   >
                 </label>
@@ -767,6 +774,7 @@ async function onSubmit() {
                   <input
                     v-model="createStudentForm.birthPlace"
                     type="text"
+                    required
                     class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   >
                 </label>
@@ -970,6 +978,7 @@ async function onSubmit() {
               type="text"
               autocomplete="off"
               placeholder="Symbol, nazwa lub grupa kursu"
+              :data-manual-invalid="errorMessage && (!selectedCourse || !form.courseId) ? 'true' : null"
               class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
             >
           </label>
@@ -1084,6 +1093,7 @@ async function onSubmit() {
                 type="number"
                 min="2000"
                 step="1"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -1096,6 +1106,7 @@ async function onSubmit() {
                   type="number"
                   min="1"
                   step="1"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 pr-12 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
                 <span

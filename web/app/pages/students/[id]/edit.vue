@@ -240,6 +240,8 @@ useSeoMeta({
       <form
         id="student-edit-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -265,6 +267,7 @@ useSeoMeta({
               <input
                 v-model="form.firstName"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -274,6 +277,7 @@ useSeoMeta({
               <input
                 v-model="form.lastName"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -301,6 +305,7 @@ useSeoMeta({
               <input
                 v-model="form.birthDate"
                 type="date"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -310,6 +315,7 @@ useSeoMeta({
               <input
                 v-model="form.birthPlace"
                 type="text"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>

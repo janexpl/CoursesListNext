@@ -23,3 +23,16 @@ body {
 #__nuxt {
   min-height: 100vh;
 }
+
+[data-show-validation='true'] :is(input, select, textarea)[required]:invalid,
+[data-show-validation='true'] [data-manual-invalid='true'] {
+  border-color: rgb(252 165 165);
+  background-color: rgb(254 242 242);
+}
+
+[data-show-validation='true'] :is(input, select, textarea)[required]:invalid:focus,
+[data-show-validation='true'] [data-manual-invalid='true']:focus,
+[data-show-validation='true'] [data-manual-invalid='true']:focus-within {
+  border-color: rgb(239 68 68);
+  box-shadow: 0 0 0 4px rgb(254 202 202 / 0.7);
+}

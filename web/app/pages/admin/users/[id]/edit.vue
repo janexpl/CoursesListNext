@@ -300,6 +300,8 @@ async function refreshAll() {
       <div class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <form
           class="space-y-6 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm"
+          novalidate
+          :data-show-validation="errorMessage ? 'true' : null"
           @submit.prevent="onSubmit"
         >
           <div class="space-y-2">
@@ -318,6 +320,7 @@ async function refreshAll() {
                 v-model="form.email"
                 type="email"
                 autocomplete="email"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -328,6 +331,7 @@ async function refreshAll() {
                 v-model="form.firstName"
                 type="text"
                 autocomplete="given-name"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -338,6 +342,7 @@ async function refreshAll() {
                 v-model="form.lastName"
                 type="text"
                 autocomplete="family-name"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -347,6 +352,7 @@ async function refreshAll() {
               <div class="relative">
                 <select
                   v-model="form.role"
+                  :data-manual-invalid="errorMessage && form.role <= 0 ? 'true' : null"
                   class="h-12.5 w-full appearance-none rounded-md border border-slate-300 bg-white px-4 py-3 pr-11 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
                   <option :value="2">
@@ -394,6 +400,8 @@ async function refreshAll() {
 
         <form
           class="space-y-6 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm"
+          novalidate
+          :data-show-validation="passwordErrorMessage ? 'true' : null"
           @submit.prevent="onResetPassword"
         >
           <div class="space-y-2">
@@ -414,6 +422,7 @@ async function refreshAll() {
               v-model="passwordForm.newPassword"
               type="password"
               autocomplete="new-password"
+              required
               class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               placeholder="Minimum 8 znaków"
             >
@@ -425,6 +434,7 @@ async function refreshAll() {
               v-model="passwordForm.confirmPassword"
               type="password"
               autocomplete="new-password"
+              required
               class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               placeholder="Powtórz nowe hasło"
             >

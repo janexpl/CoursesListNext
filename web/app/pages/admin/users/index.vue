@@ -348,13 +348,19 @@ async function onDeleteUser(user: AdminUser) {
             </p>
           </div>
 
-          <form class="mt-6 space-y-4" @submit.prevent="onCreateUser">
+          <form
+            class="mt-6 space-y-4"
+            novalidate
+            :data-show-validation="createError ? 'true' : null"
+            @submit.prevent="onCreateUser"
+          >
             <label class="block space-y-2">
               <span class="text-sm font-medium text-slate-700">Email</span>
               <input
                 v-model="form.email"
                 type="email"
                 autocomplete="email"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -365,6 +371,7 @@ async function onDeleteUser(user: AdminUser) {
                 v-model="form.password"
                 type="password"
                 autocomplete="new-password"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -376,6 +383,7 @@ async function onDeleteUser(user: AdminUser) {
                   v-model="form.firstName"
                   type="text"
                   autocomplete="given-name"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -386,6 +394,7 @@ async function onDeleteUser(user: AdminUser) {
                   v-model="form.lastName"
                   type="text"
                   autocomplete="family-name"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -396,6 +405,7 @@ async function onDeleteUser(user: AdminUser) {
               <div class="relative">
                 <select
                   v-model="form.role"
+                  :data-manual-invalid="createError && form.role <= 0 ? 'true' : null"
                   class="h-[50px] w-full appearance-none rounded-md border border-slate-300 bg-white px-4 py-3 pr-11 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
                   <option :value="2">

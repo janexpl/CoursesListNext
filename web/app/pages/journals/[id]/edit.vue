@@ -305,6 +305,8 @@ useSeoMeta({
       <form
         id="journal-edit-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -360,6 +362,7 @@ useSeoMeta({
                 <input
                   v-model="form.title"
                   type="text"
+                  required
                   :disabled="isClosed"
                   placeholder="np. Szkolenie okresowe BHP dla pracowników administracyjno-biurowych"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -371,6 +374,7 @@ useSeoMeta({
                 <input
                   v-model="form.organizerName"
                   type="text"
+                  required
                   :disabled="isClosed"
                   placeholder="np. CoursesList"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -382,6 +386,7 @@ useSeoMeta({
                 <input
                   v-model="form.location"
                   type="text"
+                  required
                   :disabled="isClosed"
                   placeholder="np. Warszawa, sala 2"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -393,6 +398,7 @@ useSeoMeta({
                 <input
                   v-model="form.formOfTraining"
                   type="text"
+                  required
                   :disabled="isClosed"
                   placeholder="np. kurs stacjonarny"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -404,6 +410,7 @@ useSeoMeta({
                 <input
                   v-model="form.dateStart"
                   type="date"
+                  required
                   :disabled="isClosed"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
@@ -414,6 +421,7 @@ useSeoMeta({
                 <input
                   v-model="form.dateEnd"
                   type="date"
+                  required
                   :disabled="isClosed"
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
@@ -424,6 +432,7 @@ useSeoMeta({
                 <textarea
                   v-model="form.legalBasis"
                   rows="3"
+                  required
                   :disabled="isClosed"
                   placeholder="np. Rozporządzenie Ministra Gospodarki i Pracy z dnia..."
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"

@@ -219,6 +219,8 @@ useSeoMeta({
       <form
         id="certificate-edit-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -245,6 +247,7 @@ useSeoMeta({
                 v-model="form.studentSearch"
                 type="text"
                 placeholder="Minimum 2 znaki"
+                :data-manual-invalid="errorMessage && !selectedStudent ? 'true' : null"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -338,6 +341,7 @@ useSeoMeta({
               <input
                 v-model="form.certificateDate"
                 type="date"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>
@@ -347,6 +351,7 @@ useSeoMeta({
               <input
                 v-model="form.courseDateStart"
                 type="date"
+                required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
             </label>

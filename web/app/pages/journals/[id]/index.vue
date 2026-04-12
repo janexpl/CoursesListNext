@@ -567,6 +567,21 @@ function onUpdateSessionDraft(payload: {
   }
 }
 
+async function withPreservedScroll(action: () => Promise<void>) {
+  if (!import.meta.client) {
+    await action()
+    return
+  }
+
+  const previousScrollY = window.scrollY
+  await action()
+  await nextTick()
+  window.scrollTo({
+    top: previousScrollY,
+    behavior: 'auto'
+  })
+}
+
 async function dismissCreatedNotice() {
   showCreatedNotice.value = false
 
@@ -583,6 +598,24 @@ async function dismissCreatedNotice() {
   await router.replace({
     path: `/journals/${journalId}`,
     query: nextQuery
+  })
+}
+
+async function onRefreshAttendees() {
+  await withPreservedScroll(async () => {
+    await refreshAttendees()
+  })
+}
+
+async function onRefreshSessions() {
+  await withPreservedScroll(async () => {
+    await refreshSessions()
+  })
+}
+
+async function onRefreshAttendance() {
+  await withPreservedScroll(async () => {
+    await refreshAttendance()
   })
 }
 
@@ -629,7 +662,9 @@ async function onUploadAttendanceScan() {
 
   try {
     await api.uploadJournalAttendanceScan(journalId, attendanceScanFile.value)
-    await refreshAttendanceScan()
+    await withPreservedScroll(async () => {
+      await refreshAttendanceScan()
+    })
     attendanceScanActionSuccess.value = hadExistingScan
       ? 'Podmieniono skan podpisanej listy obecności.'
       : 'Załączono skan podpisanej listy obecności.'
@@ -659,7 +694,9 @@ async function onDeleteAttendanceScan() {
 
   try {
     await api.deleteJournalAttendanceScan(journalId)
-    await refreshAttendanceScan()
+    await withPreservedScroll(async () => {
+      await refreshAttendanceScan()
+    })
     attendanceScanActionSuccess.value = 'Usunięto skan podpisanej listy obecności.'
     resetAttendanceScanSelection()
   } catch (error) {
@@ -685,7 +722,9 @@ async function onUploadSignedScan() {
 
   try {
     await api.uploadJournalSignedScan(journalId, signedScanFile.value)
-    await refreshSignedScan()
+    await withPreservedScroll(async () => {
+      await refreshSignedScan()
+    })
     signedScanActionSuccess.value = hadExistingScan
       ? 'Podmieniono skan podpisanego dziennika.'
       : 'Załączono skan podpisanego dziennika.'
@@ -715,7 +754,9 @@ async function onDeleteSignedScan() {
 
   try {
     await api.deleteJournalSignedScan(journalId)
-    await refreshSignedScan()
+    await withPreservedScroll(async () => {
+      await refreshSignedScan()
+    })
     signedScanActionSuccess.value = 'Usunięto skan podpisanego dziennika.'
     resetSignedScanSelection()
   } catch (error) {
@@ -1450,12 +1491,14 @@ async function onCloseJournal() {
 
   try {
     await api.closeJournal(journalId)
-    await Promise.all([
-      refreshJournal(),
-      refreshAttendees(),
-      refreshSessions(),
-      refreshAttendance()
-    ])
+    await withPreservedScroll(async () => {
+      await Promise.all([
+        refreshJournal(),
+        refreshAttendees(),
+        refreshSessions(),
+        refreshAttendance()
+      ])
+    })
     closeJournalSuccess.value
       = 'Dziennik został zamknięty. Możesz go teraz wydrukować jako finalną wersję.'
   } catch (error) {
@@ -1481,7 +1524,9 @@ async function onAddAttendee(student: StudentSummary) {
       studentId: student.id
     })
 
-    await Promise.all([refreshJournal(), refreshAttendees(), refreshAttendance()])
+    await withPreservedScroll(async () => {
+      await Promise.all([refreshJournal(), refreshAttendees(), refreshAttendance()])
+    })
     studentSearch.value = ''
     await nextTick()
     addAttendeeCardRef.value?.focusSearchInput()
@@ -1506,7 +1551,9 @@ async function onDeleteAttendee(attendeeId: number, fullName: string) {
 
   try {
     await api.deleteJournalAttendee(journalId, attendeeId)
-    await Promise.all([refreshJournal(), refreshAttendees(), refreshAttendance()])
+    await withPreservedScroll(async () => {
+      await Promise.all([refreshJournal(), refreshAttendees(), refreshAttendance()])
+    })
     deleteAttendeeSuccess.value = `Usunięto kursanta ${fullName} z dziennika.`
   } catch (error) {
     deleteAttendeeError.value = getApiErrorMessage(
@@ -1562,7 +1609,9 @@ async function onGenerateAttendeeCertificate(attendee: JournalAttendee) {
 
   try {
     const response = await api.generateJournalAttendeeCertificate(journalId, attendee.id)
-    await refreshAttendees()
+    await withPreservedScroll(async () => {
+      await refreshAttendees()
+    })
     generateAttendeeCertificateSuccess.value = `Wystawiono zaświadczenie dla uczestnika ${attendee.fullNameSnapshot}. Numer dokumentu znajdziesz teraz w kolumnie zaświadczenia.`
     editingCertificateAttendeeId.value = null
     attendeeCertificateDrafts.value = {
@@ -1599,7 +1648,9 @@ async function onSaveAttendeeCertificate(attendee: JournalAttendee) {
       certificateId
     })
 
-    await refreshAttendees()
+    await withPreservedScroll(async () => {
+      await refreshAttendees()
+    })
     editingCertificateAttendeeId.value = null
     attendeeCertificateSuccess.value = certificateId
       ? `Podpięto zaświadczenie do uczestnika ${attendee.fullNameSnapshot}.`
@@ -1631,7 +1682,9 @@ async function onGenerateSessions() {
 
   try {
     const response = await api.generateJournalSessionsFromCourse(journalId)
-    await Promise.all([refreshJournal(), refreshSessions(), refreshAttendance()])
+    await withPreservedScroll(async () => {
+      await Promise.all([refreshJournal(), refreshSessions(), refreshAttendance()])
+    })
     generateSessionsSuccess.value = `Dodano ${response.data.generatedCount} pozycji programu szkolenia.`
   } catch (error) {
     generateSessionsError.value = getApiErrorMessage(
@@ -1672,7 +1725,9 @@ async function onSaveSession(session: JournalSession) {
       trainerName
     })
 
-    await refreshSessions()
+    await withPreservedScroll(async () => {
+      await refreshSessions()
+    })
     sessionUpdateSuccess.value = `Zapisano zmiany w pozycji „${session.topic}”.`
   } catch (error) {
     sessionSaveErrors.value = {
@@ -1703,7 +1758,9 @@ async function onToggleAttendance(sessionId: number, attendeeId: number, present
       present
     })
 
-    await refreshAttendance()
+    await withPreservedScroll(async () => {
+      await refreshAttendance()
+    })
     attendanceSaveSuccess.value = 'Zapisano obecność.'
   } catch (error) {
     attendanceDrafts.value = {
@@ -1758,7 +1815,9 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
       })
     )
 
-    await refreshAttendance()
+    await withPreservedScroll(async () => {
+      await refreshAttendance()
+    })
     attendanceSaveSuccess.value = present
       ? 'Zaznaczono obecność dla wszystkich pozycji uczestnika.'
       : 'Wyczyszczono obecność dla wszystkich pozycji uczestnika.'
@@ -1966,7 +2025,7 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
           :attendee-certificate-options="attendeeCertificateOptions"
           :deleting-attendee-id="deletingAttendeeId"
           :is-closed="isClosed"
-          @refresh="refreshAttendees()"
+          @refresh="onRefreshAttendees"
           @start-certificate-edit="onStartAttendeeCertificateEdit"
           @cancel-certificate-edit="onCancelAttendeeCertificateEdit"
           @update-certificate-draft="onUpdateAttendeeCertificateDraft"
@@ -1990,7 +2049,7 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
           :is-closed="isClosed"
           :journal-date-start="journal.dateStart"
           :has-session-changes="hasSessionChanges"
-          @refresh="refreshSessions()"
+          @refresh="onRefreshSessions"
           @generate-sessions="onGenerateSessions"
           @update-session-draft="onUpdateSessionDraft"
           @save-session="onSaveSession"
@@ -2008,7 +2067,7 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
           :saving-attendance-key="savingAttendanceKey"
           :bulk-saving-attendee-id="bulkSavingAttendeeId"
           :attendance-drafts="attendanceDrafts"
-          @refresh="refreshAttendance()"
+          @refresh="onRefreshAttendance"
           @set-attendance-for-attendee="
             onSetAttendanceForAttendee($event.attendeeId, $event.present)
           "

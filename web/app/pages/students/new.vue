@@ -389,6 +389,8 @@ useSeoMeta({
       <form
         id="student-create-form"
         class="space-y-6"
+        novalidate
+        :data-show-validation="errorMessage ? 'true' : null"
         @submit.prevent="onSubmit"
       >
         <div
@@ -430,6 +432,7 @@ useSeoMeta({
                 <input
                   v-model="form.firstName"
                   type="text"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -439,6 +442,7 @@ useSeoMeta({
                 <input
                   v-model="form.lastName"
                   type="text"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -448,6 +452,7 @@ useSeoMeta({
                 <input
                   v-model="form.birthDate"
                   type="date"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -457,6 +462,7 @@ useSeoMeta({
                 <input
                   v-model="form.birthPlace"
                   type="text"
+                  required
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
               </label>
@@ -651,6 +657,7 @@ useSeoMeta({
             <section
               v-if="showCreateCompanyForm"
               class="rounded-xl border border-slate-200 bg-slate-50/80 p-5"
+              :data-show-validation="companyCreateError ? 'true' : null"
             >
               <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -700,6 +707,7 @@ useSeoMeta({
                     <input
                       v-model="createCompanyForm.name"
                       type="text"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>
@@ -709,6 +717,7 @@ useSeoMeta({
                     <input
                       v-model="createCompanyForm.street"
                       type="text"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>
@@ -718,6 +727,7 @@ useSeoMeta({
                     <input
                       v-model="createCompanyForm.zipcode"
                       type="text"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>
@@ -727,6 +737,7 @@ useSeoMeta({
                     <input
                       v-model="createCompanyForm.city"
                       type="text"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>
@@ -737,6 +748,7 @@ useSeoMeta({
                       v-model="createCompanyForm.nip"
                       type="text"
                       inputmode="numeric"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>
@@ -747,6 +759,7 @@ useSeoMeta({
                       v-model="createCompanyForm.telephone"
                       type="text"
                       inputmode="tel"
+                      required
                       class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                     >
                   </label>

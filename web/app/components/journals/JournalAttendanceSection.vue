@@ -72,29 +72,45 @@ function onAttendanceChange(sessionId: number, attendeeId: number, event: Event)
         </p>
       </div>
 
-      <UButton
-        icon="i-lucide-refresh-cw"
-        color="neutral"
-        variant="outline"
-        :loading="attendancePending"
-        @click="emit('refresh')"
-      >
-        Odśwież
-      </UButton>
-    </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <span
+          class="hidden w-[18rem] truncate text-right text-xs font-medium transition-opacity sm:inline-block"
+          :class="
+            attendanceSaveError
+              ? 'text-red-600 opacity-100'
+              : attendanceSaveSuccess
+                ? 'text-emerald-600 opacity-100'
+                : attendancePending && attendees.length > 0 && sessions.length > 0
+                  ? 'text-slate-400 opacity-100'
+                  : 'opacity-0'
+          "
+          :title="
+            attendanceSaveError
+              || attendanceSaveSuccess
+              || (attendancePending && attendees.length > 0 && sessions.length > 0 ? 'Odświeżanie...' : '')
+          "
+        >
+          {{
+            attendanceSaveError
+              ? 'Nie zapisano'
+              : attendanceSaveSuccess
+                ? 'Zapisano'
+                : attendancePending && attendees.length > 0 && sessions.length > 0
+                  ? 'Odświeżanie...'
+                  : 'Status sekcji'
+          }}
+        </span>
 
-    <div
-      v-if="attendanceSaveError"
-      class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-    >
-      {{ attendanceSaveError }}
-    </div>
-
-    <div
-      v-if="attendanceSaveSuccess"
-      class="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-    >
-      {{ attendanceSaveSuccess }}
+        <UButton
+          icon="i-lucide-refresh-cw"
+          color="neutral"
+          variant="outline"
+          :loading="attendancePending"
+          @click="emit('refresh')"
+        >
+          Odśwież
+        </UButton>
+      </div>
     </div>
 
     <div
@@ -105,7 +121,7 @@ function onAttendanceChange(sessionId: number, attendeeId: number, event: Event)
     </div>
 
     <div
-      v-else-if="attendancePending"
+      v-else-if="attendancePending && (attendees.length === 0 || sessions.length === 0)"
       class="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500"
     >
       Ładowanie obecności...
