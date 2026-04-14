@@ -128,7 +128,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	certId, err := h.creator.Create(r.Context(), mapCertificateRequest(certReq))
+	certID, err := h.creator.Create(r.Context(), mapCertificateRequest(certReq))
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidRegistryDate) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
@@ -138,12 +138,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate translation not found")
 			return
 		}
+		if errors.Is(err, ErrRegistryNumberTaken) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "registry number already taken for the given year")
+			return
+		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create certificate")
 		return
 	}
 	response.WriteJSON(w, http.StatusCreated, CreateCertificateResponse{
 		Data: CreateCertificateResponseData{
-			ID: certId.ID,
+			ID: certID.ID,
 		},
 	})
 }
@@ -168,7 +172,6 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		CourseDateStart: req.CourseDateStart,
 		CourseDateEnd:   req.CourseDateEnd,
 	})
-
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
@@ -180,7 +183,6 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
 		Data: mapUpdateCertificateResponse(row),
 	})
-
 }
 
 func (h *Handler) SoftDeleteCertificate(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +217,6 @@ func (h *Handler) SoftDeleteCertificate(w http.ResponseWriter, r *http.Request) 
 	response.WriteJSON(w, http.StatusOK, DeleteCertificateResponse{
 		Data: DeleteCertificateDTO{ID: result},
 	})
-
 }
 
 func mapCertificateRequest(cert CreateCertificateRequest) CreateCertificateInput {

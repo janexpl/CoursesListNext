@@ -644,6 +644,31 @@ func TestCreateReturnsBadRequestForInvalidBusinessInput(t *testing.T) {
 	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
 }
 
+func TestCreateReturnsConflictWhenRegistryNumberIsAlreadyTaken(t *testing.T) {
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		createFunc: func(_ context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {
+			if input.StudentID != 12 || input.CourseID != 3 || input.RegistryYear != 2026 || input.RegistryNumber != 18 {
+				t.Fatalf("unexpected create input: %+v", input)
+			}
+			return CreateCertificateResult{}, ErrRegistryNumberTaken
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(`{
+		"studentId": 12,
+		"courseId": 3,
+		"certificateDate": "2026-03-15",
+		"courseDateStart": "2026-03-10",
+		"registryYear": 2026,
+		"registryNumber": 18
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.Create(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusConflict, response.CodeConflict)
+}
+
 func TestCreateReturnsInternalServerErrorWhenServiceFails(t *testing.T) {
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		createFunc: func(_ context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {

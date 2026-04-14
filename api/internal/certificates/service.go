@@ -21,6 +21,7 @@ var (
 	ErrInvalidInput                   = errors.New("invalid input")
 	ErrInvalidRegistryDate            = errors.New("invalid registry chronology")
 	ErrCertificateTranslationNotFound = errors.New("certificate translation not found")
+	ErrRegistryNumberTaken            = errors.New("registry number already taken")
 )
 
 type CreateCertificateInput struct {
@@ -143,7 +144,6 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 			CourseID:     input.CourseID,
 			LanguageCode: languageCode,
 		})
-
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return CreateCertificateResult{}, ErrCertificateTranslationNotFound
@@ -159,6 +159,17 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 
 	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
 
+	exists, err := s.queries.ActiveRegistryNumberExistsForCourseYear(ctx, dbsqlc.ActiveRegistryNumberExistsForCourseYearParams{
+		CourseID: input.CourseID,
+		Year:     input.RegistryYear,
+		Number:   input.RegistryNumber,
+	})
+	if err != nil {
+		return CreateCertificateResult{}, err
+	}
+	if exists {
+		return CreateCertificateResult{}, ErrRegistryNumberTaken
+	}
 	tx, err := s.beginTx(ctx)
 	if err != nil {
 		return CreateCertificateResult{}, err

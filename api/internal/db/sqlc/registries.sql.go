@@ -11,6 +11,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activeRegistryNumberExistsForCourseYear = `-- name: ActiveRegistryNumberExistsForCourseYear :one
+ SELECT EXISTS (
+   SELECT 1
+   FROM certificates c
+   JOIN registries r ON r.id = c.registry_id
+   WHERE r.course_id = $1
+     AND r.year = $2
+     AND r.number = $3
+     AND c.deleted_at IS NULL
+  )
+`
+
+type ActiveRegistryNumberExistsForCourseYearParams struct {
+	CourseID int64 `json:"course_id"`
+	Year     int64 `json:"year"`
+	Number   int32 `json:"number"`
+}
+
+func (q *Queries) ActiveRegistryNumberExistsForCourseYear(ctx context.Context, arg ActiveRegistryNumberExistsForCourseYearParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeRegistryNumberExistsForCourseYear, arg.CourseID, arg.Year, arg.Number)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createRegistry = `-- name: CreateRegistry :one
 INSERT INTO registries (
     course_id,
@@ -40,7 +65,8 @@ func (q *Queries) CreateRegistry(ctx context.Context, arg CreateRegistryParams) 
 const getNextRegistryNumber = `-- name: GetNextRegistryNumber :one
 SELECT COALESCE(MAX(number), 0) + 1 AS next_number
 FROM registries
-WHERE course_id = $1 AND year = $2
+JOIN certificates c ON c.registry_id = registries.id
+WHERE course_id = $1 AND year = $2 AND c.deleted_at IS NULL
 `
 
 type GetNextRegistryNumberParams struct {
