@@ -1,6 +1,2 @@
-CLAUDE.md
-.claude/
 .env
-AGENTS.md
-.agents
 skills-lock.json
