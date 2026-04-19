@@ -262,6 +262,77 @@ func TestListPassesSearchAndLimitToQuery(t *testing.T) {
 	}
 }
 
+func TestListPassesDateFiltersToQuery(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listCertificatesFunc: func(_ context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(time.DateOnly) != "2026-03-01" {
+				t.Fatalf("expected dateFrom=2026-03-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(time.DateOnly) != "2026-03-31" {
+				t.Fatalf("expected dateTo=2026-03-31, got %+v", arg.DateTo)
+			}
+			return []sqlc.ListCertificatesRow{}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates?dateFrom=2026-03-01&dateTo=2026-03-31", nil)
+	rec := httptest.NewRecorder()
+
+	handler.List(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestListRejectsInvalidDateFrom(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listCertificatesFunc: func(_ context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {
+			t.Fatalf("ListCertificates should not be called for invalid dateFrom, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates?dateFrom=2026-99-99", nil)
+	rec := httptest.NewRecorder()
+
+	handler.List(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListRejectsInvalidDateTo(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listCertificatesFunc: func(_ context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {
+			t.Fatalf("ListCertificates should not be called for invalid dateTo, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates?dateTo=2026-99-99", nil)
+	rec := httptest.NewRecorder()
+
+	handler.List(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListRejectsDateRangeWhenDateFromAfterDateTo(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listCertificatesFunc: func(_ context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {
+			t.Fatalf("ListCertificates should not be called when dateFrom is after dateTo, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates?dateFrom=2026-04-01&dateTo=2026-03-01", nil)
+	rec := httptest.NewRecorder()
+
+	handler.List(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
 func TestListReturnsBadRequestForInvalidLimit(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
 		listCertificatesFunc: func(_ context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error) {

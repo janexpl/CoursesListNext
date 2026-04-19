@@ -52,21 +52,6 @@ const { data, pending, error, refresh } = await useAsyncData(
 )
 
 const certificates = computed(() => data.value?.data ?? [])
-const filteredCertificates = computed(() => {
-  return certificates.value.filter((certificate) => {
-    const certificateDate = certificate.date
-
-    if (dateFrom.value && certificateDate < dateFrom.value) {
-      return false
-    }
-
-    if (dateTo.value && certificateDate > dateTo.value) {
-      return false
-    }
-
-    return true
-  })
-})
 const hasActiveFilters = computed(() => {
   return !!(debouncedSearch.value.length > 0 || dateFrom.value || dateTo.value)
 })
@@ -173,7 +158,7 @@ function clearFilters() {
     </div>
 
     <div
-      v-else-if="filteredCertificates.length === 0"
+      v-else-if="certificates.length === 0"
       class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-sm text-slate-500"
     >
       {{ hasActiveFilters ? 'Brak wyników dla wybranych filtrów.' : 'Brak zaświadczeń do wyświetlenia.' }}
@@ -184,7 +169,7 @@ function clearFilters() {
       class="grid gap-4"
     >
       <NuxtLink
-        v-for="certificate in filteredCertificates"
+        v-for="certificate in certificates"
         :key="certificate.id"
         :to="`/certificates/${certificate.id}`"
         class="grid gap-4 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm transition hover:border-sky-300 hover:bg-white md:grid-cols-[minmax(0,1fr)_16rem]"

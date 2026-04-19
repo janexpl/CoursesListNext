@@ -273,13 +273,17 @@ WHERE
             r.number::bigint::text || '/' || c.course_symbol_snapshot || '/' || r.year::text
         ) ILIKE '%' || $1::text || '%'
     )
+    AND ($2::date IS NULL OR c.date >= $2::date)
+    AND ($3::date IS NULL OR c.date <= $3::date)
     AND c.deleted_at IS NULL
 ORDER BY c.date DESC, c.id DESC
-LIMIT $2
+LIMIT $4
 `
 
 type ListCertificatesParams struct {
 	Search     pgtype.Text `json:"search"`
+	DateFrom   pgtype.Date `json:"date_from"`
+	DateTo     pgtype.Date `json:"date_to"`
 	LimitCount int32       `json:"limit_count"`
 }
 
@@ -300,7 +304,12 @@ type ListCertificatesRow struct {
 }
 
 func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesParams) ([]ListCertificatesRow, error) {
-	rows, err := q.db.Query(ctx, listCertificates, arg.Search, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listCertificates,
+		arg.Search,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

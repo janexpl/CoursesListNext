@@ -51,8 +51,24 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, err.Error())
 		return
 	}
+	dateFrom, err := response.ParseDateQueryValue(r, "dateFrom")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateFrom value")
+		return
+	}
+	dateTo, err := response.ParseDateQueryValue(r, "dateTo")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateTo value")
+		return
+	}
+	if !dateFrom.IsZero() && !dateTo.IsZero() && dateFrom.After(dateTo) {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "dateFrom cannot be after dateTo")
+		return
+	}
 	rows, err := h.querier.ListCertificates(r.Context(), sqlc.ListCertificatesParams{
 		Search:     pgSearch,
+		DateFrom:   optionalDate(dateFrom),
+		DateTo:     optionalDate(dateTo),
 		LimitCount: limitInt,
 	})
 	if err != nil {

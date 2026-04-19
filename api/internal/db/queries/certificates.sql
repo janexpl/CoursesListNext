@@ -36,6 +36,8 @@ WHERE
             r.number::bigint::text || '/' || c.course_symbol_snapshot || '/' || r.year::text
         ) ILIKE '%' || sqlc.narg(search)::text || '%'
     )
+    AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
+    AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
     AND c.deleted_at IS NULL
 ORDER BY c.date DESC, c.id DESC
 LIMIT sqlc.arg(limit_count);
