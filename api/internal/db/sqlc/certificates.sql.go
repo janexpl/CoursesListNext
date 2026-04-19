@@ -11,6 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countCertificatesByCourseID = `-- name: CountCertificatesByCourseID :one
+SELECT COUNT(*)
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE r.course_id = $1
+  AND ($2::date IS NULL OR c.date >= $2::date)
+  AND ($3::date IS NULL OR c.date <= $3::date)
+  AND c.deleted_at IS NULL
+`
+
+type CountCertificatesByCourseIDParams struct {
+	CourseID int64       `json:"course_id"`
+	DateFrom pgtype.Date `json:"date_from"`
+	DateTo   pgtype.Date `json:"date_to"`
+}
+
+func (q *Queries) CountCertificatesByCourseID(ctx context.Context, arg CountCertificatesByCourseIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCertificatesByCourseID, arg.CourseID, arg.DateFrom, arg.DateTo)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCertificate = `-- name: CreateCertificate :one
 INSERT INTO certificates (
     date,
@@ -285,6 +308,105 @@ func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesPara
 	items := []ListCertificatesRow{}
 	for rows.Next() {
 		var i ListCertificatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Date,
+			&i.StudentFirstname,
+			&i.StudentLastname,
+			&i.CompanyName,
+			&i.CourseName,
+			&i.CourseSymbol,
+			&i.RegistryYear,
+			&i.RegistryNumber,
+			&i.CourseDateStart,
+			&i.CourseDateEnd,
+			&i.LanguageCode,
+			&i.ExpiryDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCertificatesByCourseID = `-- name: ListCertificatesByCourseID :many
+SELECT
+    c.id,
+    c.date,
+    c.student_firstname_snapshot AS student_firstname,
+    c.student_lastname_snapshot AS student_lastname,
+    c.company_name_snapshot AS company_name,
+    c.course_name_snapshot AS course_name,
+    c.course_symbol_snapshot AS course_symbol,
+    r.year AS registry_year,
+    r.number::bigint AS registry_number,
+    c.coursedatestart AS course_date_start,
+    c.coursedateend AS course_date_end,
+    c.language_code,
+    COALESCE(
+        CASE
+            WHEN c.coursedateend IS NOT NULL
+                AND c.course_expiry_time_snapshot IS NOT NULL
+                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            ELSE NULL::text
+        END,
+        ''
+    ) AS expiry_date
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE r.course_id = $1
+  AND ($2::date IS NULL OR c.date >= $2::date)
+  AND ($3::date IS NULL OR c.date <= $3::date)
+  AND c.deleted_at IS NULL
+ORDER BY c.date DESC, c.id DESC
+LIMIT $5
+OFFSET $4
+`
+
+type ListCertificatesByCourseIDParams struct {
+	CourseID    int64       `json:"course_id"`
+	DateFrom    pgtype.Date `json:"date_from"`
+	DateTo      pgtype.Date `json:"date_to"`
+	OffsetCount int32       `json:"offset_count"`
+	LimitCount  int32       `json:"limit_count"`
+}
+
+type ListCertificatesByCourseIDRow struct {
+	ID               int64       `json:"id"`
+	Date             pgtype.Date `json:"date"`
+	StudentFirstname string      `json:"student_firstname"`
+	StudentLastname  string      `json:"student_lastname"`
+	CompanyName      pgtype.Text `json:"company_name"`
+	CourseName       string      `json:"course_name"`
+	CourseSymbol     string      `json:"course_symbol"`
+	RegistryYear     int64       `json:"registry_year"`
+	RegistryNumber   int64       `json:"registry_number"`
+	CourseDateStart  pgtype.Date `json:"course_date_start"`
+	CourseDateEnd    pgtype.Date `json:"course_date_end"`
+	LanguageCode     string      `json:"language_code"`
+	ExpiryDate       interface{} `json:"expiry_date"`
+}
+
+func (q *Queries) ListCertificatesByCourseID(ctx context.Context, arg ListCertificatesByCourseIDParams) ([]ListCertificatesByCourseIDRow, error) {
+	rows, err := q.db.Query(ctx, listCertificatesByCourseID,
+		arg.CourseID,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCertificatesByCourseIDRow{}
+	for rows.Next() {
+		var i ListCertificatesByCourseIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Date,

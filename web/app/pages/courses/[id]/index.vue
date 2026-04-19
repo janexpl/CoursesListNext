@@ -209,6 +209,7 @@ const { data, pending, error, refresh } = await useAsyncData(
   async () => await api.course(courseId.value)
 )
 
+const course = computed(() => data.value?.data ?? null)
 const isAdmin = computed(() => auth.user.value?.role === 1)
 
 const {
@@ -230,10 +231,11 @@ const {
   }
 )
 
-const course = computed(() => data.value?.data ?? null)
 const auditEntries = computed(() => auditData.value?.data ?? [])
 const auditErrorMessage = computed(() => {
-  return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian kursu.') : ''
+  return auditError.value
+    ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian kursu.')
+    : ''
 })
 
 const activeVariantKey = ref<string>('pl')
@@ -323,6 +325,10 @@ const certificateLink = computed(() => {
   }
 })
 
+const courseCertificatesLink = computed(() => {
+  return `/courses/${courseId.value}/certificates`
+})
+
 const activeCertificateVariantDocument = computed(() => {
   return buildCertificatePreviewDocument(activeCertificateVariant.value?.certFrontPage ?? '')
 })
@@ -385,6 +391,13 @@ async function refreshAll() {
           class="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-sky-700"
         >
           Wystaw zaświadczenie
+        </NuxtLink>
+
+        <NuxtLink
+          :to="courseCertificatesLink"
+          class="inline-flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+        >
+          Wystawione zaświadczenia
         </NuxtLink>
       </div>
     </div>

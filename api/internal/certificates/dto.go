@@ -82,3 +82,15 @@ type CertificateJournalRefDTO struct {
 	Title  string `json:"title"`
 	Status string `json:"status"`
 }
+
+type PaginationDTO struct {
+	Page       int32 `json:"page"`
+	Limit      int32 `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int32 `json:"totalPages"`
+}
+
+type ListCertificatesByCourseResponse struct {
+	Data       []CertificateDTO `json:"data"`
+	Pagination PaginationDTO    `json:"pagination"`
+}

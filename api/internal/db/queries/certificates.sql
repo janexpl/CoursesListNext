@@ -221,3 +221,46 @@ JOIN registries r ON r.id = c.registry_id;
   WHERE id = $1
     AND deleted_at IS NULL
   RETURNING id;
+
+-- name: CountCertificatesByCourseID :one
+SELECT COUNT(*)
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE r.course_id = sqlc.arg(course_id)
+  AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
+  AND c.deleted_at IS NULL;
+
+-- name: ListCertificatesByCourseID :many
+SELECT
+    c.id,
+    c.date,
+    c.student_firstname_snapshot AS student_firstname,
+    c.student_lastname_snapshot AS student_lastname,
+    c.company_name_snapshot AS company_name,
+    c.course_name_snapshot AS course_name,
+    c.course_symbol_snapshot AS course_symbol,
+    r.year AS registry_year,
+    r.number::bigint AS registry_number,
+    c.coursedatestart AS course_date_start,
+    c.coursedateend AS course_date_end,
+    c.language_code,
+    COALESCE(
+        CASE
+            WHEN c.coursedateend IS NOT NULL
+                AND c.course_expiry_time_snapshot IS NOT NULL
+                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            ELSE NULL::text
+        END,
+        ''
+    ) AS expiry_date
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE r.course_id = sqlc.arg(course_id)
+  AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
+  AND c.deleted_at IS NULL
+ORDER BY c.date DESC, c.id DESC
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);

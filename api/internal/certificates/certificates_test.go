@@ -19,6 +19,8 @@ import (
 
 type fakeQuerier struct {
 	listCertificatesFunc                                   func(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error)
+	listCertificatesByCourseIDFunc                         func(ctx context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error)
+	countCertificatesByCourseIDFunc                        func(ctx context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error)
 	getCertificateByIDFunc                                 func(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
 	getCourseByIDFunc                                      func(ctx context.Context, id int64) (sqlc.Course, error)
 	listCourseCertificateTranslationsByCourseIDFunc        func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
@@ -37,6 +39,20 @@ func (f fakeQuerier) ListCertificates(ctx context.Context, arg sqlc.ListCertific
 		return nil, errors.New("unexpected ListCertificates call")
 	}
 	return f.listCertificatesFunc(ctx, arg)
+}
+
+func (f fakeQuerier) ListCertificatesByCourseID(ctx context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+	if f.listCertificatesByCourseIDFunc == nil {
+		return nil, errors.New("unexpected ListCertificatesByCourseID call")
+	}
+	return f.listCertificatesByCourseIDFunc(ctx, arg)
+}
+
+func (f fakeQuerier) CountCertificatesByCourseID(ctx context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+	if f.countCertificatesByCourseIDFunc == nil {
+		return 0, errors.New("unexpected CountCertificatesByCourseID call")
+	}
+	return f.countCertificatesByCourseIDFunc(ctx, arg)
 }
 
 func (f fakeQuerier) GetCertificateByID(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error) {
@@ -276,6 +292,284 @@ func TestListReturnsBadRequestForLimitAboveMaximum(t *testing.T) {
 	handler.List(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsPaginatedCertificates(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			if arg.CourseID != 21 {
+				t.Fatalf("expected course id %d, got %d", 21, arg.CourseID)
+			}
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(response.DateFormat) != "2026-03-01" {
+				t.Fatalf("expected dateFrom=2026-03-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(response.DateFormat) != "2026-03-31" {
+				t.Fatalf("expected dateTo=2026-03-31, got %+v", arg.DateTo)
+			}
+			return 12, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			if arg.CourseID != 21 {
+				t.Fatalf("expected course id %d, got %d", 21, arg.CourseID)
+			}
+			if arg.OffsetCount != 10 {
+				t.Fatalf("expected offset %d, got %d", 10, arg.OffsetCount)
+			}
+			if arg.LimitCount != 10 {
+				t.Fatalf("expected limit %d, got %d", 10, arg.LimitCount)
+			}
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(response.DateFormat) != "2026-03-01" {
+				t.Fatalf("expected dateFrom=2026-03-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(response.DateFormat) != "2026-03-31" {
+				t.Fatalf("expected dateTo=2026-03-31, got %+v", arg.DateTo)
+			}
+
+			return []sqlc.ListCertificatesByCourseIDRow{
+				{
+					ID:               51,
+					Date:             pgtype.Date{Time: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+					StudentFirstname: "Jan",
+					StudentLastname:  "Nowak",
+					CompanyName:      pgtype.Text{String: "ABC Sp. z o.o.", Valid: true},
+					CourseName:       "Szkolenie BHP",
+					CourseSymbol:     "BHP",
+					RegistryYear:     2026,
+					RegistryNumber:   11,
+					CourseDateStart:  pgtype.Date{Time: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC), Valid: true},
+					CourseDateEnd:    pgtype.Date{Time: time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC), Valid: true},
+					LanguageCode:     "pl",
+					ExpiryDate:       "2027-03-12",
+				},
+				{
+					ID:               52,
+					Date:             pgtype.Date{Time: time.Date(2026, time.March, 16, 0, 0, 0, 0, time.UTC), Valid: true},
+					StudentFirstname: "Anna",
+					StudentLastname:  "Kowalska",
+					CompanyName:      pgtype.Text{},
+					CourseName:       "Szkolenie BHP",
+					CourseSymbol:     "BHP",
+					RegistryYear:     2026,
+					RegistryNumber:   12,
+					CourseDateStart:  pgtype.Date{Time: time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC), Valid: true},
+					CourseDateEnd:    pgtype.Date{},
+					LanguageCode:     "pl",
+					ExpiryDate:       "",
+				},
+			}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?page=2&limit=10&dateFrom=2026-03-01&dateTo=2026-03-31", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody ListCertificatesByCourseResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(responseBody.Data) != 2 {
+		t.Fatalf("expected 2 certificates, got %d", len(responseBody.Data))
+	}
+	if responseBody.Pagination.Page != 2 || responseBody.Pagination.Limit != 10 {
+		t.Fatalf("unexpected pagination page/limit: %+v", responseBody.Pagination)
+	}
+	if responseBody.Pagination.Total != 12 || responseBody.Pagination.TotalPages != 2 {
+		t.Fatalf("unexpected pagination totals: %+v", responseBody.Pagination)
+	}
+	if responseBody.Data[0].StudentName != "Jan Nowak" {
+		t.Fatalf("unexpected first student name: %+v", responseBody.Data[0])
+	}
+	if responseBody.Data[0].ExpiryDate == nil || *responseBody.Data[0].ExpiryDate != "2027-03-12" {
+		t.Fatalf("unexpected first expiry date: %+v", responseBody.Data[0].ExpiryDate)
+	}
+	if responseBody.Data[1].CourseDateEnd != nil {
+		t.Fatalf("expected nil course end date, got %+v", responseBody.Data[1].CourseDateEnd)
+	}
+}
+
+func TestListByCourseIDReturnsBadRequestForInvalidCourseID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called for invalid course id, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called for invalid course id, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/not-a-number/certificates", nil)
+	req.SetPathValue("id", "not-a-number")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsBadRequestForInvalidPage(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called for invalid page, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called for invalid page, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?page=0", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsBadRequestForInvalidLimit(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called for invalid limit, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called for invalid limit, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?limit=101", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsBadRequestForInvalidDateFrom(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called for invalid dateFrom, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called for invalid dateFrom, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?dateFrom=2026-99-99", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsBadRequestForInvalidDateTo(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called for invalid dateTo, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called for invalid dateTo, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?dateTo=2026-99-99", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsBadRequestWhenDateFromIsAfterDateTo(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCourseID should not be called when dateFrom is after dateTo, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called when dateFrom is after dateTo, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates?dateFrom=2026-04-01&dateTo=2026-03-01", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCourseIDReturnsInternalServerErrorWhenCountFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			if arg.CourseID != 21 {
+				t.Fatalf("expected course id %d, got %d", 21, arg.CourseID)
+			}
+			return 0, errors.New("db error")
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			t.Fatalf("ListCertificatesByCourseID should not be called when count fails, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestListByCourseIDReturnsInternalServerErrorWhenListFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error) {
+			if arg.CourseID != 21 {
+				t.Fatalf("expected course id %d, got %d", 21, arg.CourseID)
+			}
+			return 4, nil
+		},
+		listCertificatesByCourseIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			if arg.CourseID != 21 || arg.OffsetCount != 0 || arg.LimitCount != 10 {
+				t.Fatalf("unexpected list params: %+v", arg)
+			}
+			if arg.DateFrom.Valid || arg.DateTo.Valid {
+				t.Fatalf("expected empty date filters, got %+v", arg)
+			}
+			return nil, errors.New("db error")
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/21/certificates", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
 
 func TestGetReturnsCertificateDetails(t *testing.T) {

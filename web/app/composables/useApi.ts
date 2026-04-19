@@ -293,6 +293,16 @@ export interface CourseResponse {
   data: CourseDetails
 }
 
+export interface PaginatedCourseCertificatesResponse {
+  data: CertificateSummary[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
 export interface UpdateCoursePayload {
   mainName: string
   name: string
@@ -812,15 +822,25 @@ export function useApi() {
       body: payload
     }),
     courseAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/courses/${id}/audit-log`),
+    courseCertificates: async (id: number, params: { page?: number, limit?: number, dateFrom?: string, dateTo?: string } = {}) => await request<PaginatedCourseCertificatesResponse>(`/api/v1/courses/${id}/certificates`, {
+      query: {
+        page: params.page || undefined,
+        limit: params.limit || undefined,
+        dateFrom: params.dateFrom || undefined,
+        dateTo: params.dateTo || undefined
+      }
+    }),
     nextRegistryNumber: async (params: { courseId: number, year: number }) => await request<RegistryNumberResponse>('/api/v1/registries/next-number', {
       query: {
         courseId: params.courseId,
         year: params.year
       }
     }),
-    certificates: async (params: { search?: string, limit?: number } = {}) => await request<CertificatesResponse>('/api/v1/certificates', {
+    certificates: async (params: { search?: string, dateFrom?: string, dateTo?: string, limit?: number } = {}) => await request<CertificatesResponse>('/api/v1/certificates', {
       query: {
         search: params.search || undefined,
+        dateFrom: params.dateFrom || undefined,
+        dateTo: params.dateTo || undefined,
         limit: params.limit || undefined
       }
     }),

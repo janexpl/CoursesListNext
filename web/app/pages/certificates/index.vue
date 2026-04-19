@@ -16,6 +16,8 @@ function certificateNumber(certificate: CertificateSummary) {
 const api = useApi()
 const search = ref('')
 const debouncedSearch = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
 watch(search, (value) => {
@@ -39,16 +41,42 @@ const { data, pending, error, refresh } = await useAsyncData(
   async () => {
     return await api.certificates({
       search: debouncedSearch.value || undefined,
+      dateFrom: dateFrom.value || undefined,
+      dateTo: dateTo.value || undefined,
       limit: 100
     })
   },
   {
-    watch: [debouncedSearch]
+    watch: [debouncedSearch, dateFrom, dateTo]
   }
 )
 
 const certificates = computed(() => data.value?.data ?? [])
-const hasActiveSearch = computed(() => debouncedSearch.value.length > 0)
+const filteredCertificates = computed(() => {
+  return certificates.value.filter((certificate) => {
+    const certificateDate = certificate.date
+
+    if (dateFrom.value && certificateDate < dateFrom.value) {
+      return false
+    }
+
+    if (dateTo.value && certificateDate > dateTo.value) {
+      return false
+    }
+
+    return true
+  })
+})
+const hasActiveFilters = computed(() => {
+  return !!(debouncedSearch.value.length > 0 || dateFrom.value || dateTo.value)
+})
+
+function clearFilters() {
+  search.value = ''
+  debouncedSearch.value = ''
+  dateFrom.value = ''
+  dateTo.value = ''
+}
 </script>
 
 <template>
@@ -88,15 +116,46 @@ const hasActiveSearch = computed(() => debouncedSearch.value.length > 0)
     </div>
 
     <div class="rounded-xl border border-slate-200 bg-white/90 p-5 shadow-sm">
-      <label class="block space-y-2">
-        <span class="text-sm font-medium text-slate-700">Szukaj</span>
-        <input
-          v-model="search"
-          type="text"
-          placeholder="Nazwisko, firma, kurs, symbol lub numer zaświadczenia"
-          class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_repeat(2,minmax(0,1fr))]">
+        <label class="block space-y-2">
+          <span class="text-sm font-medium text-slate-700">Szukaj</span>
+          <input
+            v-model="search"
+            type="text"
+            placeholder="Nazwisko, firma, kurs, symbol lub numer zaświadczenia"
+            class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+          >
+        </label>
+
+        <label class="block space-y-2">
+          <span class="text-sm font-medium text-slate-700">Data od</span>
+          <input
+            v-model="dateFrom"
+            type="date"
+            class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+          >
+        </label>
+
+        <label class="block space-y-2">
+          <span class="text-sm font-medium text-slate-700">Data do</span>
+          <input
+            v-model="dateTo"
+            type="date"
+            class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+          >
+        </label>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center justify-end gap-3">
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!hasActiveFilters"
+          @click="clearFilters"
         >
-      </label>
+          Wyczyść filtry
+        </button>
+      </div>
     </div>
 
     <div
@@ -114,10 +173,10 @@ const hasActiveSearch = computed(() => debouncedSearch.value.length > 0)
     </div>
 
     <div
-      v-else-if="certificates.length === 0"
+      v-else-if="filteredCertificates.length === 0"
       class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-sm text-slate-500"
     >
-      {{ hasActiveSearch ? 'Brak wyników dla podanej frazy.' : 'Brak zaświadczeń do wyświetlenia.' }}
+      {{ hasActiveFilters ? 'Brak wyników dla wybranych filtrów.' : 'Brak zaświadczeń do wyświetlenia.' }}
     </div>
 
     <div
@@ -125,7 +184,7 @@ const hasActiveSearch = computed(() => debouncedSearch.value.length > 0)
       class="grid gap-4"
     >
       <NuxtLink
-        v-for="certificate in certificates"
+        v-for="certificate in filteredCertificates"
         :key="certificate.id"
         :to="`/certificates/${certificate.id}`"
         class="grid gap-4 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm transition hover:border-sky-300 hover:bg-white md:grid-cols-[minmax(0,1fr)_16rem]"

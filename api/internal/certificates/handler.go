@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
@@ -25,6 +28,8 @@ type Querier interface {
 	GetCourseCertificateTranslationByCourseAndLanguage(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error)
 	UpdateCertificate(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
 	SoftDeleteCertificate(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
+	ListCertificatesByCourseID(ctx context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error)
+	CountCertificatesByCourseID(ctx context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error)
 }
 type Creator interface {
 	Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error)
@@ -217,6 +222,91 @@ func (h *Handler) SoftDeleteCertificate(w http.ResponseWriter, r *http.Request) 
 	response.WriteJSON(w, http.StatusOK, DeleteCertificateResponse{
 		Data: DeleteCertificateDTO{ID: result},
 	})
+}
+
+func (h *Handler) ListByCourseID(w http.ResponseWriter, r *http.Request) {
+	dateFrom, err := response.ParseDateQueryValue(r, "dateFrom")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateFrom value")
+		return
+	}
+	dateTo, err := response.ParseDateQueryValue(r, "dateTo")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateTo value")
+		return
+	}
+	if !dateFrom.IsZero() && !dateTo.IsZero() && dateFrom.After(dateTo) {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "dateFrom cannot be after dateTo")
+		return
+	}
+	page, err := response.ParsePositiveInt32QueryValue(r, "page", 1)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid page value")
+		return
+	}
+	limit, err := response.ParsePositiveInt32QueryValue(r, "limit", 10)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid limit value")
+		return
+	}
+	if limit > 100 {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid limit value")
+		return
+	}
+
+	courseID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid course ID")
+		return
+	}
+	countParams := sqlc.CountCertificatesByCourseIDParams{
+		CourseID: courseID,
+		DateFrom: optionalDate(dateFrom),
+		DateTo:   optionalDate(dateTo),
+	}
+	count, err := h.querier.CountCertificatesByCourseID(r.Context(), countParams)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+	offset := (page - 1) * limit
+	totalPages := int(math.Ceil(float64(count) / float64(limit)))
+	rows, err := h.querier.ListCertificatesByCourseID(r.Context(), sqlc.ListCertificatesByCourseIDParams{
+		CourseID:    courseID,
+		DateFrom:    countParams.DateFrom,
+		DateTo:      countParams.DateTo,
+		OffsetCount: offset,
+		LimitCount:  limit,
+	})
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+
+	resp := ListCertificatesByCourseResponse{Data: make([]CertificateDTO, 0, len(rows))}
+	for _, row := range rows {
+		resp.Data = append(resp.Data, mapCertificatesResponse(sqlc.ListCertificatesRow(row)))
+	}
+
+	resp.Pagination = PaginationDTO{
+		Page:       page,
+		Limit:      limit,
+		Total:      count,
+		TotalPages: int32(totalPages),
+	}
+
+	response.WriteJSON(w, http.StatusOK, resp)
+}
+
+func optionalDate(value time.Time) pgtype.Date {
+	if value.IsZero() {
+		return pgtype.Date{}
+	}
+
+	return pgtype.Date{
+		Time:  value,
+		Valid: true,
+	}
 }
 
 func mapCertificateRequest(cert CreateCertificateRequest) CreateCertificateInput {

@@ -105,6 +105,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/courses/{id}", courseHandler.Get)
 			r.Patch("/courses/{id}", courseHandler.Patch)
 			r.Post("/courses", courseHandler.CreateCourse)
+			r.Get("/courses/{id}/certificates", certificateHandler.ListByCourseID)
 
 			r.Get("/registries/next-number", registryHandler.GetNextNumber)
 			r.Patch("/account/profile", userHandler.PatchProfile)
