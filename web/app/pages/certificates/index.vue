@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CertificateSummary } from '~/composables/useApi'
+import type { LocationQuery, LocationQueryValue } from 'vue-router'
 
 definePageMeta({
   middleware: 'auth'
@@ -13,12 +14,68 @@ function certificateNumber(certificate: CertificateSummary) {
   return `${certificate.registryNumber}/${certificate.courseSymbol}/${certificate.registryYear}`
 }
 
+function normalizeQueryValue(value: LocationQueryValue | LocationQueryValue[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0] ?? ''
+  }
+
+  return value ?? ''
+}
+
 const api = useApi()
+const route = useRoute()
+const router = useRouter()
 const search = ref('')
 const debouncedSearch = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
+function syncFiltersFromQuery(query: LocationQuery) {
+  const nextSearch = normalizeQueryValue(query.search).trim()
+  const nextDateFrom = normalizeQueryValue(query.dateFrom)
+  const nextDateTo = normalizeQueryValue(query.dateTo)
+
+  if (search.value !== nextSearch) {
+    search.value = nextSearch
+  }
+
+  if (debouncedSearch.value !== nextSearch) {
+    debouncedSearch.value = nextSearch
+  }
+
+  if (dateFrom.value !== nextDateFrom) {
+    dateFrom.value = nextDateFrom
+  }
+
+  if (dateTo.value !== nextDateTo) {
+    dateTo.value = nextDateTo
+  }
+}
+
+function buildFiltersQuery() {
+  const preservedQuery = { ...route.query }
+  delete preservedQuery.search
+  delete preservedQuery.dateFrom
+  delete preservedQuery.dateTo
+
+  return {
+    ...preservedQuery,
+    ...(debouncedSearch.value ? { search: debouncedSearch.value } : {}),
+    ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
+    ...(dateTo.value ? { dateTo: dateTo.value } : {})
+  }
+}
+
+function hasSameFilterQuery(query: LocationQuery) {
+  return (
+    normalizeQueryValue(query.search).trim() === debouncedSearch.value
+    && normalizeQueryValue(query.dateFrom) === dateFrom.value
+    && normalizeQueryValue(query.dateTo) === dateTo.value
+  )
+}
+
+syncFiltersFromQuery(route.query)
 
 watch(search, (value) => {
   if (searchDebounceTimer) {
@@ -35,6 +92,30 @@ onBeforeUnmount(() => {
     clearTimeout(searchDebounceTimer)
   }
 })
+
+watch(
+  () => route.query,
+  (query) => {
+    if (hasSameFilterQuery(query)) {
+      return
+    }
+
+    syncFiltersFromQuery(query)
+  }
+)
+
+watch(
+  [debouncedSearch, dateFrom, dateTo],
+  async () => {
+    if (hasSameFilterQuery(route.query)) {
+      return
+    }
+
+    await router.replace({
+      query: buildFiltersQuery()
+    })
+  }
+)
 
 const { data, pending, error, refresh } = await useAsyncData(
   'certificates',
@@ -53,7 +134,7 @@ const { data, pending, error, refresh } = await useAsyncData(
 
 const certificates = computed(() => data.value?.data ?? [])
 const hasActiveFilters = computed(() => {
-  return !!(debouncedSearch.value.length > 0 || dateFrom.value || dateTo.value)
+  return !!(search.value.trim().length > 0 || dateFrom.value || dateTo.value)
 })
 
 function clearFilters() {
@@ -171,7 +252,10 @@ function clearFilters() {
       <NuxtLink
         v-for="certificate in certificates"
         :key="certificate.id"
-        :to="`/certificates/${certificate.id}`"
+        :to="{
+          path: `/certificates/${certificate.id}`,
+          query: buildFiltersQuery()
+        }"
         class="grid gap-4 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm transition hover:border-sky-300 hover:bg-white md:grid-cols-[minmax(0,1fr)_16rem]"
       >
         <div class="space-y-2">

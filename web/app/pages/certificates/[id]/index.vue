@@ -52,6 +52,14 @@ const {
 
 const certificate = computed(() => data.value?.data ?? null)
 const editCertificateLink = computed(() => `/certificates/${certificateId.value}/edit`)
+const certificatesListLink = computed(() => ({
+  path: '/certificates',
+  query: {
+    ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+    ...(typeof route.query.dateFrom === 'string' && route.query.dateFrom ? { dateFrom: route.query.dateFrom } : {}),
+    ...(typeof route.query.dateTo === 'string' && route.query.dateTo ? { dateTo: route.query.dateTo } : {})
+  }
+}))
 const auditEntries = computed(() => auditData.value?.data ?? [])
 const auditErrorMessage = computed(() => {
   return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian zaświadczenia.') : ''
@@ -657,7 +665,7 @@ useSeoMeta({
         </UButton>
 
         <NuxtLink
-          to="/certificates"
+          :to="certificatesListLink"
           class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
         >
           Lista zaświadczeń

@@ -20,6 +20,9 @@ Frontend formatting is defined in `web/.prettierrc.json`: 2-space indentation, n
 
 Backend code should follow standard Go formatting with `gofmt`. Keep package names lowercase, keep handlers and DTOs inside their feature package, and avoid editing generated files in `api/internal/db/sqlc/` by hand.
 
+## Collaboration Preferences
+For backend changes in `api/`, prefer a guided workflow: do not modify backend code by default. Instead, explain the required changes, review the user's implementation, and provide concrete diffs or code snippets for the user to apply. Only edit backend files directly when the user explicitly asks for it.
+
 ## Testing Guidelines
 Backend tests use Go's `testing` package and live beside the code as `*_test.go`. Add or update tests when changing handlers, services, or validation rules, especially for error responses and input parsing. There is no dedicated frontend test runner configured yet, so every web change should at least pass `pnpm lint` and `pnpm typecheck`.
 
