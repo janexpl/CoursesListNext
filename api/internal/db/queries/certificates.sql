@@ -102,6 +102,7 @@ INSERT INTO certificates (
     student_birthplace_snapshot,
     student_pesel_snapshot,
     company_name_snapshot,
+    company_id_snapshot,
     course_name_snapshot,
     course_symbol_snapshot,
     course_expiry_time_snapshot,
@@ -121,6 +122,7 @@ INSERT INTO certificates (
     sqlc.arg(student_birthplace_snapshot),
     sqlc.arg(student_pesel_snapshot),
     sqlc.arg(company_name_snapshot),
+    sqlc.arg(company_id_snapshot),
     sqlc.arg(course_name_snapshot),
     sqlc.arg(course_symbol_snapshot),
     sqlc.arg(course_expiry_time_snapshot),
@@ -166,7 +168,8 @@ WITH updated AS (
         student_birthdate_snapshot = sqlc.arg(student_birthdate_snapshot),
         student_birthplace_snapshot = sqlc.arg(student_birthplace_snapshot),
         student_pesel_snapshot = sqlc.arg(student_pesel_snapshot),
-        company_name_snapshot = sqlc.arg(company_name_snapshot)
+        company_name_snapshot = sqlc.arg(company_name_snapshot),
+        company_id_snapshot = sqlc.arg(company_id_snapshot)
     WHERE c.id = sqlc.arg(certificate_id)
       AND c.deleted_at IS NULL
     RETURNING c.id
@@ -266,3 +269,45 @@ WHERE r.course_id = sqlc.arg(course_id)
 ORDER BY c.date DESC, c.id DESC
 LIMIT sqlc.arg(limit_count)
 OFFSET sqlc.arg(offset_count);
+
+-- name: CountCertificatesByCompanyID :one
+  SELECT COUNT(*)
+  FROM certificates c
+  WHERE c.company_id_snapshot = sqlc.arg(company_id)
+    AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
+    AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
+    AND c.deleted_at IS NULL;
+
+-- name: ListCertificatesByCompanyID :many
+  SELECT
+      c.id,
+      c.date,
+      c.student_firstname_snapshot AS student_firstname,
+      c.student_lastname_snapshot AS student_lastname,
+      c.company_name_snapshot AS company_name,
+      c.course_name_snapshot AS course_name,
+      c.course_symbol_snapshot AS course_symbol,
+      r.year AS registry_year,
+      r.number::bigint AS registry_number,
+      c.coursedatestart AS course_date_start,
+      c.coursedateend AS course_date_end,
+      c.language_code,
+      COALESCE(
+          CASE
+              WHEN c.coursedateend IS NOT NULL
+                  AND c.course_expiry_time_snapshot IS NOT NULL
+                  AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+              THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+              ELSE NULL::text
+          END,
+          ''
+      ) AS expiry_date
+  FROM certificates c
+  JOIN registries r ON r.id = c.registry_id
+  WHERE c.company_id_snapshot = sqlc.arg(company_id)
+    AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
+    AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
+    AND c.deleted_at IS NULL
+  ORDER BY c.date DESC, c.id DESC
+  LIMIT sqlc.arg(limit_count)
+  OFFSET sqlc.arg(offset_count);

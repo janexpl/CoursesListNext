@@ -89,6 +89,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/companies", companyHandler.List)
 			r.Get("/companies/{id}", companyHandler.Get)
 			r.Get("/companies/{id}/students", studentHandler.ListStudentsByCompanyId)
+			r.Get("/companies/{id}/certificates", certificateHandler.ListByCompanyID)
 			r.Patch("/companies/{id}", companyHandler.Patch)
 			r.Post("/companies", companyHandler.CreateCompany)
 			r.Get("/companies/lookup-by-nip", gusclientHandler.FindCompany)

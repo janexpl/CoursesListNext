@@ -65,6 +65,7 @@ type studentSnapshot struct {
 	BirthDate   time.Time
 	BirthPlace  string
 	Pesel       *string
+	CompanyID   *int64
 	CompanyName *string
 }
 type courseSnapshot struct {
@@ -438,6 +439,7 @@ func buildStudentSnapshot(student dbsqlc.GetStudentByIDRow) (studentSnapshot, er
 		BirthDate:   student.Birthdate.Time,
 		BirthPlace:  strings.TrimSpace(student.Birthplace),
 		Pesel:       pgutil.NullableString(student.Pesel),
+		CompanyID:   pgutil.NullableInt64(student.CompanyID),
 		CompanyName: pgutil.NullableString(student.CompanyName),
 	}, nil
 }
@@ -490,6 +492,7 @@ func toCreateCertificateParams(
 		StudentBirthplaceSnapshot: student.BirthPlace,
 		StudentPeselSnapshot:      pgutil.OptionalText(student.Pesel),
 		CompanyNameSnapshot:       pgutil.OptionalText(student.CompanyName),
+		CompanyIDSnapshot:         pgutil.OptionalInt8(student.CompanyID),
 		CourseNameSnapshot:        course.Name,
 		CourseSymbolSnapshot:      course.Symbol,
 		CourseExpiryTimeSnapshot:  pgutil.OptionalText(course.ExpiryTime),
@@ -521,6 +524,7 @@ func toUpdateCertificateParams(
 		StudentBirthplaceSnapshot: student.BirthPlace,
 		StudentPeselSnapshot:      pgutil.OptionalText(student.Pesel),
 		CompanyNameSnapshot:       pgutil.OptionalText(student.CompanyName),
+		CompanyIDSnapshot:         pgutil.OptionalInt8(student.CompanyID),
 		CertificateID:             certificateID,
 	}
 }

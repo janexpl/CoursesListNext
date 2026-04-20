@@ -339,7 +339,7 @@ func TestCreateReturnsCertificateIDOnSuccess(t *testing.T) {
 		beginTx: func(context.Context) (txScope, error) {
 			return txScope{
 				queries: dbsqlc.New(fakeServiceDB{
-					queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+					queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
 						txCallCount++
 						switch txCallCount {
 						case 1:
@@ -350,6 +350,13 @@ func TestCreateReturnsCertificateIDOnSuccess(t *testing.T) {
 								},
 							}
 						case 2:
+							if len(args) != 19 {
+								t.Fatalf("expected 19 create certificate args, got %d", len(args))
+							}
+							companyIDSnapshot, ok := args[13].(pgtype.Int8)
+							if !ok || !companyIDSnapshot.Valid || companyIDSnapshot.Int64 != 3 {
+								t.Fatalf("expected company_id_snapshot=3, got %+v", args[13])
+							}
 							return fakeServiceRow{
 								scan: func(dest ...interface{}) error {
 									*(dest[0].(*int64)) = 101
@@ -574,11 +581,15 @@ func TestUpdateRefreshesStudentSnapshotAndReturnsUpdatedCertificate(t *testing.T
 						case 1:
 							return fakeServiceRow{scan: scanCertificateDetailsRow}
 						case 2:
-							if len(args) != 12 {
-								t.Fatalf("expected 12 update args, got %d", len(args))
+							if len(args) != 13 {
+								t.Fatalf("expected 13 update args, got %d", len(args))
 							}
-							if args[11] != int64(21) {
-								t.Fatalf("expected certificate id 21, got %+v", args[11])
+							companyIDSnapshot, ok := args[11].(pgtype.Int8)
+							if !ok || !companyIDSnapshot.Valid || companyIDSnapshot.Int64 != 4 {
+								t.Fatalf("expected company_id_snapshot=4, got %+v", args[11])
+							}
+							if args[12] != int64(21) {
+								t.Fatalf("expected certificate id 21, got %+v", args[12])
 							}
 							if args[4] != "Jan" || args[6] != "Nowak" || args[8] != "Warszawa" {
 								t.Fatalf("unexpected snapshot args: %+v", args)

@@ -293,7 +293,7 @@ export interface CourseResponse {
   data: CourseDetails
 }
 
-export interface PaginatedCourseCertificatesResponse {
+export interface PaginatedCertificatesResponse {
   data: CertificateSummary[]
   pagination: {
     page: number
@@ -302,6 +302,9 @@ export interface PaginatedCourseCertificatesResponse {
     totalPages: number
   }
 }
+
+export type PaginatedCourseCertificatesResponse = PaginatedCertificatesResponse
+export type PaginatedCompanyCertificatesResponse = PaginatedCertificatesResponse
 
 export interface UpdateCoursePayload {
   mainName: string
@@ -788,6 +791,14 @@ export function useApi() {
     }),
     companyAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/companies/${id}/audit-log`),
     companyStudents: async (id: number) => await request<CompanyStudentsResponse>(`/api/v1/companies/${id}/students`),
+    companyCertificates: async (id: number, params: { page?: number, limit?: number, dateFrom?: string, dateTo?: string } = {}) => await request<PaginatedCompanyCertificatesResponse>(`/api/v1/companies/${id}/certificates`, {
+      query: {
+        page: params.page || undefined,
+        limit: params.limit || undefined,
+        dateFrom: params.dateFrom || undefined,
+        dateTo: params.dateTo || undefined
+      }
+    }),
     students: async (params: { search?: string, companyId?: number, limit?: number } = {}) => await request<StudentsResponse>('/api/v1/students', {
       query: {
         search: params.search || undefined,

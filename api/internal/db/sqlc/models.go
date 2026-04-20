@@ -53,6 +53,7 @@ type Certificate struct {
 	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
 	DeletedByUserID           pgtype.Int8        `json:"deleted_by_user_id"`
 	DeleteReason              pgtype.Text        `json:"delete_reason"`
+	CompanyIDSnapshot         pgtype.Int8        `json:"company_id_snapshot"`
 }
 
 type Company struct {

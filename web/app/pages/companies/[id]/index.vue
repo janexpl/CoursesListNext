@@ -73,6 +73,7 @@ const auditErrorMessage = computed(() => {
   return auditError.value ? getApiErrorMessage(auditError.value, 'Nie udało się pobrać historii zmian firmy.') : ''
 })
 const editCompanyLink = computed(() => `/companies/${companyId.value}/edit`)
+const companyCertificatesLink = computed(() => `/companies/${companyId.value}/certificates`)
 const students = computed(() => studentsData.value?.data ?? [])
 const normalizedStudentSearch = computed(() => studentSearch.value.trim().toLocaleLowerCase())
 const filteredStudents = computed(() => {
@@ -162,6 +163,13 @@ useSeoMeta({
           class="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
         >
           Edytuj firmę
+        </NuxtLink>
+
+        <NuxtLink
+          :to="companyCertificatesLink"
+          class="inline-flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+        >
+          Wystawione zaświadczenia
         </NuxtLink>
 
         <NuxtLink
@@ -306,9 +314,16 @@ useSeoMeta({
                   Kursanci firmy
                 </h2>
                 <p class="mt-1 text-sm text-slate-500">
-                  Osoby przypisane do tej firmy.
+                  Aktualnie przypisane osoby. Historyczne zaświadczenia są dostępne osobno.
                 </p>
               </div>
+
+              <NuxtLink
+                :to="companyCertificatesLink"
+                class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              >
+                Historia zaświadczeń
+              </NuxtLink>
             </div>
 
             <div class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">

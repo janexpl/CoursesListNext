@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const companyHasCertificatesHistory = `-- name: CompanyHasCertificatesHistory :one
+  SELECT EXISTS (
+      SELECT 1
+      FROM certificates
+      WHERE company_id_snapshot = $1
+  )
+`
+
+func (q *Queries) CompanyHasCertificatesHistory(ctx context.Context, companyIDSnapshot pgtype.Int8) (bool, error) {
+	row := q.db.QueryRow(ctx, companyHasCertificatesHistory, companyIDSnapshot)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createCompany = `-- name: CreateCompany :one
   INSERT INTO companies (
       name,

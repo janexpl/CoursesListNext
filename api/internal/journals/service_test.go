@@ -167,12 +167,13 @@ func TestGenerateAttendeeCertificateCreatesPolishSnapshot(t *testing.T) {
 									*(dest[10].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
 									*(dest[11].(*string)) = "Warszawa"
 									*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-									*(dest[13].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-									*(dest[14].(*string)) = "Szkolenie BHP"
-									*(dest[15].(*string)) = "BHP"
-									*(dest[16].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
-									*(dest[17].(*string)) = `{"sections":["intro"]}`
-									*(dest[18].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
+									*(dest[13].(*pgtype.Int8)) = pgtype.Int8{Int64: 4, Valid: true}
+									*(dest[14].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
+									*(dest[15].(*string)) = "Szkolenie BHP"
+									*(dest[16].(*string)) = "BHP"
+									*(dest[17].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
+									*(dest[18].(*string)) = `{"sections":["intro"]}`
+									*(dest[19].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
 									return nil
 								},
 							}
@@ -185,14 +186,18 @@ func TestGenerateAttendeeCertificateCreatesPolishSnapshot(t *testing.T) {
 								return nil
 							}}
 						case 3:
-							if len(args) != 18 {
-								t.Fatalf("expected 18 create certificate args, got %d", len(args))
+							if len(args) != 19 {
+								t.Fatalf("expected 19 create certificate args, got %d", len(args))
 							}
-							if args[5] != "pl" || args[6] != "Jan" || args[8] != "Nowak" || args[13] != "Szkolenie BHP" {
+							if args[5] != "pl" || args[6] != "Jan" || args[8] != "Nowak" || args[14] != "Szkolenie BHP" {
 								t.Fatalf("unexpected create certificate args: %+v", args)
 							}
-							if args[17] != "<p>Front</p>" {
-								t.Fatalf("unexpected front page snapshot: %+v", args[17])
+							companyIDSnapshot, ok := args[13].(pgtype.Int8)
+							if !ok || !companyIDSnapshot.Valid || companyIDSnapshot.Int64 != 4 {
+								t.Fatalf("expected company_id_snapshot=4, got %+v", args[13])
+							}
+							if args[18] != "<p>Front</p>" {
+								t.Fatalf("unexpected front page snapshot: %+v", args[18])
 							}
 							return fakeServiceRow{scan: func(dest ...interface{}) error {
 								*(dest[0].(*int64)) = 101
@@ -295,12 +300,13 @@ func TestGenerateAttendeeCertificateRecordsAuditLog(t *testing.T) {
 								*(dest[10].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
 								*(dest[11].(*string)) = "Warszawa"
 								*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-								*(dest[13].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-								*(dest[14].(*string)) = "Szkolenie BHP"
-								*(dest[15].(*string)) = "BHP"
-								*(dest[16].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
-								*(dest[17].(*string)) = `{"sections":["intro"]}`
-								*(dest[18].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
+								*(dest[13].(*pgtype.Int8)) = pgtype.Int8{Int64: 4, Valid: true}
+								*(dest[14].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
+								*(dest[15].(*string)) = "Szkolenie BHP"
+								*(dest[16].(*string)) = "BHP"
+								*(dest[17].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
+								*(dest[18].(*string)) = `{"sections":["intro"]}`
+								*(dest[19].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
 								return nil
 							}}
 						case 2:

@@ -236,6 +236,7 @@ func buildJournalCertificateParams(source sqlc.GetJournalAttendeeForCertificateG
 		StudentBirthdateSnapshot:  source.StudentBirthdate,
 		StudentBirthplaceSnapshot: birthPlace,
 		StudentPeselSnapshot:      source.StudentPesel,
+		CompanyIDSnapshot:         source.CompanyID,
 		CompanyNameSnapshot:       source.CompanyName,
 		CourseNameSnapshot:        courseName,
 		CourseSymbolSnapshot:      courseSymbol,

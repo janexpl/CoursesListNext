@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countCertificatesByCompanyID = `-- name: CountCertificatesByCompanyID :one
+  SELECT COUNT(*)
+  FROM certificates c
+  WHERE c.company_id_snapshot = $1
+    AND ($2::date IS NULL OR c.date >= $2::date)
+    AND ($3::date IS NULL OR c.date <= $3::date)
+    AND c.deleted_at IS NULL
+`
+
+type CountCertificatesByCompanyIDParams struct {
+	CompanyID pgtype.Int8 `json:"company_id"`
+	DateFrom  pgtype.Date `json:"date_from"`
+	DateTo    pgtype.Date `json:"date_to"`
+}
+
+func (q *Queries) CountCertificatesByCompanyID(ctx context.Context, arg CountCertificatesByCompanyIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCertificatesByCompanyID, arg.CompanyID, arg.DateFrom, arg.DateTo)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countCertificatesByCourseID = `-- name: CountCertificatesByCourseID :one
 SELECT COUNT(*)
 FROM certificates c
@@ -49,6 +71,7 @@ INSERT INTO certificates (
     student_birthplace_snapshot,
     student_pesel_snapshot,
     company_name_snapshot,
+    company_id_snapshot,
     course_name_snapshot,
     course_symbol_snapshot,
     course_expiry_time_snapshot,
@@ -72,7 +95,8 @@ INSERT INTO certificates (
     $15,
     $16,
     $17,
-    $18
+    $18,
+    $19
 )
 RETURNING id
 `
@@ -91,6 +115,7 @@ type CreateCertificateParams struct {
 	StudentBirthplaceSnapshot string      `json:"student_birthplace_snapshot"`
 	StudentPeselSnapshot      pgtype.Text `json:"student_pesel_snapshot"`
 	CompanyNameSnapshot       pgtype.Text `json:"company_name_snapshot"`
+	CompanyIDSnapshot         pgtype.Int8 `json:"company_id_snapshot"`
 	CourseNameSnapshot        string      `json:"course_name_snapshot"`
 	CourseSymbolSnapshot      string      `json:"course_symbol_snapshot"`
 	CourseExpiryTimeSnapshot  pgtype.Text `json:"course_expiry_time_snapshot"`
@@ -113,6 +138,7 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 		arg.StudentBirthplaceSnapshot,
 		arg.StudentPeselSnapshot,
 		arg.CompanyNameSnapshot,
+		arg.CompanyIDSnapshot,
 		arg.CourseNameSnapshot,
 		arg.CourseSymbolSnapshot,
 		arg.CourseExpiryTimeSnapshot,
@@ -342,6 +368,105 @@ func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesPara
 	return items, nil
 }
 
+const listCertificatesByCompanyID = `-- name: ListCertificatesByCompanyID :many
+  SELECT
+      c.id,
+      c.date,
+      c.student_firstname_snapshot AS student_firstname,
+      c.student_lastname_snapshot AS student_lastname,
+      c.company_name_snapshot AS company_name,
+      c.course_name_snapshot AS course_name,
+      c.course_symbol_snapshot AS course_symbol,
+      r.year AS registry_year,
+      r.number::bigint AS registry_number,
+      c.coursedatestart AS course_date_start,
+      c.coursedateend AS course_date_end,
+      c.language_code,
+      COALESCE(
+          CASE
+              WHEN c.coursedateend IS NOT NULL
+                  AND c.course_expiry_time_snapshot IS NOT NULL
+                  AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+              THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+              ELSE NULL::text
+          END,
+          ''
+      ) AS expiry_date
+  FROM certificates c
+  JOIN registries r ON r.id = c.registry_id
+  WHERE c.company_id_snapshot = $1
+    AND ($2::date IS NULL OR c.date >= $2::date)
+    AND ($3::date IS NULL OR c.date <= $3::date)
+    AND c.deleted_at IS NULL
+  ORDER BY c.date DESC, c.id DESC
+  LIMIT $5
+  OFFSET $4
+`
+
+type ListCertificatesByCompanyIDParams struct {
+	CompanyID   pgtype.Int8 `json:"company_id"`
+	DateFrom    pgtype.Date `json:"date_from"`
+	DateTo      pgtype.Date `json:"date_to"`
+	OffsetCount int32       `json:"offset_count"`
+	LimitCount  int32       `json:"limit_count"`
+}
+
+type ListCertificatesByCompanyIDRow struct {
+	ID               int64       `json:"id"`
+	Date             pgtype.Date `json:"date"`
+	StudentFirstname string      `json:"student_firstname"`
+	StudentLastname  string      `json:"student_lastname"`
+	CompanyName      pgtype.Text `json:"company_name"`
+	CourseName       string      `json:"course_name"`
+	CourseSymbol     string      `json:"course_symbol"`
+	RegistryYear     int64       `json:"registry_year"`
+	RegistryNumber   int64       `json:"registry_number"`
+	CourseDateStart  pgtype.Date `json:"course_date_start"`
+	CourseDateEnd    pgtype.Date `json:"course_date_end"`
+	LanguageCode     string      `json:"language_code"`
+	ExpiryDate       interface{} `json:"expiry_date"`
+}
+
+func (q *Queries) ListCertificatesByCompanyID(ctx context.Context, arg ListCertificatesByCompanyIDParams) ([]ListCertificatesByCompanyIDRow, error) {
+	rows, err := q.db.Query(ctx, listCertificatesByCompanyID,
+		arg.CompanyID,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCertificatesByCompanyIDRow{}
+	for rows.Next() {
+		var i ListCertificatesByCompanyIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Date,
+			&i.StudentFirstname,
+			&i.StudentLastname,
+			&i.CompanyName,
+			&i.CourseName,
+			&i.CourseSymbol,
+			&i.RegistryYear,
+			&i.RegistryNumber,
+			&i.CourseDateStart,
+			&i.CourseDateEnd,
+			&i.LanguageCode,
+			&i.ExpiryDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCertificatesByCourseID = `-- name: ListCertificatesByCourseID :many
 SELECT
     c.id,
@@ -545,8 +670,9 @@ WITH updated AS (
         student_birthdate_snapshot = $8,
         student_birthplace_snapshot = $9,
         student_pesel_snapshot = $10,
-        company_name_snapshot = $11
-    WHERE c.id = $12
+        company_name_snapshot = $11,
+        company_id_snapshot = $12
+    WHERE c.id = $13
       AND c.deleted_at IS NULL
     RETURNING c.id
 )
@@ -606,6 +732,7 @@ type UpdateCertificateParams struct {
 	StudentBirthplaceSnapshot string      `json:"student_birthplace_snapshot"`
 	StudentPeselSnapshot      pgtype.Text `json:"student_pesel_snapshot"`
 	CompanyNameSnapshot       pgtype.Text `json:"company_name_snapshot"`
+	CompanyIDSnapshot         pgtype.Int8 `json:"company_id_snapshot"`
 	CertificateID             int64       `json:"certificate_id"`
 }
 
@@ -652,6 +779,7 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		arg.StudentBirthplaceSnapshot,
 		arg.StudentPeselSnapshot,
 		arg.CompanyNameSnapshot,
+		arg.CompanyIDSnapshot,
 		arg.CertificateID,
 	)
 	var i UpdateCertificateRow

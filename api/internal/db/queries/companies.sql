@@ -84,6 +84,18 @@ SELECT
       telephoneno,
       note;
 
+-- name: CompanyHasCertificatesHistory :one
+  SELECT EXISTS (
+      SELECT 1
+      FROM certificates
+      WHERE company_id_snapshot = $1
+  );
+
+  -- name: DeleteCompany :one
+  DELETE FROM companies
+  WHERE id = $1
+  RETURNING id;
+
       
 
 

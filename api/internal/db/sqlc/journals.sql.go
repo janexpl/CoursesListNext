@@ -567,14 +567,15 @@ const getJournalAttendeeForCertificateGeneration = `-- name: GetJournalAttendeeF
 	      j.date_end,
 	      s.firstname AS student_firstname,
 	      s.secondname AS student_secondname,
-	      s.lastname AS student_lastname,
-	      s.birthdate AS student_birthdate,
-	      s.birthplace AS student_birthplace,
-	      s.pesel AS student_pesel,
-	      comp.name AS company_name,
-	      c.name AS course_name,
-	      c.symbol AS course_symbol,
-	      c.expirytime AS course_expiry_time,
+	  s.lastname AS student_lastname,
+	  s.birthdate AS student_birthdate,
+	  s.birthplace AS student_birthplace,
+	  s.pesel AS student_pesel,
+	  comp.id AS company_id,
+	  comp.name AS company_name,
+	  c.name AS course_name,
+	  c.symbol AS course_symbol,
+	  c.expirytime AS course_expiry_time,
 	      c.courseprogram::text AS course_program,
 	      c.certfrontpage AS cert_front_page
   FROM training_journal_attendees a
@@ -605,6 +606,7 @@ type GetJournalAttendeeForCertificateGenerationRow struct {
 	StudentBirthdate  pgtype.Date `json:"student_birthdate"`
 	StudentBirthplace string      `json:"student_birthplace"`
 	StudentPesel      pgtype.Text `json:"student_pesel"`
+	CompanyID         pgtype.Int8 `json:"company_id"`
 	CompanyName       pgtype.Text `json:"company_name"`
 	CourseName        string      `json:"course_name"`
 	CourseSymbol      string      `json:"course_symbol"`
@@ -630,6 +632,7 @@ func (q *Queries) GetJournalAttendeeForCertificateGeneration(ctx context.Context
 		&i.StudentBirthdate,
 		&i.StudentBirthplace,
 		&i.StudentPesel,
+		&i.CompanyID,
 		&i.CompanyName,
 		&i.CourseName,
 		&i.CourseSymbol,

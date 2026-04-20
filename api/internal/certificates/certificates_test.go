@@ -21,6 +21,8 @@ type fakeQuerier struct {
 	listCertificatesFunc                                   func(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error)
 	listCertificatesByCourseIDFunc                         func(ctx context.Context, arg sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error)
 	countCertificatesByCourseIDFunc                        func(ctx context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error)
+	listCertificatesByCompanyIDFunc                        func(ctx context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error)
+	countCertificatesByCompanyIDFunc                       func(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error)
 	getCertificateByIDFunc                                 func(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
 	getCourseByIDFunc                                      func(ctx context.Context, id int64) (sqlc.Course, error)
 	listCourseCertificateTranslationsByCourseIDFunc        func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
@@ -53,6 +55,20 @@ func (f fakeQuerier) CountCertificatesByCourseID(ctx context.Context, arg sqlc.C
 		return 0, errors.New("unexpected CountCertificatesByCourseID call")
 	}
 	return f.countCertificatesByCourseIDFunc(ctx, arg)
+}
+
+func (f fakeQuerier) ListCertificatesByCompanyID(ctx context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+	if f.listCertificatesByCompanyIDFunc == nil {
+		return nil, errors.New("unexpected ListCertificatesByCompanyID call")
+	}
+	return f.listCertificatesByCompanyIDFunc(ctx, arg)
+}
+
+func (f fakeQuerier) CountCertificatesByCompanyID(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+	if f.countCertificatesByCompanyIDFunc == nil {
+		return 0, errors.New("unexpected CountCertificatesByCompanyID call")
+	}
+	return f.countCertificatesByCompanyIDFunc(ctx, arg)
 }
 
 func (f fakeQuerier) GetCertificateByID(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error) {
@@ -639,6 +655,173 @@ func TestListByCourseIDReturnsInternalServerErrorWhenListFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.ListByCourseID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestListByCompanyIDReturnsPaginatedCertificates(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			if !arg.CompanyID.Valid || arg.CompanyID.Int64 != 14 {
+				t.Fatalf("expected company id %d, got %+v", 14, arg.CompanyID)
+			}
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(response.DateFormat) != "2026-03-01" {
+				t.Fatalf("expected dateFrom=2026-03-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(response.DateFormat) != "2026-03-31" {
+				t.Fatalf("expected dateTo=2026-03-31, got %+v", arg.DateTo)
+			}
+			return 7, nil
+		},
+		listCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+			if !arg.CompanyID.Valid || arg.CompanyID.Int64 != 14 {
+				t.Fatalf("expected company id %d, got %+v", 14, arg.CompanyID)
+			}
+			if arg.OffsetCount != 0 {
+				t.Fatalf("expected offset %d, got %d", 0, arg.OffsetCount)
+			}
+			if arg.LimitCount != 10 {
+				t.Fatalf("expected limit %d, got %d", 10, arg.LimitCount)
+			}
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(response.DateFormat) != "2026-03-01" {
+				t.Fatalf("expected dateFrom=2026-03-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(response.DateFormat) != "2026-03-31" {
+				t.Fatalf("expected dateTo=2026-03-31, got %+v", arg.DateTo)
+			}
+
+			return []sqlc.ListCertificatesByCompanyIDRow{
+				{
+					ID:               81,
+					Date:             pgtype.Date{Time: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+					StudentFirstname: "Jan",
+					StudentLastname:  "Nowak",
+					CompanyName:      pgtype.Text{String: "ABC Sp. z o.o.", Valid: true},
+					CourseName:       "Szkolenie BHP",
+					CourseSymbol:     "BHP",
+					RegistryYear:     2026,
+					RegistryNumber:   11,
+					CourseDateStart:  pgtype.Date{Time: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC), Valid: true},
+					CourseDateEnd:    pgtype.Date{Time: time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC), Valid: true},
+					LanguageCode:     "pl",
+					ExpiryDate:       "2027-03-12",
+				},
+			}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/companies/14/certificates?page=1&limit=10&dateFrom=2026-03-01&dateTo=2026-03-31", nil)
+	req.SetPathValue("id", "14")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCompanyID(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody ListCertificatesByCompanyResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(responseBody.Data) != 1 {
+		t.Fatalf("expected 1 certificate, got %d", len(responseBody.Data))
+	}
+	if responseBody.Pagination.Total != 7 || responseBody.Pagination.TotalPages != 1 {
+		t.Fatalf("unexpected pagination: %+v", responseBody.Pagination)
+	}
+	if responseBody.Data[0].StudentName != "Jan Nowak" || responseBody.Data[0].CompanyName != "ABC Sp. z o.o." {
+		t.Fatalf("unexpected certificate payload: %+v", responseBody.Data[0])
+	}
+}
+
+func TestListByCompanyIDReturnsBadRequestForInvalidCompanyID(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCompanyID should not be called for invalid company id, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+			t.Fatalf("ListCertificatesByCompanyID should not be called for invalid company id, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/companies/abc/certificates", nil)
+	req.SetPathValue("id", "abc")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCompanyID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCompanyIDReturnsBadRequestWhenDateFromIsAfterDateTo(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			t.Fatalf("CountCertificatesByCompanyID should not be called when dateFrom is after dateTo, got %+v", arg)
+			return 0, nil
+		},
+		listCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+			t.Fatalf("ListCertificatesByCompanyID should not be called when dateFrom is after dateTo, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/companies/14/certificates?dateFrom=2026-04-01&dateTo=2026-03-01", nil)
+	req.SetPathValue("id", "14")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCompanyID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListByCompanyIDReturnsInternalServerErrorWhenCountFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			if !arg.CompanyID.Valid || arg.CompanyID.Int64 != 14 {
+				t.Fatalf("expected company id %d, got %+v", 14, arg.CompanyID)
+			}
+			return 0, errors.New("db error")
+		},
+		listCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+			t.Fatalf("ListCertificatesByCompanyID should not be called when count fails, got %+v", arg)
+			return nil, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/companies/14/certificates", nil)
+	req.SetPathValue("id", "14")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCompanyID(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestListByCompanyIDReturnsInternalServerErrorWhenListFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			if !arg.CompanyID.Valid || arg.CompanyID.Int64 != 14 {
+				t.Fatalf("expected company id %d, got %+v", 14, arg.CompanyID)
+			}
+			return 3, nil
+		},
+		listCertificatesByCompanyIDFunc: func(_ context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error) {
+			if !arg.CompanyID.Valid || arg.CompanyID.Int64 != 14 || arg.OffsetCount != 0 || arg.LimitCount != 10 {
+				t.Fatalf("unexpected list params: %+v", arg)
+			}
+			return nil, errors.New("db error")
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/companies/14/certificates", nil)
+	req.SetPathValue("id", "14")
+	rec := httptest.NewRecorder()
+
+	handler.ListByCompanyID(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }

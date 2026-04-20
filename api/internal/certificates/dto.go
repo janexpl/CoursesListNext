@@ -94,3 +94,8 @@ type ListCertificatesByCourseResponse struct {
 	Data       []CertificateDTO `json:"data"`
 	Pagination PaginationDTO    `json:"pagination"`
 }
+
+type ListCertificatesByCompanyResponse struct {
+	Data       []CertificateDTO `json:"data"`
+	Pagination PaginationDTO    `json:"pagination"`
+}
