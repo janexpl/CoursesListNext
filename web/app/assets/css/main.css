@@ -9,6 +9,9 @@
   --ui-container: var(--container-6xl);
   --ui-radius: 0.625rem;
   --ui-primary: var(--ui-color-sky-600);
+  --app-card-shadow:
+    0 12px 28px -22px rgb(15 23 42 / 0.28),
+    0 2px 6px 0 rgb(15 23 42 / 0.06);
 }
 
 body {
@@ -22,6 +25,18 @@ body {
 
 #__nuxt {
   min-height: 100vh;
+}
+
+main :is(section, article, nav, div)[class*='rounded-xl'][class*='border'][class*='bg-white'],
+main :is(section, article, nav, div)[class*='rounded-lg'][class*='border'][class*='bg-white'],
+main a[class*='grid'][class*='rounded-xl'][class*='border'][class*='bg-white'],
+main a[class*='grid'][class*='rounded-lg'][class*='border'][class*='bg-white'] {
+  box-shadow: var(--app-card-shadow);
+}
+
+main :is(section, article, nav, div)[class*='rounded-xl'][class*='border'][class*='bg-slate-950'],
+main :is(section, article, nav, div)[class*='rounded-lg'][class*='border'][class*='bg-slate-950'] {
+  box-shadow: var(--app-card-shadow);
 }
 
 [data-show-validation='true'] :is(input, select, textarea)[required]:invalid,
