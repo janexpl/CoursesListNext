@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { JournalSummary } from '~/composables/useApi'
+import type { LocationQuery, LocationQueryValue } from 'vue-router'
 
 definePageMeta({
   middleware: 'auth'
@@ -8,6 +9,14 @@ definePageMeta({
 useSeoMeta({
   title: 'Dzienniki szkoleń'
 })
+
+function normalizeQueryValue(value: LocationQueryValue | LocationQueryValue[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0] ?? ''
+  }
+
+  return value ?? ''
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +31,60 @@ const showCreatedNotice = ref(route.query.created === '1')
 const showDeletedNotice = ref(route.query.deleted === '1')
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
+function syncFiltersFromQuery(query: LocationQuery) {
+  const nextSearch = normalizeQueryValue(query.search).trim()
+  const nextStatus = normalizeQueryValue(query.status)
+  const nextDateFrom = normalizeQueryValue(query.dateFrom)
+  const nextDateTo = normalizeQueryValue(query.dateTo)
+
+  if (search.value !== nextSearch) {
+    search.value = nextSearch
+  }
+
+  if (debouncedSearch.value !== nextSearch) {
+    debouncedSearch.value = nextSearch
+  }
+
+  if (status.value !== nextStatus) {
+    status.value = nextStatus
+  }
+
+  if (dateFrom.value !== nextDateFrom) {
+    dateFrom.value = nextDateFrom
+  }
+
+  if (dateTo.value !== nextDateTo) {
+    dateTo.value = nextDateTo
+  }
+}
+
+function buildFiltersQuery() {
+  const preservedQuery = { ...route.query }
+  delete preservedQuery.search
+  delete preservedQuery.status
+  delete preservedQuery.dateFrom
+  delete preservedQuery.dateTo
+
+  return {
+    ...preservedQuery,
+    ...(debouncedSearch.value ? { search: debouncedSearch.value } : {}),
+    ...(status.value ? { status: status.value } : {}),
+    ...(dateFrom.value ? { dateFrom: dateFrom.value } : {}),
+    ...(dateTo.value ? { dateTo: dateTo.value } : {})
+  }
+}
+
+function hasSameFilterQuery(query: LocationQuery) {
+  return (
+    normalizeQueryValue(query.search).trim() === debouncedSearch.value
+    && normalizeQueryValue(query.status) === status.value
+    && normalizeQueryValue(query.dateFrom) === dateFrom.value
+    && normalizeQueryValue(query.dateTo) === dateTo.value
+  )
+}
+
+syncFiltersFromQuery(route.query)
 
 watch(
   () => route.query.created,
@@ -45,7 +108,31 @@ watch(search, (value) => {
   searchDebounceTimer = setTimeout(() => {
     debouncedSearch.value = value.trim()
   }, 300)
-}, { immediate: true })
+})
+
+watch(
+  () => route.query,
+  (query) => {
+    if (hasSameFilterQuery(query)) {
+      return
+    }
+
+    syncFiltersFromQuery(query)
+  }
+)
+
+watch(
+  [debouncedSearch, status, dateFrom, dateTo],
+  async () => {
+    if (hasSameFilterQuery(route.query)) {
+      return
+    }
+
+    await router.replace({
+      query: buildFiltersQuery()
+    })
+  }
+)
 
 onBeforeUnmount(() => {
   if (searchDebounceTimer) {
@@ -318,7 +405,10 @@ function companyLabel(journal: JournalSummary) {
       <NuxtLink
         v-for="journal in journals"
         :key="journal.id"
-        :to="`/journals/${journal.id}`"
+        :to="{
+          path: `/journals/${journal.id}`,
+          query: buildFiltersQuery()
+        }"
         class="grid gap-5 rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm transition hover:border-sky-300 hover:bg-white lg:grid-cols-[minmax(0,1fr)_18rem]"
       >
         <div class="space-y-4">

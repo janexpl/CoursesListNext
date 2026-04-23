@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { JournalDetails } from '~/composables/useApi'
+import type { RouteLocationRaw } from 'vue-router'
 
 defineProps<{
   journal: JournalDetails
@@ -11,7 +12,8 @@ defineProps<{
   isClosed: boolean
   deleteJournalPending: boolean
   journalPdfDownloadUrl: string
-  editJournalLink: string
+  journalsListLink: RouteLocationRaw
+  editJournalLink: RouteLocationRaw
 }>()
 
 const emit = defineEmits<{
@@ -39,7 +41,7 @@ function statusBadgeClass(value: string) {
     <div class="space-y-3">
       <div class="flex flex-wrap items-center gap-2">
         <NuxtLink
-          to="/journals"
+          :to="journalsListLink"
           class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
         >
           Wróć do listy

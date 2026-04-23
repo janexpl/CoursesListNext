@@ -8,6 +8,7 @@ import type {
   StudentCertificateSummary,
   StudentSummary
 } from '~/composables/useApi'
+import type { RouteLocationRaw } from 'vue-router'
 import JournalAddAttendeeCard from '~/components/journals/JournalAddAttendeeCard.vue'
 import JournalAttendanceScanCard from '~/components/journals/JournalAttendanceScanCard.vue'
 import JournalAttendanceSection from '~/components/journals/JournalAttendanceSection.vue'
@@ -182,7 +183,24 @@ const journalAttendanceScanDownloadUrl = computed(
 const journalSignedScanDownloadUrl = computed(
   () => `/api/v1/journals/${journalId}/signed-scan`
 )
-const editJournalLink = computed(() => `/journals/${journalId}/edit`)
+const journalsListLink = computed<RouteLocationRaw>(() => ({
+  path: '/journals',
+  query: {
+    ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+    ...(typeof route.query.status === 'string' && route.query.status ? { status: route.query.status } : {}),
+    ...(typeof route.query.dateFrom === 'string' && route.query.dateFrom ? { dateFrom: route.query.dateFrom } : {}),
+    ...(typeof route.query.dateTo === 'string' && route.query.dateTo ? { dateTo: route.query.dateTo } : {})
+  }
+}))
+const editJournalLink = computed<RouteLocationRaw>(() => ({
+  path: `/journals/${journalId}/edit`,
+  query: {
+    ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+    ...(typeof route.query.status === 'string' && route.query.status ? { status: route.query.status } : {}),
+    ...(typeof route.query.dateFrom === 'string' && route.query.dateFrom ? { dateFrom: route.query.dateFrom } : {}),
+    ...(typeof route.query.dateTo === 'string' && route.query.dateTo ? { dateTo: route.query.dateTo } : {})
+  }
+}))
 const attendeeCount = computed(() => attendees.value.length)
 const sessionCount = computed(() => sessions.value.length)
 const isClosed = computed(() => journal.value?.status === 'closed')
@@ -783,7 +801,16 @@ async function onDeleteJournal() {
 
   try {
     await api.deleteJournal(journalId)
-    await navigateTo('/journals?deleted=1')
+    await navigateTo({
+      path: '/journals',
+      query: {
+        ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+        ...(typeof route.query.status === 'string' && route.query.status ? { status: route.query.status } : {}),
+        ...(typeof route.query.dateFrom === 'string' && route.query.dateFrom ? { dateFrom: route.query.dateFrom } : {}),
+        ...(typeof route.query.dateTo === 'string' && route.query.dateTo ? { dateTo: route.query.dateTo } : {}),
+        deleted: '1'
+      }
+    })
   } catch (error) {
     deleteJournalError.value = getApiErrorMessage(error, 'Nie udało się usunąć dziennika.')
   } finally {
@@ -1884,6 +1911,7 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
         :is-closed="isClosed"
         :delete-journal-pending="deleteJournalPending"
         :journal-pdf-download-url="journalPdfDownloadUrl"
+        :journals-list-link="journalsListLink"
         :edit-journal-link="editJournalLink"
         @print-journal="openPrintJournal"
         @print-attendance-list="openPrintAttendanceList"

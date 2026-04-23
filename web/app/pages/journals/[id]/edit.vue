@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CompanySummary } from '~/composables/useApi'
+import type { RouteLocationRaw } from 'vue-router'
 
 definePageMeta({
   middleware: 'auth'
@@ -23,7 +24,15 @@ const { data, pending, error, refresh } = await useAsyncData(
 )
 
 const journal = computed(() => data.value?.data ?? null)
-const journalDetailsLink = computed(() => `/journals/${journalId.value}`)
+const journalDetailsLink = computed<RouteLocationRaw>(() => ({
+  path: `/journals/${journalId.value}`,
+  query: {
+    ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+    ...(typeof route.query.status === 'string' && route.query.status ? { status: route.query.status } : {}),
+    ...(typeof route.query.dateFrom === 'string' && route.query.dateFrom ? { dateFrom: route.query.dateFrom } : {}),
+    ...(typeof route.query.dateTo === 'string' && route.query.dateTo ? { dateTo: route.query.dateTo } : {})
+  }
+}))
 
 const form = reactive({
   companySearch: '',
