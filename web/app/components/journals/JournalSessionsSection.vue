@@ -147,7 +147,7 @@ function formatSessionHours(value: string) {
                 {{ session.topic }}
               </h3>
               <p class="mt-1 text-sm text-slate-500">
-                Domyślnie każda pozycja startuje z datą pierwszego dnia szkolenia.
+                Data jest wstępnie wyliczana z programu szkolenia przy limicie 8 godzin dziennie.
               </p>
             </div>
           </div>

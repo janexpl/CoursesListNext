@@ -147,7 +147,7 @@ func (q *Queries) CloseJournal(ctx context.Context, id int64) (int64, error) {
 }
 
 const createJournal = `-- name: CreateJournal :one
-  WITH selected_course AS (
+  WITH RECURSIVE selected_course AS (
       SELECT
           c.id,
           c.symbol,
@@ -219,6 +219,73 @@ const createJournal = `-- name: CreateJournal :one
           updated_at,
           closed_at
   ),
+  program_entries AS (
+      SELECT
+          i.id AS journal_id,
+          i.date_start,
+          i.organizer_name AS trainer_name,
+          TRIM(COALESCE(entry.item->>'Subject', '')) AS topic,
+          COALESCE(NULLIF(entry.item->>'TheoryTime', '')::numeric, 0)
+              + COALESCE(NULLIF(entry.item->>'PracticeTime', '')::numeric, 0) AS hours,
+          entry.ordinality::integer AS sort_order
+      FROM inserted i
+      CROSS JOIN selected_course sc
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(sc.courseprogram::jsonb, '[]'::jsonb))
+          WITH ORDINALITY AS entry(item, ordinality)
+  ),
+  filtered_entries AS (
+      SELECT
+          journal_id,
+          date_start,
+          trainer_name,
+          COALESCE(NULLIF(topic, ''), 'Temat ' || sort_order::text) AS topic,
+          hours,
+          sort_order,
+          ROW_NUMBER() OVER (PARTITION BY journal_id ORDER BY sort_order) AS row_no
+      FROM program_entries
+      WHERE topic <> '' OR hours > 0
+  ),
+  scheduled_entries AS (
+      SELECT
+          journal_id,
+          date_start,
+          trainer_name,
+          topic,
+          hours,
+          sort_order,
+          row_no,
+          0::integer AS day_offset,
+          LEAST(GREATEST(hours, 0), 8)::numeric AS used_hours_on_day
+      FROM filtered_entries
+      WHERE row_no = 1
+
+      UNION ALL
+
+      SELECT
+          next_entry.journal_id,
+          next_entry.date_start,
+          next_entry.trainer_name,
+          next_entry.topic,
+          next_entry.hours,
+          next_entry.sort_order,
+          next_entry.row_no,
+          CASE
+              WHEN scheduled.used_hours_on_day > 0
+                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
+              THEN scheduled.day_offset + 1
+              ELSE scheduled.day_offset
+          END AS day_offset,
+          CASE
+              WHEN scheduled.used_hours_on_day > 0
+                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
+              THEN LEAST(GREATEST(next_entry.hours, 0), 8)::numeric
+              ELSE LEAST(scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0), 8)::numeric
+          END AS used_hours_on_day
+      FROM scheduled_entries scheduled
+      JOIN filtered_entries next_entry
+        ON next_entry.journal_id = scheduled.journal_id
+       AND next_entry.row_no = scheduled.row_no + 1
+  ),
   inserted_sessions AS (
       INSERT INTO training_journal_sessions (
           journal_id,
@@ -229,21 +296,13 @@ const createJournal = `-- name: CreateJournal :one
           sort_order
       )
       SELECT
-          i.id,
-          i.date_start,
-          COALESCE(NULLIF(entry.item->>'TheoryTime', '')::numeric, 0)
-              + COALESCE(NULLIF(entry.item->>'PracticeTime', '')::numeric, 0),
-          COALESCE(NULLIF(TRIM(entry.item->>'Subject'), ''), 'Temat ' || entry.ordinality::text),
-          i.organizer_name,
-          entry.ordinality::integer
-      FROM inserted i
-      CROSS JOIN selected_course sc
-      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(sc.courseprogram::jsonb, '[]'::jsonb))
-          WITH ORDINALITY AS entry(item, ordinality)
-      WHERE
-          TRIM(COALESCE(entry.item->>'Subject', '')) <> ''
-          OR COALESCE(NULLIF(entry.item->>'TheoryTime', '')::numeric, 0) > 0
-          OR COALESCE(NULLIF(entry.item->>'PracticeTime', '')::numeric, 0) > 0
+          se.journal_id,
+          se.date_start + se.day_offset,
+          se.hours,
+          se.topic,
+          se.trainer_name,
+          se.sort_order
+      FROM scheduled_entries se
   )
   SELECT
       i.id,
@@ -418,7 +477,7 @@ func (q *Queries) DeleteJournalSignedScan(ctx context.Context, journalID int64) 
 }
 
 const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromCourse :execrows
-  WITH journal_source AS (
+  WITH RECURSIVE journal_source AS (
       SELECT
           j.id,
           j.date_start,
@@ -431,7 +490,7 @@ const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromC
   program_entries AS (
       SELECT
           js.id AS journal_id,
-          js.date_start AS session_date,
+          js.date_start,
           js.organizer_name AS trainer_name,
           TRIM(COALESCE(entry.item->>'Subject', '')) AS topic,
           COALESCE(NULLIF(entry.item->>'TheoryTime', '')::numeric, 0)
@@ -444,13 +503,55 @@ const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromC
   filtered_entries AS (
       SELECT
           journal_id,
-          session_date,
+          date_start,
           trainer_name,
           COALESCE(NULLIF(topic, ''), 'Temat ' || sort_order::text) AS topic,
           hours,
-          sort_order
+          sort_order,
+          ROW_NUMBER() OVER (PARTITION BY journal_id ORDER BY sort_order) AS row_no
       FROM program_entries
       WHERE topic <> '' OR hours > 0
+  ),
+  scheduled_entries AS (
+      SELECT
+          journal_id,
+          date_start,
+          trainer_name,
+          topic,
+          hours,
+          sort_order,
+          row_no,
+          0::integer AS day_offset,
+          LEAST(GREATEST(hours, 0), 8)::numeric AS used_hours_on_day
+      FROM filtered_entries
+      WHERE row_no = 1
+
+      UNION ALL
+
+      SELECT
+          next_entry.journal_id,
+          next_entry.date_start,
+          next_entry.trainer_name,
+          next_entry.topic,
+          next_entry.hours,
+          next_entry.sort_order,
+          next_entry.row_no,
+          CASE
+              WHEN scheduled.used_hours_on_day > 0
+                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
+              THEN scheduled.day_offset + 1
+              ELSE scheduled.day_offset
+          END AS day_offset,
+          CASE
+              WHEN scheduled.used_hours_on_day > 0
+                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
+              THEN LEAST(GREATEST(next_entry.hours, 0), 8)::numeric
+              ELSE LEAST(scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0), 8)::numeric
+          END AS used_hours_on_day
+      FROM scheduled_entries scheduled
+      JOIN filtered_entries next_entry
+        ON next_entry.journal_id = scheduled.journal_id
+       AND next_entry.row_no = scheduled.row_no + 1
   )
   INSERT INTO training_journal_sessions (
       journal_id,
@@ -461,17 +562,17 @@ const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromC
       sort_order
   )
   SELECT
-      fe.journal_id,
-      fe.session_date,
-      fe.hours,
-      fe.topic,
-      fe.trainer_name,
-      fe.sort_order
-  FROM filtered_entries fe
+      se.journal_id,
+      se.date_start + se.day_offset,
+      se.hours,
+      se.topic,
+      se.trainer_name,
+      se.sort_order
+  FROM scheduled_entries se
   WHERE NOT EXISTS (
       SELECT 1
       FROM training_journal_sessions existing
-      WHERE existing.journal_id = fe.journal_id
+      WHERE existing.journal_id = se.journal_id
   )
 `
 
