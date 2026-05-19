@@ -12,20 +12,21 @@ import (
 )
 
 type Config struct {
-	Port                string
-	DBHost              string
-	DBPort              string
-	DBUser              string
-	DBPassword          string
-	DBName              string
-	DBSSLMode           string
-	SessionTTL          time.Duration
-	SessionCookieName   string
-	SessionCookieSecure bool
-	CORSAllowedOrigins  []string
-	LoginRateLimit      float64
-	GUSUrl              string
-	GUSToken            string
+	Port                  string
+	DBHost                string
+	DBPort                string
+	DBUser                string
+	DBPassword            string
+	DBName                string
+	DBSSLMode             string
+	SessionTTL            time.Duration
+	SessionCookieName     string
+	SessionCookieSecure   bool
+	CORSAllowedOrigins    []string
+	LoginRateLimit        float64
+	GUSUrl                string
+	GUSToken              string
+	NotificationsAPIToken string
 }
 
 func Load() Config {
@@ -95,27 +96,30 @@ func Load() Config {
 			loginRateLimit = parsed
 		}
 	}
-	gusUrl := os.Getenv("GUS_URL")
-	if gusUrl == "" {
-		gusUrl = "https://wyszukiwarkaregontest.stat.gov.pl/wsbir/uslugabirzewnpubl.svc"
+	gusURL := os.Getenv("GUS_URL")
+	if gusURL == "" {
+		gusURL = "https://wyszukiwarkaregontest.stat.gov.pl/wsbir/uslugabirzewnpubl.svc"
 	}
 	gusToken := strings.TrimSpace(os.Getenv("GUS_TOKEN"))
 
+	notificationsAPIToken := strings.TrimSpace(os.Getenv("NOTIFICATIONS_API_TOKEN"))
+
 	return Config{
-		Port:                port,
-		DBHost:              dbhost,
-		DBPort:              dbport,
-		DBUser:              dbuser,
-		DBPassword:          dbpass,
-		DBName:              dbname,
-		DBSSLMode:           dbSSLMode,
-		SessionTTL:          sessionTTLDuration,
-		SessionCookieName:   sessionCookieName,
-		SessionCookieSecure: sessionCookieSecureBool,
-		CORSAllowedOrigins:  corsOriginsList,
-		LoginRateLimit:      loginRateLimit,
-		GUSUrl:              gusUrl,
-		GUSToken:            gusToken,
+		Port:                  port,
+		DBHost:                dbhost,
+		DBPort:                dbport,
+		DBUser:                dbuser,
+		DBPassword:            dbpass,
+		DBName:                dbname,
+		DBSSLMode:             dbSSLMode,
+		SessionTTL:            sessionTTLDuration,
+		SessionCookieName:     sessionCookieName,
+		SessionCookieSecure:   sessionCookieSecureBool,
+		CORSAllowedOrigins:    corsOriginsList,
+		LoginRateLimit:        loginRateLimit,
+		GUSUrl:                gusURL,
+		GUSToken:              gusToken,
+		NotificationsAPIToken: notificationsAPIToken,
 	}
 }
 

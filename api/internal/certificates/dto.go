@@ -99,3 +99,52 @@ type ListCertificatesByCompanyResponse struct {
 	Data       []CertificateDTO `json:"data"`
 	Pagination PaginationDTO    `json:"pagination"`
 }
+
+type ExpiringCertificateNotificationCandidateDTO struct {
+	CertificateID   int64                                     `json:"certificateId"`
+	CertificateDate string                                    `json:"certificateDate"`
+	ExpiryDate      string                                    `json:"expiryDate"`
+	RegistryYear    int64                                     `json:"registryYear"`
+	RegistryNumber  int64                                     `json:"registryNumber"`
+	LanguageCode    string                                    `json:"languageCode"`
+	Student         ExpiringCertificateNotificationStudentDTO `json:"student"`
+	Company         ExpiringCertificateNotificationCompanyDTO `json:"company"`
+	Course          ExpiringCertificateNotificationCourseDTO  `json:"course"`
+}
+
+type ExpiringCertificateNotificationStudentDTO struct {
+	ID        int32   `json:"id"`
+	FirstName string  `json:"firstName"`
+	LastName  string  `json:"lastName"`
+	PESEL     *string `json:"pesel"`
+}
+
+type ExpiringCertificateNotificationCompanyDTO struct {
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	CurrentName    string `json:"currentName"`
+	RecipientEmail string `json:"recipientEmail"`
+}
+
+type ExpiringCertificateNotificationCourseDTO struct {
+	Name      string  `json:"name"`
+	Symbol    string  `json:"symbol"`
+	DateStart string  `json:"dateStart"`
+	DateEnd   *string `json:"dateEnd"`
+}
+
+type ListExpiringCertificateNotificationCandidatesResponse struct {
+	Data []ExpiringCertificateNotificationCandidateDTO    `json:"data"`
+	Meta ExpiringCertificateNotificationCandidatesMetaDTO `json:"meta"`
+}
+
+type ExpiringCertificateNotificationCandidatesMetaDTO struct {
+	Limit      int32                                               `json:"limit"`
+	HasMore    bool                                                `json:"hasMore"`
+	NextCursor *ExpiringCertificateNotificationCandidatesCursorDTO `json:"nextCursor"`
+}
+
+type ExpiringCertificateNotificationCandidatesCursorDTO struct {
+	AfterExpiryDate    string `json:"afterExpiryDate"`
+	AfterCertificateID int64  `json:"afterCertificateId"`
+}

@@ -110,18 +110,23 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	row, err := h.creator.Update(r.Context(), idInt, UpdateCompanyDTO{
-		Name:          name,
-		Street:        street,
-		City:          city,
-		Zipcode:       zipcode,
-		Nip:           nip,
-		Email:         req.Email,
-		ContactPerson: req.ContactPerson,
-		Telephone:     telephone,
-		Note:          req.Note,
+		Name:                       name,
+		Street:                     street,
+		City:                       city,
+		Zipcode:                    zipcode,
+		Nip:                        nip,
+		Email:                      req.Email,
+		ContactPerson:              req.ContactPerson,
+		Telephone:                  telephone,
+		Note:                       req.Note,
+		ExpiryNotificationsEnabled: req.ExpiryNotificationsEnabled,
+		ExpiryNotificationEmail:    req.ExpiryNotificationEmail,
 	})
-
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+			return
+		}
 		if isCompanyNIPConflict(err) {
 			response.WriteError(w, http.StatusConflict, response.CodeConflict, "company with this NIP already exists")
 			return
@@ -159,18 +164,23 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	row, err := h.creator.Create(r.Context(), CreateCompanyRequest{
-		Name:          name,
-		Street:        street,
-		City:          city,
-		Zipcode:       zipcode,
-		Nip:           nip,
-		Email:         req.Email,
-		ContactPerson: req.ContactPerson,
-		Telephone:     telephone,
-		Note:          req.Note,
+		Name:                       name,
+		Street:                     street,
+		City:                       city,
+		Zipcode:                    zipcode,
+		Nip:                        nip,
+		Email:                      req.Email,
+		ContactPerson:              req.ContactPerson,
+		Telephone:                  telephone,
+		Note:                       req.Note,
+		ExpiryNotificationsEnabled: req.ExpiryNotificationsEnabled,
+		ExpiryNotificationEmail:    req.ExpiryNotificationEmail,
 	})
-
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+			return
+		}
 		if isCompanyNIPConflict(err) {
 			response.WriteError(w, http.StatusConflict, response.CodeConflict, "company with this NIP already exists")
 			return
@@ -203,16 +213,18 @@ func mapCompanyRow(row dbsqlc.ListCompaniesRow) CompanyDTO {
 
 func mapCompanyDetailRow(row dbsqlc.Company) CompanyDetailsDTO {
 	dto := CompanyDetailsDTO{
-		ID:            row.ID,
-		Name:          row.Name,
-		Street:        row.Street,
-		City:          row.City,
-		Zipcode:       row.Zipcode,
-		Nip:           row.Nip,
-		Email:         pgutil.NullableString(row.Email),
-		Contactperson: pgutil.NullableString(row.Contactperson),
-		Telephoneno:   row.Telephoneno,
-		Note:          pgutil.NullableString(row.Note),
+		ID:                         row.ID,
+		Name:                       row.Name,
+		Street:                     row.Street,
+		City:                       row.City,
+		Zipcode:                    row.Zipcode,
+		Nip:                        row.Nip,
+		Email:                      pgutil.NullableString(row.Email),
+		Contactperson:              pgutil.NullableString(row.Contactperson),
+		Telephoneno:                row.Telephoneno,
+		Note:                       pgutil.NullableString(row.Note),
+		ExpiryNotificationsEnabled: row.ExpiryNotificationsEnabled,
+		ExpiryNotificationEmail:    pgutil.NullableString(row.ExpiryNotificationEmail),
 	}
 	return dto
 }

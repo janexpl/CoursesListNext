@@ -8,9 +8,12 @@ CREATE TABLE companies (
     email text,
     contactperson text,
     telephoneno text NOT NULL,
-    note text
+    note text,
+    expiry_notifications_enabled boolean NOT NULL DEFAULT false,
+    expiry_notification_email text
 );
 CREATE UNIQUE INDEX check_unique_nip ON companies (nip);
+
 CREATE TABLE students (
     id bigint PRIMARY KEY,
     firstname text NOT NULL,

@@ -6,10 +6,12 @@ import (
 	"log"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
+	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
 
 var ErrInvalidInput = errors.New("invalid input")
@@ -154,21 +156,33 @@ func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyPar
 	zipcode := strings.TrimSpace(req.Zipcode)
 	nip := strings.TrimSpace(req.Nip)
 	telephone := strings.TrimSpace(req.Telephone)
+	expiryEmailPg := pgtype.Text{}
+	if req.ExpiryNotificationEmail != nil {
+		expiryEmail := strings.TrimSpace(*req.ExpiryNotificationEmail)
+		if expiryEmail != "" {
+			if !validation.CheckEmail(expiryEmail) {
+				return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
+			}
+			expiryEmailPg = pgtype.Text{String: expiryEmail, Valid: true}
+		}
+	}
 
 	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" || telephone == "" {
 		return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
 	}
 
 	return dbsqlc.CreateCompanyParams{
-		Name:          name,
-		Street:        street,
-		City:          city,
-		Zipcode:       zipcode,
-		Nip:           nip,
-		Email:         pgutil.OptionalText(req.Email),
-		Contactperson: pgutil.OptionalText(req.ContactPerson),
-		Telephoneno:   telephone,
-		Note:          pgutil.OptionalText(req.Note),
+		Name:                       name,
+		Street:                     street,
+		City:                       city,
+		Zipcode:                    zipcode,
+		Nip:                        nip,
+		Email:                      pgutil.OptionalText(req.Email),
+		Contactperson:              pgutil.OptionalText(req.ContactPerson),
+		Telephoneno:                telephone,
+		Note:                       pgutil.OptionalText(req.Note),
+		ExpiryNotificationsEnabled: req.ExpiryNotificationsEnabled,
+		ExpiryNotificationEmail:    expiryEmailPg,
 	}, nil
 }
 
@@ -179,15 +193,17 @@ func buildUpdateCompanyParams(companyID int64, req UpdateCompanyDTO) (dbsqlc.Upd
 	}
 
 	return dbsqlc.UpdateCompanyParams{
-		ID:            companyID,
-		Name:          params.Name,
-		Street:        params.Street,
-		City:          params.City,
-		Zipcode:       params.Zipcode,
-		Nip:           params.Nip,
-		Email:         params.Email,
-		Contactperson: params.Contactperson,
-		Telephoneno:   params.Telephoneno,
-		Note:          params.Note,
+		ID:                         companyID,
+		Name:                       params.Name,
+		Street:                     params.Street,
+		City:                       params.City,
+		Zipcode:                    params.Zipcode,
+		Nip:                        params.Nip,
+		Email:                      params.Email,
+		Contactperson:              params.Contactperson,
+		Telephoneno:                params.Telephoneno,
+		Note:                       params.Note,
+		ExpiryNotificationsEnabled: params.ExpiryNotificationsEnabled,
+		ExpiryNotificationEmail:    params.ExpiryNotificationEmail,
 	}, nil
 }

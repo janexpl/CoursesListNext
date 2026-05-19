@@ -29,6 +29,7 @@ type fakeQuerier struct {
 	getCourseCertificateTranslationByCourseAndLanguageFunc func(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error)
 	updateCertificateFunc                                  func(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
 	softDeleteFunc                                         func(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
+	listExpiringNotificationCandidatesFunc                 func(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
 }
 
 type fakeCreator struct {
@@ -111,6 +112,13 @@ func (f fakeQuerier) SoftDeleteCertificate(ctx context.Context, arg sqlc.SoftDel
 		return 0, errors.New("unexpected SoftDeleteCertificate call")
 	}
 	return f.softDeleteFunc(ctx, arg)
+}
+
+func (f fakeQuerier) ListExpiringCertificateNotificationCandidates(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error) {
+	if f.listExpiringNotificationCandidatesFunc == nil {
+		return nil, errors.New("unexpected ListExpiringCertificateNotificationCandidates call")
+	}
+	return f.listExpiringNotificationCandidatesFunc(ctx, arg)
 }
 
 func (f fakeCreator) Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {
@@ -379,6 +387,264 @@ func TestListReturnsBadRequestForLimitAboveMaximum(t *testing.T) {
 	handler.List(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListExpiringNotificationCandidatesReturnsResponseWithCursor(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listExpiringNotificationCandidatesFunc: func(_ context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error) {
+			if !arg.DateFrom.Valid || arg.DateFrom.Time.Format(response.DateFormat) != "2026-06-01" {
+				t.Fatalf("expected dateFrom=2026-06-01, got %+v", arg.DateFrom)
+			}
+			if !arg.DateTo.Valid || arg.DateTo.Time.Format(response.DateFormat) != "2026-06-30" {
+				t.Fatalf("expected dateTo=2026-06-30, got %+v", arg.DateTo)
+			}
+			if !arg.AfterExpiryDate.Valid || arg.AfterExpiryDate.Time.Format(response.DateFormat) != "2026-06-10" {
+				t.Fatalf("expected afterExpiryDate=2026-06-10, got %+v", arg.AfterExpiryDate)
+			}
+			if !arg.AfterCertificateID.Valid || arg.AfterCertificateID.Int64 != 99 {
+				t.Fatalf("expected afterCertificateId=99, got %+v", arg.AfterCertificateID)
+			}
+			if arg.LimitCount != 3 {
+				t.Fatalf("expected limit+1 query limit 3, got %d", arg.LimitCount)
+			}
+
+			return []sqlc.ListExpiringCertificateNotificationCandidatesRow{
+				{
+					CertificateID:            101,
+					CertificateDate:          pgtype.Date{Time: time.Date(2025, time.June, 5, 0, 0, 0, 0, time.UTC), Valid: true},
+					StudentID:                21,
+					StudentFirstnameSnapshot: "Jan",
+					StudentLastnameSnapshot:  "Nowak",
+					StudentPeselSnapshot:     pgtype.Text{String: "90010112345", Valid: true},
+					CompanyNameSnapshot:      pgtype.Text{String: "ABC Snapshot Sp. z o.o.", Valid: true},
+					CompanyID:                7,
+					CompanyCurrentName:       "ABC Aktualna Sp. z o.o.",
+					RecipientEmail:           "kadry@abc.pl",
+					CourseNameSnapshot:       "Szkolenie okresowe BHP",
+					CourseSymbolSnapshot:     "BHP-O",
+					CourseDateStart:          pgtype.Date{Time: time.Date(2025, time.June, 1, 0, 0, 0, 0, time.UTC), Valid: true},
+					CourseDateEnd:            pgtype.Date{Time: time.Date(2025, time.June, 5, 0, 0, 0, 0, time.UTC), Valid: true},
+					LanguageCode:             "pl",
+					RegistryYear:             2025,
+					RegistryNumber:           45,
+					ExpiryDate:               pgtype.Date{Time: time.Date(2026, time.June, 5, 0, 0, 0, 0, time.UTC), Valid: true},
+				},
+				{
+					CertificateID:            102,
+					CertificateDate:          pgtype.Date{Time: time.Date(2025, time.June, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+					StudentID:                22,
+					StudentFirstnameSnapshot: "Anna",
+					StudentLastnameSnapshot:  "Kowalska",
+					StudentPeselSnapshot:     pgtype.Text{},
+					CompanyNameSnapshot:      pgtype.Text{},
+					CompanyID:                8,
+					CompanyCurrentName:       "XYZ SA",
+					RecipientEmail:           "bhp@xyz.pl",
+					CourseNameSnapshot:       "Instruktaz stanowiskowy",
+					CourseSymbolSnapshot:     "INS",
+					CourseDateStart:          pgtype.Date{Time: time.Date(2025, time.June, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+					CourseDateEnd:            pgtype.Date{},
+					LanguageCode:             "pl",
+					RegistryYear:             2025,
+					RegistryNumber:           46,
+					ExpiryDate:               pgtype.Date{Time: time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+				},
+				{
+					CertificateID: 103,
+					ExpiryDate:    pgtype.Date{Time: time.Date(2026, time.June, 20, 0, 0, 0, 0, time.UTC), Valid: true},
+				},
+			}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&limit=2&afterExpiryDate=2026-06-10&afterCertificateId=99", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ListExpiringNotificationCandidates(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody ListExpiringCertificateNotificationCandidatesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(responseBody.Data) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(responseBody.Data))
+	}
+	if !responseBody.Meta.HasMore {
+		t.Fatalf("expected hasMore=true, got %+v", responseBody.Meta)
+	}
+	if responseBody.Meta.Limit != 2 {
+		t.Fatalf("expected meta limit 2, got %d", responseBody.Meta.Limit)
+	}
+	if responseBody.Meta.NextCursor == nil {
+		t.Fatal("expected next cursor")
+	}
+	if responseBody.Meta.NextCursor.AfterExpiryDate != "2026-06-15" || responseBody.Meta.NextCursor.AfterCertificateID != 102 {
+		t.Fatalf("unexpected next cursor: %+v", responseBody.Meta.NextCursor)
+	}
+
+	first := responseBody.Data[0]
+	if first.CertificateID != 101 || first.CertificateDate != "2025-06-05" || first.ExpiryDate != "2026-06-05" {
+		t.Fatalf("unexpected first candidate dates: %+v", first)
+	}
+	if first.Student.ID != 21 || first.Student.FirstName != "Jan" || first.Student.LastName != "Nowak" {
+		t.Fatalf("unexpected first student: %+v", first.Student)
+	}
+	if first.Student.PESEL == nil || *first.Student.PESEL != "90010112345" {
+		t.Fatalf("expected PESEL to be mapped, got %+v", first.Student.PESEL)
+	}
+	if first.Company.Name != "ABC Snapshot Sp. z o.o." || first.Company.CurrentName != "ABC Aktualna Sp. z o.o." || first.Company.RecipientEmail != "kadry@abc.pl" {
+		t.Fatalf("unexpected first company: %+v", first.Company)
+	}
+	if first.Course.Name != "Szkolenie okresowe BHP" || first.Course.Symbol != "BHP-O" || first.Course.DateStart != "2025-06-01" {
+		t.Fatalf("unexpected first course: %+v", first.Course)
+	}
+	if first.Course.DateEnd == nil || *first.Course.DateEnd != "2025-06-05" {
+		t.Fatalf("expected first course date end to be mapped, got %+v", first.Course.DateEnd)
+	}
+
+	second := responseBody.Data[1]
+	if second.Company.Name != "XYZ SA" {
+		t.Fatalf("expected empty snapshot company name to fallback to current name, got %+v", second.Company)
+	}
+	if second.Student.PESEL != nil {
+		t.Fatalf("expected nil PESEL, got %+v", second.Student.PESEL)
+	}
+	if second.Course.DateEnd != nil {
+		t.Fatalf("expected nil course date end, got %+v", second.Course.DateEnd)
+	}
+}
+
+func TestListExpiringNotificationCandidatesReturnsEmptyResponseWithoutCursor(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listExpiringNotificationCandidatesFunc: func(_ context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error) {
+			if !arg.DateFrom.Valid || !arg.DateTo.Valid {
+				t.Fatalf("expected required date range, got %+v", arg)
+			}
+			if arg.AfterExpiryDate.Valid || arg.AfterCertificateID.Valid {
+				t.Fatalf("expected empty cursor params, got %+v", arg)
+			}
+			if arg.LimitCount != 501 {
+				t.Fatalf("expected default limit+1 query limit 501, got %d", arg.LimitCount)
+			}
+			return []sqlc.ListExpiringCertificateNotificationCandidatesRow{}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ListExpiringNotificationCandidates(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var responseBody ListExpiringCertificateNotificationCandidatesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(responseBody.Data) != 0 {
+		t.Fatalf("expected empty data, got %+v", responseBody.Data)
+	}
+	if responseBody.Meta.HasMore || responseBody.Meta.NextCursor != nil {
+		t.Fatalf("unexpected pagination meta: %+v", responseBody.Meta)
+	}
+	if responseBody.Meta.Limit != 500 {
+		t.Fatalf("expected default meta limit 500, got %d", responseBody.Meta.Limit)
+	}
+}
+
+func TestListExpiringNotificationCandidatesRejectsInvalidParams(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "missing dateFrom",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateTo=2026-06-30",
+		},
+		{
+			name: "missing dateTo",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01",
+		},
+		{
+			name: "invalid dateFrom",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-99-99&dateTo=2026-06-30",
+		},
+		{
+			name: "invalid dateTo",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-99-99",
+		},
+		{
+			name: "dateFrom after dateTo",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-07-01&dateTo=2026-06-30",
+		},
+		{
+			name: "invalid limit",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&limit=abc",
+		},
+		{
+			name: "limit above maximum",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&limit=1001",
+		},
+		{
+			name: "invalid afterExpiryDate",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&afterExpiryDate=bad",
+		},
+		{
+			name: "missing afterCertificateId",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&afterExpiryDate=2026-06-10",
+		},
+		{
+			name: "invalid afterCertificateId",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&afterExpiryDate=2026-06-10&afterCertificateId=abc",
+		},
+		{
+			name: "afterCertificateId without afterExpiryDate",
+			url:  "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30&afterCertificateId=10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewHandler(fakeQuerier{
+				listExpiringNotificationCandidatesFunc: func(_ context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error) {
+					t.Fatalf("ListExpiringCertificateNotificationCandidates should not be called for invalid params, got %+v", arg)
+					return nil, nil
+				},
+			}, nil)
+
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			rec := httptest.NewRecorder()
+
+			handler.ListExpiringNotificationCandidates(rec, req)
+
+			assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+		})
+	}
+}
+
+func TestListExpiringNotificationCandidatesReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		listExpiringNotificationCandidatesFunc: func(_ context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error) {
+			if !arg.DateFrom.Valid || !arg.DateTo.Valid {
+				t.Fatalf("expected required date range, got %+v", arg)
+			}
+			return nil, errors.New("db error")
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/internal/notifications/expiring-certificates?dateFrom=2026-06-01&dateTo=2026-06-30", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ListExpiringNotificationCandidates(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
 
 func TestListByCourseIDReturnsPaginatedCertificates(t *testing.T) {

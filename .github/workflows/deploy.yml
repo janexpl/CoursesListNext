@@ -41,8 +41,27 @@ jobs:
           tags: |
             ghcr.io/janexpl/courseslistnext-web:latest
             ghcr.io/janexpl/courseslistnext-web:${{ github.sha }}
+  build-notifications:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./notifications
+          push: true
+          tags: |
+            ghcr.io/janexpl/courseslistnext-notifications:latest
+            ghcr.io/janexpl/courseslistnext-notifications:${{ github.sha }}
   deploy:
-    needs: [build-api, build-web]
+    needs: [build-api, build-web, build-notifications]
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VPS
@@ -66,4 +85,3 @@ jobs:
             done
             docker compose -f docker-compose.prod.yml logs api --tail=200
             exit 1
-

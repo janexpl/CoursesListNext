@@ -36,9 +36,11 @@ const createCompany = `-- name: CreateCompany :one
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
   ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
   )
   RETURNING
       id,
@@ -50,19 +52,23 @@ const createCompany = `-- name: CreateCompany :one
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
 `
 
 type CreateCompanyParams struct {
-	Name          string      `json:"name"`
-	Street        string      `json:"street"`
-	City          string      `json:"city"`
-	Zipcode       string      `json:"zipcode"`
-	Nip           string      `json:"nip"`
-	Email         pgtype.Text `json:"email"`
-	Contactperson pgtype.Text `json:"contactperson"`
-	Telephoneno   string      `json:"telephoneno"`
-	Note          pgtype.Text `json:"note"`
+	Name                       string      `json:"name"`
+	Street                     string      `json:"street"`
+	City                       string      `json:"city"`
+	Zipcode                    string      `json:"zipcode"`
+	Nip                        string      `json:"nip"`
+	Email                      pgtype.Text `json:"email"`
+	Contactperson              pgtype.Text `json:"contactperson"`
+	Telephoneno                string      `json:"telephoneno"`
+	Note                       pgtype.Text `json:"note"`
+	ExpiryNotificationsEnabled bool        `json:"expiry_notifications_enabled"`
+	ExpiryNotificationEmail    pgtype.Text `json:"expiry_notification_email"`
 }
 
 func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error) {
@@ -76,6 +82,8 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		arg.Contactperson,
 		arg.Telephoneno,
 		arg.Note,
+		arg.ExpiryNotificationsEnabled,
+		arg.ExpiryNotificationEmail,
 	)
 	var i Company
 	err := row.Scan(
@@ -89,6 +97,8 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.Contactperson,
 		&i.Telephoneno,
 		&i.Note,
+		&i.ExpiryNotificationsEnabled,
+		&i.ExpiryNotificationEmail,
 	)
 	return i, err
 }
@@ -104,7 +114,9 @@ const getCompanyByID = `-- name: GetCompanyByID :one
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
   FROM companies
   WHERE id = $1
 `
@@ -123,6 +135,8 @@ func (q *Queries) GetCompanyByID(ctx context.Context, id int64) (Company, error)
 		&i.Contactperson,
 		&i.Telephoneno,
 		&i.Note,
+		&i.ExpiryNotificationsEnabled,
+		&i.ExpiryNotificationEmail,
 	)
 	return i, err
 }
@@ -200,7 +214,9 @@ const updateCompany = `-- name: UpdateCompany :one
       email = $7,
       contactperson = $8,
       telephoneno = $9,
-      note = $10
+      note = $10,
+      expiry_notifications_enabled = $11,
+      expiry_notification_email = $12
   WHERE id = $1
   RETURNING
       id,
@@ -212,20 +228,24 @@ const updateCompany = `-- name: UpdateCompany :one
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
 `
 
 type UpdateCompanyParams struct {
-	ID            int64       `json:"id"`
-	Name          string      `json:"name"`
-	Street        string      `json:"street"`
-	City          string      `json:"city"`
-	Zipcode       string      `json:"zipcode"`
-	Nip           string      `json:"nip"`
-	Email         pgtype.Text `json:"email"`
-	Contactperson pgtype.Text `json:"contactperson"`
-	Telephoneno   string      `json:"telephoneno"`
-	Note          pgtype.Text `json:"note"`
+	ID                         int64       `json:"id"`
+	Name                       string      `json:"name"`
+	Street                     string      `json:"street"`
+	City                       string      `json:"city"`
+	Zipcode                    string      `json:"zipcode"`
+	Nip                        string      `json:"nip"`
+	Email                      pgtype.Text `json:"email"`
+	Contactperson              pgtype.Text `json:"contactperson"`
+	Telephoneno                string      `json:"telephoneno"`
+	Note                       pgtype.Text `json:"note"`
+	ExpiryNotificationsEnabled bool        `json:"expiry_notifications_enabled"`
+	ExpiryNotificationEmail    pgtype.Text `json:"expiry_notification_email"`
 }
 
 func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (Company, error) {
@@ -240,6 +260,8 @@ func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (C
 		arg.Contactperson,
 		arg.Telephoneno,
 		arg.Note,
+		arg.ExpiryNotificationsEnabled,
+		arg.ExpiryNotificationEmail,
 	)
 	var i Company
 	err := row.Scan(
@@ -253,6 +275,8 @@ func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (C
 		&i.Contactperson,
 		&i.Telephoneno,
 		&i.Note,
+		&i.ExpiryNotificationsEnabled,
+		&i.ExpiryNotificationEmail,
 	)
 	return i, err
 }

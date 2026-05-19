@@ -293,6 +293,21 @@ useSeoMeta({
                 </dd>
               </div>
 
+              <div class="md:col-span-2">
+                <dt class="text-xs uppercase tracking-[0.16em] text-slate-400">
+                  Powiadomienia o wygasających zaświadczeniach
+                </dt>
+                <dd class="mt-1 text-sm text-slate-900">
+                  {{ company.expiryNotificationsEnabled ? 'Włączone' : 'Wyłączone' }}
+                </dd>
+                <dd
+                  v-if="company.expiryNotificationsEnabled"
+                  class="mt-1 break-all text-xs text-slate-500"
+                >
+                  Adres: {{ company.expiryNotificationEmail || company.email || 'brak adresu e-mail' }}
+                </dd>
+              </div>
+
               <div
                 v-if="company.note"
                 class="md:col-span-2"

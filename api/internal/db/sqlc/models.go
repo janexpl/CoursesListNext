@@ -57,16 +57,18 @@ type Certificate struct {
 }
 
 type Company struct {
-	ID            int64       `json:"id"`
-	Name          string      `json:"name"`
-	Street        string      `json:"street"`
-	City          string      `json:"city"`
-	Zipcode       string      `json:"zipcode"`
-	Nip           string      `json:"nip"`
-	Email         pgtype.Text `json:"email"`
-	Contactperson pgtype.Text `json:"contactperson"`
-	Telephoneno   string      `json:"telephoneno"`
-	Note          pgtype.Text `json:"note"`
+	ID                         int64       `json:"id"`
+	Name                       string      `json:"name"`
+	Street                     string      `json:"street"`
+	City                       string      `json:"city"`
+	Zipcode                    string      `json:"zipcode"`
+	Nip                        string      `json:"nip"`
+	Email                      pgtype.Text `json:"email"`
+	Contactperson              pgtype.Text `json:"contactperson"`
+	Telephoneno                string      `json:"telephoneno"`
+	Note                       pgtype.Text `json:"note"`
+	ExpiryNotificationsEnabled bool        `json:"expiry_notifications_enabled"`
+	ExpiryNotificationEmail    pgtype.Text `json:"expiry_notification_email"`
 }
 
 type Course struct {

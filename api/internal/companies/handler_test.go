@@ -337,6 +337,8 @@ func TestGetReturnsCompanyDetailsResponse(t *testing.T) {
 					*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 					*(dest[8].(*string)) = "500600700"
 					*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
+					*(dest[10].(*bool)) = true
+					*(dest[11].(*pgtype.Text)) = pgtype.Text{String: "kadry@abc.pl", Valid: true}
 					return nil
 				},
 			}
@@ -373,6 +375,12 @@ func TestGetReturnsCompanyDetailsResponse(t *testing.T) {
 	}
 	if responseBody.Data.Note == nil || *responseBody.Data.Note != "Kluczowy klient" {
 		t.Fatalf("expected note to be mapped, got %+v", responseBody.Data.Note)
+	}
+	if !responseBody.Data.ExpiryNotificationsEnabled {
+		t.Fatal("expected expiry notifications to be enabled")
+	}
+	if responseBody.Data.ExpiryNotificationEmail == nil || *responseBody.Data.ExpiryNotificationEmail != "kadry@abc.pl" {
+		t.Fatalf("expected expiry notification email to be mapped, got %+v", responseBody.Data.ExpiryNotificationEmail)
 	}
 }
 
@@ -432,17 +440,25 @@ func TestPatchReturnsUpdatedCompanyResponse(t *testing.T) {
 			if req.Email == nil || *req.Email != "  biuro@abc.pl " {
 				t.Fatalf("expected raw email pointer, got %+v", req.Email)
 			}
+			if !req.ExpiryNotificationsEnabled {
+				t.Fatal("expected expiry notifications flag to be forwarded")
+			}
+			if req.ExpiryNotificationEmail == nil || *req.ExpiryNotificationEmail != "  kadry@abc.pl " {
+				t.Fatalf("expected raw expiry notification email pointer, got %+v", req.ExpiryNotificationEmail)
+			}
 			return CompanyDetailsDTO{
-				ID:            15,
-				Name:          "ABC Sp. z o.o.",
-				Street:        "Koszykowa 1",
-				City:          "Warszawa",
-				Zipcode:       "00-001",
-				Nip:           "1234567890",
-				Email:         ptrString("biuro@abc.pl"),
-				Contactperson: ptrString("Jan Nowak"),
-				Telephoneno:   "500600700",
-				Note:          ptrString("Kluczowy klient"),
+				ID:                         15,
+				Name:                       "ABC Sp. z o.o.",
+				Street:                     "Koszykowa 1",
+				City:                       "Warszawa",
+				Zipcode:                    "00-001",
+				Nip:                        "1234567890",
+				Email:                      ptrString("biuro@abc.pl"),
+				Contactperson:              ptrString("Jan Nowak"),
+				Telephoneno:                "500600700",
+				Note:                       ptrString("Kluczowy klient"),
+				ExpiryNotificationsEnabled: true,
+				ExpiryNotificationEmail:    ptrString("kadry@abc.pl"),
 			}, nil
 		},
 	})
@@ -456,7 +472,9 @@ func TestPatchReturnsUpdatedCompanyResponse(t *testing.T) {
 		"email": "  biuro@abc.pl ",
 		"contactPerson": "  Jan Nowak ",
 		"telephone": " 500600700 ",
-		"note": "  Kluczowy klient "
+		"note": "  Kluczowy klient ",
+		"expiryNotificationsEnabled": true,
+		"expiryNotificationEmail": "  kadry@abc.pl "
 	}`))
 	req.SetPathValue("id", "15")
 	rec := httptest.NewRecorder()
@@ -481,6 +499,12 @@ func TestPatchReturnsUpdatedCompanyResponse(t *testing.T) {
 	}
 	if responseBody.Data.Email == nil || *responseBody.Data.Email != "biuro@abc.pl" {
 		t.Fatalf("expected email to be mapped, got %+v", responseBody.Data.Email)
+	}
+	if !responseBody.Data.ExpiryNotificationsEnabled {
+		t.Fatal("expected expiry notifications to be enabled")
+	}
+	if responseBody.Data.ExpiryNotificationEmail == nil || *responseBody.Data.ExpiryNotificationEmail != "kadry@abc.pl" {
+		t.Fatalf("expected expiry notification email to be mapped, got %+v", responseBody.Data.ExpiryNotificationEmail)
 	}
 }
 
@@ -558,6 +582,30 @@ func TestPatchReturnsBadRequestForMissingRequiredField(t *testing.T) {
 		"zipcode": "00-001",
 		"nip": "1234567890",
 		"telephone": "500600700"
+	}`))
+	req.SetPathValue("id", "15")
+	rec := httptest.NewRecorder()
+
+	handler.Patch(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestPatchReturnsBadRequestWhenCreatorRejectsInput(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		updateFunc: func(_ context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, ErrInvalidInput
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/companies/15", strings.NewReader(`{
+		"name": "ABC",
+		"street": "Koszykowa 1",
+		"city": "Warszawa",
+		"zipcode": "00-001",
+		"nip": "1234567890",
+		"telephone": "500600700",
+		"expiryNotificationEmail": "invalid-email"
 	}`))
 	req.SetPathValue("id", "15")
 	rec := httptest.NewRecorder()
@@ -694,17 +742,25 @@ func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
 			if req.Name != "ABC Sp. z o.o." || req.Street != "Koszykowa 1" || req.City != "Warszawa" || req.Zipcode != "00-001" || req.Nip != "1234567890" || req.Telephone != "500600700" {
 				t.Fatalf("unexpected create request: %+v", req)
 			}
+			if !req.ExpiryNotificationsEnabled {
+				t.Fatal("expected expiry notifications flag to be forwarded")
+			}
+			if req.ExpiryNotificationEmail == nil || *req.ExpiryNotificationEmail != "  kadry@abc.pl " {
+				t.Fatalf("expected raw expiry notification email pointer, got %+v", req.ExpiryNotificationEmail)
+			}
 			return CompanyDetailsDTO{
-				ID:            15,
-				Name:          "ABC Sp. z o.o.",
-				Street:        "Koszykowa 1",
-				City:          "Warszawa",
-				Zipcode:       "00-001",
-				Nip:           "1234567890",
-				Email:         ptrString("biuro@abc.pl"),
-				Contactperson: ptrString("Jan Nowak"),
-				Telephoneno:   "500600700",
-				Note:          ptrString("Kluczowy klient"),
+				ID:                         15,
+				Name:                       "ABC Sp. z o.o.",
+				Street:                     "Koszykowa 1",
+				City:                       "Warszawa",
+				Zipcode:                    "00-001",
+				Nip:                        "1234567890",
+				Email:                      ptrString("biuro@abc.pl"),
+				Contactperson:              ptrString("Jan Nowak"),
+				Telephoneno:                "500600700",
+				Note:                       ptrString("Kluczowy klient"),
+				ExpiryNotificationsEnabled: true,
+				ExpiryNotificationEmail:    ptrString("kadry@abc.pl"),
 			}, nil
 		},
 	})
@@ -718,7 +774,9 @@ func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
 		"email": "  biuro@abc.pl ",
 		"contactPerson": "  Jan Nowak ",
 		"telephone": " 500600700 ",
-		"note": "  Kluczowy klient "
+		"note": "  Kluczowy klient ",
+		"expiryNotificationsEnabled": true,
+		"expiryNotificationEmail": "  kadry@abc.pl "
 	}`))
 	rec := httptest.NewRecorder()
 
@@ -742,6 +800,12 @@ func TestCreateCompanyReturnsCreatedCompanyResponse(t *testing.T) {
 	}
 	if responseBody.Data.Contactperson == nil || *responseBody.Data.Contactperson != "Jan Nowak" {
 		t.Fatalf("expected contact person to be mapped, got %+v", responseBody.Data.Contactperson)
+	}
+	if !responseBody.Data.ExpiryNotificationsEnabled {
+		t.Fatal("expected expiry notifications to be enabled")
+	}
+	if responseBody.Data.ExpiryNotificationEmail == nil || *responseBody.Data.ExpiryNotificationEmail != "kadry@abc.pl" {
+		t.Fatalf("expected expiry notification email to be mapped, got %+v", responseBody.Data.ExpiryNotificationEmail)
 	}
 }
 
@@ -800,6 +864,29 @@ func TestCreateCompanyReturnsBadRequestForMissingRequiredField(t *testing.T) {
 		"zipcode": "00-001",
 		"nip": "1234567890",
 		"telephone": "500600700"
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.CreateCompany(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestCreateCompanyReturnsBadRequestWhenCreatorRejectsInput(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(_ context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error) {
+			return CompanyDetailsDTO{}, ErrInvalidInput
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/companies", strings.NewReader(`{
+		"name": "ABC",
+		"street": "Koszykowa 1",
+		"city": "Warszawa",
+		"zipcode": "00-001",
+		"nip": "1234567890",
+		"telephone": "500600700",
+		"expiryNotificationEmail": "invalid-email"
 	}`))
 	rec := httptest.NewRecorder()
 

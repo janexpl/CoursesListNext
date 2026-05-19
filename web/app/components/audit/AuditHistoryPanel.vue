@@ -52,6 +52,8 @@ const fieldLabelMap: Record<string, string> = {
   contactPerson: 'osoba kontaktowa',
   contactperson: 'osoba kontaktowa',
   note: 'notatka',
+  expiryNotificationsEnabled: 'powiadomienia o ważności',
+  expiryNotificationEmail: 'email do powiadomień',
   birthDate: 'data urodzenia',
   birthdate: 'data urodzenia',
   birthPlace: 'miejsce urodzenia',

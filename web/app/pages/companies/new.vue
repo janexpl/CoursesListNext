@@ -16,7 +16,9 @@ const form = reactive({
   email: '',
   contactPerson: '',
   telephone: '',
-  note: ''
+  note: '',
+  expiryNotificationsEnabled: false,
+  expiryNotificationEmail: ''
 })
 
 const submitPending = ref(false)
@@ -43,7 +45,13 @@ const requiredCompanyDataComplete = computed(() => {
   )
 })
 const hasOptionalCompanyData = computed(() => {
-  return Boolean(form.email.trim() || form.contactPerson.trim() || form.note.trim())
+  return Boolean(
+    form.email.trim()
+    || form.contactPerson.trim()
+    || form.note.trim()
+    || form.expiryNotificationsEnabled
+    || form.expiryNotificationEmail.trim()
+  )
 })
 
 function optionalValue(value: string) {
@@ -60,10 +68,24 @@ const payload = computed(() => ({
   email: optionalValue(form.email),
   contactPerson: optionalValue(form.contactPerson),
   telephone: trimmedTelephone.value,
-  note: optionalValue(form.note)
+  note: optionalValue(form.note),
+  expiryNotificationsEnabled: form.expiryNotificationsEnabled,
+  expiryNotificationEmail: optionalValue(form.expiryNotificationEmail)
 }))
 
-const isDirty = computed(() => Object.values(form).some(value => value.trim() !== ''))
+const notificationRecipient = computed(() => {
+  return optionalValue(form.expiryNotificationEmail) || optionalValue(form.email)
+})
+
+const isDirty = computed(() => {
+  return Object.values(form).some((value) => {
+    if (typeof value === 'boolean') {
+      return value
+    }
+
+    return value.trim() !== ''
+  })
+})
 const canSubmit = computed(() => !submitPending.value && isDirty.value)
 const canLookupCompanyByNip = computed(() => !lookupPending.value && !submitPending.value && normalizedNip.value.length > 0)
 
@@ -84,6 +106,8 @@ function resetForm() {
   form.contactPerson = ''
   form.telephone = ''
   form.note = ''
+  form.expiryNotificationsEnabled = false
+  form.expiryNotificationEmail = ''
   errorMessage.value = ''
   lookupError.value = ''
   lookupSuccess.value = ''
@@ -410,6 +434,38 @@ useSeoMeta({
                 </label>
               </div>
 
+              <div class="mt-5 rounded-lg border border-sky-100 bg-sky-50/70 p-4">
+                <label class="flex items-start gap-3">
+                  <input
+                    v-model="form.expiryNotificationsEnabled"
+                    type="checkbox"
+                    class="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                  >
+                  <span>
+                    <span class="block text-sm font-medium text-slate-800">
+                      Wysyłaj powiadomienia o wygasających zaświadczeniach
+                    </span>
+                    <span class="mt-1 block text-xs leading-5 text-slate-500">
+                      Ustawienie będzie wykorzystywane przez mikroserwis powiadomień.
+                    </span>
+                  </span>
+                </label>
+
+                <label class="mt-4 block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">E-mail do powiadomień</span>
+                  <input
+                    v-model="form.expiryNotificationEmail"
+                    type="email"
+                    placeholder="Domyślnie główny e-mail firmy"
+                    :disabled="!form.expiryNotificationsEnabled"
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                  <p class="text-xs leading-5 text-slate-500">
+                    Jeśli pole zostanie puste, system użyje głównego adresu e-mail firmy.
+                  </p>
+                </label>
+              </div>
+
               <label class="mt-4 block space-y-2">
                 <span class="text-sm font-medium text-slate-700">Notatka</span>
                 <textarea
@@ -463,6 +519,20 @@ useSeoMeta({
                     .filter(Boolean)
                     .join(', ') || 'Brak adresu'
                 }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-slate-500">
+                Powiadomienia
+              </dt>
+              <dd class="mt-1 text-slate-900">
+                {{ form.expiryNotificationsEnabled ? 'Włączone' : 'Wyłączone' }}
+              </dd>
+              <dd
+                v-if="form.expiryNotificationsEnabled"
+                class="mt-1 break-all text-xs text-slate-500"
+              >
+                {{ notificationRecipient || 'Brak adresu e-mail' }}
               </dd>
             </div>
           </dl>

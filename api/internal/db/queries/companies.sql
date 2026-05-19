@@ -29,7 +29,9 @@ SELECT
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
   FROM companies
   WHERE id = $1;
 
@@ -44,7 +46,9 @@ SELECT
       email = $7,
       contactperson = $8,
       telephoneno = $9,
-      note = $10
+      note = $10,
+      expiry_notifications_enabled = $11,
+      expiry_notification_email = $12
   WHERE id = $1
   RETURNING
       id,
@@ -56,7 +60,9 @@ SELECT
       email,
       contactperson,
       telephoneno,
-      note;
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email;
     
 -- name: CreateCompany :one
   INSERT INTO companies (
@@ -68,9 +74,11 @@ SELECT
       email,
       contactperson,
       telephoneno,
-      note
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email
   ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
   )
   RETURNING
       id,
@@ -82,7 +90,9 @@ SELECT
       email,
       contactperson,
       telephoneno,
-      note;
+      note,
+      expiry_notifications_enabled,
+      expiry_notification_email;
 
 -- name: CompanyHasCertificatesHistory :one
   SELECT EXISTS (

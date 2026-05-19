@@ -152,6 +152,8 @@ export interface CompanyDetails {
   contactPerson: string | null
   telephone: string
   note: string | null
+  expiryNotificationsEnabled: boolean
+  expiryNotificationEmail: string | null
 }
 
 export interface CompanyDetailsResponse {
@@ -187,6 +189,8 @@ export interface UpdateCompanyPayload {
   contactPerson: string | null
   telephone: string
   note: string | null
+  expiryNotificationsEnabled?: boolean
+  expiryNotificationEmail?: string | null
 }
 
 export type CreateCompanyPayload = UpdateCompanyPayload
@@ -646,6 +650,7 @@ const apiErrorMessages: Record<string, string> = {
 
   // companies
   'conflict:company with this NIP already exists': 'Firma o podanym NIP już istnieje.',
+  'bad_request:invalid request body': 'Sprawdź poprawność danych formularza.',
   'bad_request:no nip value in request': 'Podaj NIP, aby pobrać dane z GUS.',
   'bad_request:nip validation error: nip must contain exactly 10 digits': 'NIP musi zawierać dokładnie 10 cyfr.',
   'bad_request:nip validation error: invalid nip checksum': 'Podany NIP ma nieprawidłową sumę kontrolną.',

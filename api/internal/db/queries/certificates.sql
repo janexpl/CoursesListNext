@@ -311,3 +311,49 @@ OFFSET sqlc.arg(offset_count);
   ORDER BY c.date DESC, c.id DESC
   LIMIT sqlc.arg(limit_count)
   OFFSET sqlc.arg(offset_count);
+
+-- name: ListExpiringCertificateNotificationCandidates :many
+  WITH eligible AS (
+    SELECT
+      c.id AS certificate_id,
+      c.date AS certificate_date,
+      c.student_id,
+      c.student_firstname_snapshot,
+      c.student_lastname_snapshot,
+      c.student_pesel_snapshot,
+      c.company_name_snapshot,
+      comp.id AS company_id,
+      comp.name AS company_current_name,
+    COALESCE(NULLIF(BTRIM(comp.expiry_notification_email), ''), NULLIF(BTRIM(comp.email), ''))::text AS recipient_email,
+      c.course_name_snapshot,
+      c.course_symbol_snapshot,
+      c.coursedatestart AS course_date_start,
+      c.coursedateend AS course_date_end,
+      c.language_code,
+      r.year AS registry_year,
+      r.number::bigint AS registry_number,
+    (c.coursedateend + c.course_expiry_time_snapshot::int * 365)::date AS expiry_date
+    FROM certificates c
+    JOIN companies comp ON comp.id = c.company_id_snapshot
+    JOIN registries r ON r.id = c.registry_id
+    WHERE c.deleted_at IS NULL
+      AND comp.expiry_notifications_enabled = true
+      AND c.coursedateend IS NOT NULL
+      AND c.course_expiry_time_snapshot IS NOT NULL
+      AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+  )
+  SELECT *
+  FROM eligible
+  WHERE recipient_email IS NOT NULL
+    AND expiry_date >= sqlc.arg(date_from)::date
+    AND expiry_date <= sqlc.arg(date_to)::date
+    AND (
+      sqlc.narg(after_expiry_date)::date IS NULL
+      OR expiry_date > sqlc.narg(after_expiry_date)::date
+      OR (
+        expiry_date = sqlc.narg(after_expiry_date)::date
+        AND certificate_id > sqlc.narg(after_certificate_id)::bigint
+      )
+    )
+  ORDER BY expiry_date ASC, certificate_id ASC
+  LIMIT sqlc.arg(limit_count);

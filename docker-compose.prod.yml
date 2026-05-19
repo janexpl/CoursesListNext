@@ -25,3 +25,30 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  notifications:
+    image: ghcr.io/janexpl/courseslistnext-notifications:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - NOTIFICATIONS_API_BASE_URL=http://api:8082
+      - NOTIFICATIONS_API_TOKEN=${NOTIFICATIONS_API_TOKEN}
+      - NOTIFICATIONS_LOOKAHEAD_DAYS=${NOTIFICATIONS_LOOKAHEAD_DAYS:-30}
+      - NOTIFICATIONS_LIMIT=${NOTIFICATIONS_LIMIT:-500}
+      - NOTIFICATIONS_STATE_FILE=/data/notifications-state.json
+      - NOTIFICATIONS_RUN_INTERVAL=${NOTIFICATIONS_RUN_INTERVAL:-24h}
+      - NOTIFICATIONS_DRY_RUN=${NOTIFICATIONS_DRY_RUN:-true}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Powiadomienia BHP}
+      - SMTP_TLS_MODE=${SMTP_TLS_MODE:-auto}
+    volumes:
+      - notifications-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  notifications-data:

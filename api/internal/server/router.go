@@ -76,6 +76,10 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/healthz", h.healthzHandler)
 		r.With(RateLimitByIP(loginLimiter)).Post("/auth/login", authHandler.Login)
 		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireBearerToken(deps.Config.NotificationsAPIToken))
+			r.Get("/internal/notifications/expiring-certificates", certificateHandler.ListExpiringNotificationCandidates)
+		})
+		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth(authHandler.Queries, authHandler.Config))
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)

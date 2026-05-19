@@ -32,6 +32,7 @@ type Querier interface {
 	CountCertificatesByCourseID(ctx context.Context, arg sqlc.CountCertificatesByCourseIDParams) (int64, error)
 	ListCertificatesByCompanyID(ctx context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error)
 	CountCertificatesByCompanyID(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error)
+	ListExpiringCertificateNotificationCandidates(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
 }
 type Creator interface {
 	Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error)
@@ -173,6 +174,90 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			ID: certID.ID,
 		},
 	})
+}
+
+func (h *Handler) ListExpiringNotificationCandidates(w http.ResponseWriter, r *http.Request) {
+	dateFrom, err := response.ParseDateQueryValue(r, "dateFrom")
+	if err != nil || dateFrom.IsZero() {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateFrom value")
+		return
+	}
+
+	dateTo, err := response.ParseDateQueryValue(r, "dateTo")
+	if err != nil || dateTo.IsZero() {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid dateTo value")
+		return
+	}
+
+	if dateFrom.After(dateTo) {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "dateFrom cannot be after dateTo")
+		return
+	}
+
+	limit, err := response.ParsePositiveInt32QueryValue(r, "limit", 500)
+	if err != nil || limit > 1000 {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid limit value")
+		return
+	}
+
+	afterExpiryDate, err := response.ParseDateQueryValue(r, "afterExpiryDate")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid afterExpiryDate value")
+		return
+	}
+
+	afterCertificateID := pgtype.Int8{}
+	afterCertificateIDRaw := strings.TrimSpace(r.URL.Query().Get("afterCertificateId"))
+	if !afterExpiryDate.IsZero() {
+		parsedID, err := strconv.ParseInt(afterCertificateIDRaw, 10, 64)
+		if err != nil || parsedID <= 0 {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid afterCertificateId value")
+			return
+		}
+		afterCertificateID = pgtype.Int8{Int64: parsedID, Valid: true}
+	} else if afterCertificateIDRaw != "" {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "afterExpiryDate is required with afterCertificateId")
+		return
+	}
+
+	rows, err := h.querier.ListExpiringCertificateNotificationCandidates(r.Context(), sqlc.ListExpiringCertificateNotificationCandidatesParams{
+		DateFrom:           optionalDate(dateFrom),
+		DateTo:             optionalDate(dateTo),
+		AfterExpiryDate:    optionalDate(afterExpiryDate),
+		AfterCertificateID: afterCertificateID,
+		LimitCount:         limit + 1,
+	})
+	if err != nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list expiring certificate notification candidates")
+		return
+	}
+
+	hasMore := len(rows) > int(limit)
+	if hasMore {
+		rows = rows[:limit]
+	}
+
+	resp := ListExpiringCertificateNotificationCandidatesResponse{
+		Data: make([]ExpiringCertificateNotificationCandidateDTO, 0, len(rows)),
+		Meta: ExpiringCertificateNotificationCandidatesMetaDTO{
+			Limit:   limit,
+			HasMore: hasMore,
+		},
+	}
+
+	for _, row := range rows {
+		resp.Data = append(resp.Data, mapExpiringNotificationCandidate(row))
+	}
+
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		resp.Meta.NextCursor = &ExpiringCertificateNotificationCandidatesCursorDTO{
+			AfterExpiryDate:    last.ExpiryDate.Time.Format(response.DateFormat),
+			AfterCertificateID: last.CertificateID,
+		}
+	}
+
+	response.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
@@ -622,5 +707,39 @@ func mapCertificatesResponse(row sqlc.ListCertificatesRow) CertificateDTO {
 		CourseDateEnd:   pgutil.NullableDate(row.CourseDateEnd),
 		LanguageCode:    row.LanguageCode,
 		ExpiryDate:      pgutil.NullableString(row.ExpiryDate),
+	}
+}
+
+func mapExpiringNotificationCandidate(row sqlc.ListExpiringCertificateNotificationCandidatesRow) ExpiringCertificateNotificationCandidateDTO {
+	companyName := row.CompanyNameSnapshot.String
+	if !row.CompanyNameSnapshot.Valid || strings.TrimSpace(companyName) == "" {
+		companyName = row.CompanyCurrentName
+	}
+
+	return ExpiringCertificateNotificationCandidateDTO{
+		CertificateID:   row.CertificateID,
+		CertificateDate: row.CertificateDate.Time.Format(response.DateFormat),
+		ExpiryDate:      row.ExpiryDate.Time.Format(response.DateFormat),
+		RegistryYear:    row.RegistryYear,
+		RegistryNumber:  row.RegistryNumber,
+		LanguageCode:    row.LanguageCode,
+		Student: ExpiringCertificateNotificationStudentDTO{
+			ID:        row.StudentID,
+			FirstName: row.StudentFirstnameSnapshot,
+			LastName:  row.StudentLastnameSnapshot,
+			PESEL:     pgutil.NullableString(row.StudentPeselSnapshot),
+		},
+		Company: ExpiringCertificateNotificationCompanyDTO{
+			ID:             row.CompanyID,
+			Name:           companyName,
+			CurrentName:    row.CompanyCurrentName,
+			RecipientEmail: row.RecipientEmail,
+		},
+		Course: ExpiringCertificateNotificationCourseDTO{
+			Name:      row.CourseNameSnapshot,
+			Symbol:    row.CourseSymbolSnapshot,
+			DateStart: row.CourseDateStart.Time.Format(response.DateFormat),
+			DateEnd:   pgutil.NullableDate(row.CourseDateEnd),
+		},
 	}
 }

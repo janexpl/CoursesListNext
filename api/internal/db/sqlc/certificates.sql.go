@@ -632,6 +632,127 @@ func (q *Queries) ListCertificatesByStudentID(ctx context.Context, studentID int
 	return items, nil
 }
 
+const listExpiringCertificateNotificationCandidates = `-- name: ListExpiringCertificateNotificationCandidates :many
+  WITH eligible AS (
+    SELECT
+      c.id AS certificate_id,
+      c.date AS certificate_date,
+      c.student_id,
+      c.student_firstname_snapshot,
+      c.student_lastname_snapshot,
+      c.student_pesel_snapshot,
+      c.company_name_snapshot,
+      comp.id AS company_id,
+      comp.name AS company_current_name,
+    COALESCE(NULLIF(BTRIM(comp.expiry_notification_email), ''), NULLIF(BTRIM(comp.email), ''))::text AS recipient_email,
+      c.course_name_snapshot,
+      c.course_symbol_snapshot,
+      c.coursedatestart AS course_date_start,
+      c.coursedateend AS course_date_end,
+      c.language_code,
+      r.year AS registry_year,
+      r.number::bigint AS registry_number,
+    (c.coursedateend + c.course_expiry_time_snapshot::int * 365)::date AS expiry_date
+    FROM certificates c
+    JOIN companies comp ON comp.id = c.company_id_snapshot
+    JOIN registries r ON r.id = c.registry_id
+    WHERE c.deleted_at IS NULL
+      AND comp.expiry_notifications_enabled = true
+      AND c.coursedateend IS NOT NULL
+      AND c.course_expiry_time_snapshot IS NOT NULL
+      AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+  )
+  SELECT certificate_id, certificate_date, student_id, student_firstname_snapshot, student_lastname_snapshot, student_pesel_snapshot, company_name_snapshot, company_id, company_current_name, recipient_email, course_name_snapshot, course_symbol_snapshot, course_date_start, course_date_end, language_code, registry_year, registry_number, expiry_date
+  FROM eligible
+  WHERE recipient_email IS NOT NULL
+    AND expiry_date >= $1::date
+    AND expiry_date <= $2::date
+    AND (
+      $3::date IS NULL
+      OR expiry_date > $3::date
+      OR (
+        expiry_date = $3::date
+        AND certificate_id > $4::bigint
+      )
+    )
+  ORDER BY expiry_date ASC, certificate_id ASC
+  LIMIT $5
+`
+
+type ListExpiringCertificateNotificationCandidatesParams struct {
+	DateFrom           pgtype.Date `json:"date_from"`
+	DateTo             pgtype.Date `json:"date_to"`
+	AfterExpiryDate    pgtype.Date `json:"after_expiry_date"`
+	AfterCertificateID pgtype.Int8 `json:"after_certificate_id"`
+	LimitCount         int32       `json:"limit_count"`
+}
+
+type ListExpiringCertificateNotificationCandidatesRow struct {
+	CertificateID            int64       `json:"certificate_id"`
+	CertificateDate          pgtype.Date `json:"certificate_date"`
+	StudentID                int32       `json:"student_id"`
+	StudentFirstnameSnapshot string      `json:"student_firstname_snapshot"`
+	StudentLastnameSnapshot  string      `json:"student_lastname_snapshot"`
+	StudentPeselSnapshot     pgtype.Text `json:"student_pesel_snapshot"`
+	CompanyNameSnapshot      pgtype.Text `json:"company_name_snapshot"`
+	CompanyID                int64       `json:"company_id"`
+	CompanyCurrentName       string      `json:"company_current_name"`
+	RecipientEmail           string      `json:"recipient_email"`
+	CourseNameSnapshot       string      `json:"course_name_snapshot"`
+	CourseSymbolSnapshot     string      `json:"course_symbol_snapshot"`
+	CourseDateStart          pgtype.Date `json:"course_date_start"`
+	CourseDateEnd            pgtype.Date `json:"course_date_end"`
+	LanguageCode             string      `json:"language_code"`
+	RegistryYear             int64       `json:"registry_year"`
+	RegistryNumber           int64       `json:"registry_number"`
+	ExpiryDate               pgtype.Date `json:"expiry_date"`
+}
+
+func (q *Queries) ListExpiringCertificateNotificationCandidates(ctx context.Context, arg ListExpiringCertificateNotificationCandidatesParams) ([]ListExpiringCertificateNotificationCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listExpiringCertificateNotificationCandidates,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.AfterExpiryDate,
+		arg.AfterCertificateID,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiringCertificateNotificationCandidatesRow{}
+	for rows.Next() {
+		var i ListExpiringCertificateNotificationCandidatesRow
+		if err := rows.Scan(
+			&i.CertificateID,
+			&i.CertificateDate,
+			&i.StudentID,
+			&i.StudentFirstnameSnapshot,
+			&i.StudentLastnameSnapshot,
+			&i.StudentPeselSnapshot,
+			&i.CompanyNameSnapshot,
+			&i.CompanyID,
+			&i.CompanyCurrentName,
+			&i.RecipientEmail,
+			&i.CourseNameSnapshot,
+			&i.CourseSymbolSnapshot,
+			&i.CourseDateStart,
+			&i.CourseDateEnd,
+			&i.LanguageCode,
+			&i.RegistryYear,
+			&i.RegistryNumber,
+			&i.ExpiryDate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteCertificate = `-- name: SoftDeleteCertificate :one
   UPDATE certificates
   SET

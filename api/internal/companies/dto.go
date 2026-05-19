@@ -10,16 +10,18 @@ type CompanyDTO struct {
 }
 
 type CompanyDetailsDTO struct {
-	ID            int64   `json:"id"`
-	Name          string  `json:"name"`
-	Street        string  `json:"street"`
-	City          string  `json:"city"`
-	Zipcode       string  `json:"zipcode"`
-	Nip           string  `json:"nip"`
-	Email         *string `json:"email"`
-	Contactperson *string `json:"contactPerson"`
-	Telephoneno   string  `json:"telephone"`
-	Note          *string `json:"note"`
+	ID                         int64   `json:"id"`
+	Name                       string  `json:"name"`
+	Street                     string  `json:"street"`
+	City                       string  `json:"city"`
+	Zipcode                    string  `json:"zipcode"`
+	Nip                        string  `json:"nip"`
+	Email                      *string `json:"email"`
+	Contactperson              *string `json:"contactPerson"`
+	Telephoneno                string  `json:"telephone"`
+	Note                       *string `json:"note"`
+	ExpiryNotificationsEnabled bool    `json:"expiryNotificationsEnabled"`
+	ExpiryNotificationEmail    *string `json:"expiryNotificationEmail"`
 }
 
 type CompanyDetailsResponse struct {
@@ -31,25 +33,29 @@ type ListCompaniesResponse struct {
 }
 
 type UpdateCompanyDTO struct {
-	Name          string  `json:"name"`
-	Street        string  `json:"street"`
-	City          string  `json:"city"`
-	Zipcode       string  `json:"zipcode"`
-	Nip           string  `json:"nip"`
-	Email         *string `json:"email"`
-	ContactPerson *string `json:"contactPerson"`
-	Telephone     string  `json:"telephone"`
-	Note          *string `json:"note"`
+	Name                       string  `json:"name"`
+	Street                     string  `json:"street"`
+	City                       string  `json:"city"`
+	Zipcode                    string  `json:"zipcode"`
+	Nip                        string  `json:"nip"`
+	Email                      *string `json:"email"`
+	ContactPerson              *string `json:"contactPerson"`
+	Telephone                  string  `json:"telephone"`
+	Note                       *string `json:"note"`
+	ExpiryNotificationsEnabled bool    `json:"expiryNotificationsEnabled"`
+	ExpiryNotificationEmail    *string `json:"expiryNotificationEmail"`
 }
 
 type CreateCompanyRequest struct {
-	Name          string  `json:"name"`
-	Street        string  `json:"street"`
-	City          string  `json:"city"`
-	Zipcode       string  `json:"zipcode"`
-	Nip           string  `json:"nip"`
-	Email         *string `json:"email"`
-	ContactPerson *string `json:"contactPerson"`
-	Telephone     string  `json:"telephone"`
-	Note          *string `json:"note"`
+	Name                       string  `json:"name"`
+	Street                     string  `json:"street"`
+	City                       string  `json:"city"`
+	Zipcode                    string  `json:"zipcode"`
+	Nip                        string  `json:"nip"`
+	Email                      *string `json:"email"`
+	ContactPerson              *string `json:"contactPerson"`
+	Telephone                  string  `json:"telephone"`
+	Note                       *string `json:"note"`
+	ExpiryNotificationsEnabled bool    `json:"expiryNotificationsEnabled"`
+	ExpiryNotificationEmail    *string `json:"expiryNotificationEmail"`
 }

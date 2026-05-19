@@ -46,6 +46,83 @@ func (r fakeServiceRow) Scan(dest ...interface{}) error {
 	return r.err
 }
 
+func TestBuildCreateCompanyParamsTrimsExpiryNotificationEmail(t *testing.T) {
+	params, err := buildCreateCompanyParams(CreateCompanyRequest{
+		Name:                       "ABC Sp. z o.o.",
+		Street:                     "Koszykowa 1",
+		City:                       "Warszawa",
+		Zipcode:                    "00-001",
+		Nip:                        "1234567890",
+		Telephone:                  "500600700",
+		ExpiryNotificationsEnabled: true,
+		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !params.ExpiryNotificationsEnabled {
+		t.Fatal("expected expiry notifications to be enabled")
+	}
+	if !params.ExpiryNotificationEmail.Valid || params.ExpiryNotificationEmail.String != "kadry@abc.pl" {
+		t.Fatalf("expected trimmed expiry notification email, got %+v", params.ExpiryNotificationEmail)
+	}
+}
+
+func TestBuildCreateCompanyParamsTreatsBlankExpiryNotificationEmailAsNull(t *testing.T) {
+	params, err := buildCreateCompanyParams(CreateCompanyRequest{
+		Name:                    "ABC Sp. z o.o.",
+		Street:                  "Koszykowa 1",
+		City:                    "Warszawa",
+		Zipcode:                 "00-001",
+		Nip:                     "1234567890",
+		Telephone:               "500600700",
+		ExpiryNotificationEmail: ptrString("   "),
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if params.ExpiryNotificationEmail.Valid {
+		t.Fatalf("expected blank expiry notification email to be null, got %+v", params.ExpiryNotificationEmail)
+	}
+}
+
+func TestBuildCreateCompanyParamsRejectsInvalidExpiryNotificationEmail(t *testing.T) {
+	_, err := buildCreateCompanyParams(CreateCompanyRequest{
+		Name:                    "ABC Sp. z o.o.",
+		Street:                  "Koszykowa 1",
+		City:                    "Warszawa",
+		Zipcode:                 "00-001",
+		Nip:                     "1234567890",
+		Telephone:               "500600700",
+		ExpiryNotificationEmail: ptrString("invalid-email"),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestBuildUpdateCompanyParamsCopiesExpiryNotificationSettings(t *testing.T) {
+	params, err := buildUpdateCompanyParams(15, UpdateCompanyDTO{
+		Name:                       "ABC Sp. z o.o.",
+		Street:                     "Koszykowa 1",
+		City:                       "Warszawa",
+		Zipcode:                    "00-001",
+		Nip:                        "1234567890",
+		Telephone:                  "500600700",
+		ExpiryNotificationsEnabled: true,
+		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !params.ExpiryNotificationsEnabled {
+		t.Fatal("expected expiry notifications to be enabled")
+	}
+	if !params.ExpiryNotificationEmail.Valid || params.ExpiryNotificationEmail.String != "kadry@abc.pl" {
+		t.Fatalf("expected expiry notification settings to be copied, got %+v", params.ExpiryNotificationEmail)
+	}
+}
+
 func TestServiceCreateRecordsAuditLog(t *testing.T) {
 	ctx := auth.ContextWithUser(context.Background(), dbsqlc.User{ID: 1, Email: "admin@example.com", Firstname: "Admin", Lastname: "User"})
 	txCallCount := 0
@@ -74,6 +151,8 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
 							*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
+							*(dest[10].(*bool)) = true
+							*(dest[11].(*pgtype.Text)) = pgtype.Text{String: "kadry@abc.pl", Valid: true}
 							return nil
 						}}
 					case 2:
@@ -85,6 +164,9 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 							return fakeServiceRow{err: err}
 						}
 						if args[0] != "company" || args[1] != int64(15) || args[2] != "create" || after.Name != "ABC Sp. z o.o." {
+							return fakeServiceRow{err: errors.New("unexpected audit payload")}
+						}
+						if !after.ExpiryNotificationsEnabled || after.ExpiryNotificationEmail == nil || *after.ExpiryNotificationEmail != "kadry@abc.pl" {
 							return fakeServiceRow{err: errors.New("unexpected audit payload")}
 						}
 						auditRecorded = true
@@ -106,21 +188,26 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 	}
 
 	created, err := service.Create(ctx, CreateCompanyRequest{
-		Name:          "ABC Sp. z o.o.",
-		Street:        "Koszykowa 1",
-		City:          "Warszawa",
-		Zipcode:       "00-001",
-		Nip:           "1234567890",
-		Email:         ptrString("biuro@abc.pl"),
-		ContactPerson: ptrString("Jan Nowak"),
-		Telephone:     "500600700",
-		Note:          ptrString("Kluczowy klient"),
+		Name:                       "ABC Sp. z o.o.",
+		Street:                     "Koszykowa 1",
+		City:                       "Warszawa",
+		Zipcode:                    "00-001",
+		Nip:                        "1234567890",
+		Email:                      ptrString("biuro@abc.pl"),
+		ContactPerson:              ptrString("Jan Nowak"),
+		Telephone:                  "500600700",
+		Note:                       ptrString("Kluczowy klient"),
+		ExpiryNotificationsEnabled: true,
+		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
 	})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if created.ID != 15 {
 		t.Fatalf("expected company id 15, got %d", created.ID)
+	}
+	if !created.ExpiryNotificationsEnabled || created.ExpiryNotificationEmail == nil || *created.ExpiryNotificationEmail != "kadry@abc.pl" {
+		t.Fatalf("unexpected expiry notification settings: %+v", created)
 	}
 	if !auditRecorded || !commitCalled {
 		t.Fatal("expected audit and commit for company create")
@@ -154,6 +241,8 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
 							*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
+							*(dest[10].(*bool)) = false
+							*(dest[11].(*pgtype.Text)) = pgtype.Text{}
 							return nil
 						}}
 					case 2:
@@ -171,6 +260,8 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
 							*(dest[9].(*pgtype.Text)) = pgtype.Text{String: "Kluczowy klient", Valid: true}
+							*(dest[10].(*bool)) = true
+							*(dest[11].(*pgtype.Text)) = pgtype.Text{String: "kadry@abc.pl", Valid: true}
 							return nil
 						}}
 					case 3:
@@ -184,6 +275,12 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 						}
 						if args[2] != "update" || before.Name != "ABC Sp. z o.o." || after.Name != "ABC Sp. z o.o. po zmianie" {
 							return fakeServiceRow{err: errors.New("unexpected audit payload")}
+						}
+						if before.ExpiryNotificationsEnabled {
+							return fakeServiceRow{err: errors.New("unexpected before expiry notification flag")}
+						}
+						if !after.ExpiryNotificationsEnabled || after.ExpiryNotificationEmail == nil || *after.ExpiryNotificationEmail != "kadry@abc.pl" {
+							return fakeServiceRow{err: errors.New("unexpected after expiry notification settings")}
 						}
 						auditRecorded = true
 						return fakeServiceRow{scan: func(dest ...interface{}) error {
@@ -201,21 +298,26 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 	}
 
 	updated, err := service.Update(ctx, 15, UpdateCompanyDTO{
-		Name:          "ABC Sp. z o.o. po zmianie",
-		Street:        "Koszykowa 2",
-		City:          "Warszawa",
-		Zipcode:       "00-001",
-		Nip:           "1234567890",
-		Email:         ptrString("biuro@abc.pl"),
-		ContactPerson: ptrString("Jan Nowak"),
-		Telephone:     "500600700",
-		Note:          ptrString("Kluczowy klient"),
+		Name:                       "ABC Sp. z o.o. po zmianie",
+		Street:                     "Koszykowa 2",
+		City:                       "Warszawa",
+		Zipcode:                    "00-001",
+		Nip:                        "1234567890",
+		Email:                      ptrString("biuro@abc.pl"),
+		ContactPerson:              ptrString("Jan Nowak"),
+		Telephone:                  "500600700",
+		Note:                       ptrString("Kluczowy klient"),
+		ExpiryNotificationsEnabled: true,
+		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
 	})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if updated.Name != "ABC Sp. z o.o. po zmianie" {
 		t.Fatalf("unexpected updated company: %+v", updated)
+	}
+	if !updated.ExpiryNotificationsEnabled || updated.ExpiryNotificationEmail == nil || *updated.ExpiryNotificationEmail != "kadry@abc.pl" {
+		t.Fatalf("unexpected expiry notification settings: %+v", updated)
 	}
 	if !auditRecorded {
 		t.Fatal("expected audit log to be recorded")
