@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"mime"
@@ -385,26 +386,55 @@ func buildEmailMessage(batch CompanyBatch, cfg Config, dateFrom, dateTo string) 
 	}
 
 	var body strings.Builder
-	body.WriteString("Dzień dobry,\n\n")
-	fmt.Fprintf(&body, "poniżej znajduje się lista zaświadczeń dla firmy %s, których ważność kończy się w okresie %s - %s.\n\n", batch.CompanyName, dateFrom, dateTo)
+	body.WriteString("<!doctype html><html><body style=\"font-family:Arial,sans-serif;color:#111827;line-height:1.4;\">")
+	body.WriteString("<p>Dzień dobry,</p>")
+	fmt.Fprintf(
+		&body,
+		"<p>Poniżej znajduje się lista zaświadczeń dla firmy <strong>%s</strong>, których ważność kończy się w okresie <strong>%s - %s</strong>.</p>",
+		html.EscapeString(batch.CompanyName),
+		html.EscapeString(dateFrom),
+		html.EscapeString(dateTo),
+	)
+	body.WriteString("<table style=\"border-collapse:collapse;width:100%;max-width:960px;\">")
+	body.WriteString("<thead><tr>")
+	body.WriteString("<th style=\"border:1px solid #d1d5db;padding:8px;text-align:left;background:#f3f4f6;\">Lp.</th>")
+	body.WriteString("<th style=\"border:1px solid #d1d5db;padding:8px;text-align:left;background:#f3f4f6;\">Uczestnik</th>")
+	body.WriteString("<th style=\"border:1px solid #d1d5db;padding:8px;text-align:left;background:#f3f4f6;\">Kurs</th>")
+	body.WriteString("<th style=\"border:1px solid #d1d5db;padding:8px;text-align:left;background:#f3f4f6;\">Nr z rejestru</th>")
+	body.WriteString("<th style=\"border:1px solid #d1d5db;padding:8px;text-align:left;background:#f3f4f6;\">Ważne do</th>")
+	body.WriteString("</tr></thead><tbody>")
 
-	for _, candidate := range batch.Candidates {
-		fmt.Fprintf(&body, "- %s %s, kurs: %s, nr rejestru: %d/%d, ważne do: %s\n",
-			candidate.Student.FirstName,
-			candidate.Student.LastName,
-			candidate.Course.Name,
-			candidate.RegistryNumber,
-			candidate.RegistryYear,
-			candidate.ExpiryDate)
+	for index, candidate := range batch.Candidates {
+		studentName := strings.TrimSpace(candidate.Student.FirstName + " " + candidate.Student.LastName)
+		fmt.Fprintf(
+			&body,
+			"<tr><td style=\"border:1px solid #d1d5db;padding:8px;\">%d</td><td style=\"border:1px solid #d1d5db;padding:8px;\">%s</td><td style=\"border:1px solid #d1d5db;padding:8px;\">%s</td><td style=\"border:1px solid #d1d5db;padding:8px;white-space:nowrap;\">%s</td><td style=\"border:1px solid #d1d5db;padding:8px;white-space:nowrap;\">%s</td></tr>",
+			index+1,
+			html.EscapeString(studentName),
+			html.EscapeString(candidate.Course.Name),
+			html.EscapeString(formatRegistryNumber(candidate)),
+			html.EscapeString(candidate.ExpiryDate),
+		)
 	}
 
-	body.WriteString("\nWiadomość została wygenerowana automatycznie.\n")
+	body.WriteString("</tbody></table>")
+	body.WriteString("<p style=\"color:#6b7280;\">Wiadomość została wygenerowana automatycznie.</p>")
+	body.WriteString("</body></html>")
 
 	return EmailMessage{
 		To:      batch.RecipientEmail,
 		Subject: subject,
 		Body:    body.String(),
 	}
+}
+
+func formatRegistryNumber(candidate CertificateCandidate) string {
+	symbol := strings.TrimSpace(candidate.Course.Symbol)
+	number := fmt.Sprintf("%d/%d", candidate.RegistryNumber, candidate.RegistryYear)
+	if symbol == "" {
+		return number
+	}
+	return symbol + " " + number
 }
 
 func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
@@ -416,7 +446,7 @@ func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
 	data.WriteString("To: " + to.String() + "\r\n")
 	data.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", msg.Subject) + "\r\n")
 	data.WriteString("MIME-Version: 1.0\r\n")
-	data.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+	data.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	data.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	data.WriteString("\r\n")
 	data.WriteString(msg.Body)

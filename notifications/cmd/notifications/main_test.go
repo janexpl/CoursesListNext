@@ -171,6 +171,7 @@ func TestBuildEmailMessageContainsCertificateSummary(t *testing.T) {
 				},
 				Course: CandidateCourse{
 					Name:    "Szkolenie okresowe BHP",
+					Symbol:  "PK",
 					DateEnd: &dateEnd,
 				},
 			},
@@ -185,8 +186,19 @@ func TestBuildEmailMessageContainsCertificateSummary(t *testing.T) {
 	if message.Subject != "Zaświadczenia wygasające w ciągu 30 dni - ABC Sp. z o.o." {
 		t.Fatalf("unexpected subject: %q", message.Subject)
 	}
-	if !containsAll(message.Body, "Jan Nowak", "Szkolenie okresowe BHP", "45/2025", "2026-06-05") {
+	if !containsAll(message.Body, "<table", "Nr z rejestru", "Jan Nowak", "Szkolenie okresowe BHP", "PK 45/2025", "2026-06-05") {
 		t.Fatalf("message body does not contain certificate summary: %s", message.Body)
+	}
+}
+
+func TestFormatRegistryNumberFallsBackToNumberAndYearWithoutCourseSymbol(t *testing.T) {
+	candidate := CertificateCandidate{
+		RegistryNumber: 45,
+		RegistryYear:   2025,
+	}
+
+	if got := formatRegistryNumber(candidate); got != "45/2025" {
+		t.Fatalf("unexpected registry number: %q", got)
 	}
 }
 
