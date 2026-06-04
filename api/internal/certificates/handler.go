@@ -170,9 +170,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusCreated, CreateCertificateResponse{
-		Data: CreateCertificateResponseData{
-			ID: certID.ID,
-		},
+		Data: CreateCertificateResponseData(certID),
 	})
 }
 
@@ -274,12 +272,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.creator.Update(r.Context(), idInt, UpdateCertificateInput{
-		StudentID:       req.StudentID,
-		CertificateDate: req.CertificateDate,
-		CourseDateStart: req.CourseDateStart,
-		CourseDateEnd:   req.CourseDateEnd,
-	})
+	row, err := h.creator.Update(r.Context(), idInt, UpdateCertificateInput(req))
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
@@ -490,16 +483,7 @@ func optionalDate(value time.Time) pgtype.Date {
 }
 
 func mapCertificateRequest(cert CreateCertificateRequest) CreateCertificateInput {
-	return CreateCertificateInput{
-		StudentID:       cert.StudentID,
-		CourseID:        cert.CourseID,
-		CertificateDate: cert.CertificateDate,
-		CourseDateStart: cert.CourseDateStart,
-		CourseDateEnd:   cert.CourseDateEnd,
-		RegistryYear:    cert.RegistryYear,
-		RegistryNumber:  cert.RegistryNumber,
-		LanguageCode:    cert.LanguageCode,
-	}
+	return CreateCertificateInput(cert)
 }
 
 func mapUpdateCertificateResponse(row sqlc.UpdateCertificateRow) CertificateDetailsDTO {
@@ -524,8 +508,7 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		}
 	}
 
-	var expiryDate *string
-	expiryDate = pgutil.NullableString(certificate.ExpiryDate)
+	expiryDate := pgutil.NullableString(certificate.ExpiryDate)
 
 	return CertificateDetailsDTO{
 		ID:                certificate.ID,
@@ -670,13 +653,7 @@ func buildCertificatePrintVariantDTOs(
 }
 
 func mapCertificatePrintVariantDTO(variant certificatePrintVariant) CertificatePrintVariantDTO {
-	return CertificatePrintVariantDTO{
-		LanguageCode:  variant.LanguageCode,
-		CourseName:    variant.CourseName,
-		CourseProgram: variant.CourseProgram,
-		CertFrontPage: variant.CertFrontPage,
-		IsOriginal:    variant.IsOriginal,
-	}
+	return CertificatePrintVariantDTO(variant)
 }
 
 func applyCertificatePrintVariant(certificate sqlc.GetCertificateByIDRow, variant certificatePrintVariant) sqlc.GetCertificateByIDRow {

@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildCompanyBatchesSkipsAlreadySentAndGroupsByCompanyRecipient(t *testing.T) {
@@ -47,7 +53,7 @@ func TestBuildCompanyBatchesSkipsAlreadySentAndGroupsByCompanyRecipient(t *testi
 	}
 
 	state := State{Sent: map[string]SentNotification{
-		notificationKey(alreadySent, 30): {},
+		notificationKey(alreadySent): {},
 	}}
 
 	batches := buildCompanyBatches(candidates, state, 30)
@@ -66,13 +72,85 @@ func TestBuildCompanyBatchesSkipsAlreadySentAndGroupsByCompanyRecipient(t *testi
 	}
 }
 
-func TestNotificationKeyIncludesCertificateExpiryAndLookahead(t *testing.T) {
+func TestRunOnceCreatesStateFileWhenNoPendingNotifications(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/internal/notifications/expiring-certificates" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("unexpected authorization header: %q", got)
+		}
+
+		response := CandidateResponse{
+			Data: []CertificateCandidate{},
+			Meta: CandidateMeta{
+				Limit:   500,
+				HasMore: false,
+			},
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	stateFile := filepath.Join(t.TempDir(), "notifications-state.json")
+	worker := Worker{
+		cfg: Config{
+			APIBaseURL:    server.URL,
+			APIToken:      "token",
+			LookaheadDays: 30,
+			Limit:         500,
+			StateFile:     stateFile,
+			DryRun:        true,
+		},
+		client: server.Client(),
+		now: func() time.Time {
+			return time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+		},
+	}
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run once: %v", err)
+	}
+
+	state, err := loadState(stateFile)
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if len(state.Sent) != 0 {
+		t.Fatalf("expected empty sent state, got %+v", state.Sent)
+	}
+}
+
+func TestBuildCompanyBatchesSkipsLegacyAlreadySentKey(t *testing.T) {
+	candidate := CertificateCandidate{
+		CertificateID: 123,
+		ExpiryDate:    "2026-06-10",
+		Company: CandidateCompany{
+			ID:             10,
+			Name:           "ABC Sp. z o.o.",
+			RecipientEmail: "kadry@abc.pl",
+		},
+	}
+
+	state := State{Sent: map[string]SentNotification{
+		legacyNotificationKey(candidate, 30): {},
+	}}
+
+	batches := buildCompanyBatches([]CertificateCandidate{candidate}, state, 30)
+	if len(batches) != 0 {
+		t.Fatalf("expected legacy sent candidate to be skipped, got %+v", batches)
+	}
+}
+
+func TestNotificationKeyIncludesCertificateAndExpiry(t *testing.T) {
 	candidate := CertificateCandidate{
 		CertificateID: 123,
 		ExpiryDate:    "2026-06-10",
 	}
 
-	if got := notificationKey(candidate, 30); got != "123:2026-06-10:30" {
+	if got := notificationKey(candidate); got != "123:2026-06-10" {
 		t.Fatalf("unexpected notification key: %q", got)
 	}
 }

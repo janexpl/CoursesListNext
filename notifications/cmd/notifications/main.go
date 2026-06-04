@@ -177,6 +177,9 @@ func (w Worker) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := saveState(w.cfg.StateFile, state); err != nil {
+		return err
+	}
 
 	batches := buildCompanyBatches(candidates, state, w.cfg.LookaheadDays)
 	if len(batches) == 0 {
@@ -197,7 +200,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 
 		sentAt := w.now().UTC().Format(time.RFC3339)
 		for _, candidate := range batch.Candidates {
-			state.Sent[notificationKey(candidate, w.cfg.LookaheadDays)] = SentNotification{
+			state.Sent[notificationKey(candidate)] = SentNotification{
 				SentAt:         sentAt,
 				RecipientEmail: batch.RecipientEmail,
 				CompanyID:      batch.CompanyID,
@@ -326,7 +329,7 @@ func buildCompanyBatches(candidates []CertificateCandidate, state State, lookahe
 		if candidate.Company.RecipientEmail == "" {
 			continue
 		}
-		if _, exists := state.Sent[notificationKey(candidate, lookaheadDays)]; exists {
+		if wasNotificationSent(state, candidate, lookaheadDays) {
 			continue
 		}
 
@@ -516,7 +519,21 @@ func saveState(path string, state State) error {
 	return os.Rename(tmp, path)
 }
 
-func notificationKey(candidate CertificateCandidate, lookaheadDays int) string {
+func wasNotificationSent(state State, candidate CertificateCandidate, lookaheadDays int) bool {
+	if _, exists := state.Sent[notificationKey(candidate)]; exists {
+		return true
+	}
+	if _, exists := state.Sent[legacyNotificationKey(candidate, lookaheadDays)]; exists {
+		return true
+	}
+	return false
+}
+
+func notificationKey(candidate CertificateCandidate) string {
+	return fmt.Sprintf("%d:%s", candidate.CertificateID, candidate.ExpiryDate)
+}
+
+func legacyNotificationKey(candidate CertificateCandidate, lookaheadDays int) string {
 	return fmt.Sprintf("%d:%s:%d", candidate.CertificateID, candidate.ExpiryDate, lookaheadDays)
 }
 
