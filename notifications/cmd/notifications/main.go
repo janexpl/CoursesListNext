@@ -141,6 +141,16 @@ func main() {
 		now:    time.Now,
 	}
 
+	log.Printf(
+		"notifications configured: api=%s lookaheadDays=%d limit=%d dryRun=%t stateFile=%s runInterval=%s",
+		cfg.APIBaseURL,
+		cfg.LookaheadDays,
+		cfg.Limit,
+		cfg.DryRun,
+		cfg.StateFile,
+		cfg.RunInterval,
+	)
+
 	if cfg.RunInterval <= 0 {
 		if err := worker.RunOnce(context.Background()); err != nil {
 			log.Fatalf("notification run failed: %v", err)
@@ -172,6 +182,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("fetched %d certificate notification candidates for %s..%s", len(candidates), dateFrom, dateTo)
 
 	state, err := loadState(w.cfg.StateFile)
 	if err != nil {
@@ -190,7 +201,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 	for _, batch := range batches {
 		message := buildEmailMessage(batch, w.cfg, dateFrom, dateTo)
 		if w.cfg.DryRun {
-			log.Printf("dry run: would send %d certificate notifications to %s <%s>", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail)
+			log.Printf("dry run: would send %d certificate notifications to %s <%s>; state is not marked as sent", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail)
 			continue
 		}
 
@@ -209,7 +220,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 		if err := saveState(w.cfg.StateFile, state); err != nil {
 			return err
 		}
-		log.Printf("sent %d certificate notifications to %s <%s>", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail)
+		log.Printf("sent %d certificate notifications to %s <%s>; state entries=%d", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail, len(state.Sent))
 	}
 
 	return nil
