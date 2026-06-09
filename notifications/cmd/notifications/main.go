@@ -418,6 +418,7 @@ func buildEmailMessage(batch CompanyBatch, cfg Config, dateFrom, dateTo string) 
 	}
 
 	body.WriteString("</tbody></table>")
+	body.WriteString("<p>Jeżeli są Państwo zainteresowani przedłużeniem ważności zaświadczeń prosimy o kontakt z nami pod numerem 600969600 lub na email biuro@naszaera.pl</p>")
 	body.WriteString("<p style=\"color:#6b7280;\">Wiadomość została wygenerowana automatycznie.</p>")
 	body.WriteString("</body></html>")
 
