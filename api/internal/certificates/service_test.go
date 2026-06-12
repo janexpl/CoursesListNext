@@ -542,6 +542,84 @@ func TestCreateRecordsAuditLogWithCreatedCertificateSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsCertificateDateBeforeCourseEnd(t *testing.T) {
+	tests := []struct {
+		name            string
+		certificateDate string
+		courseDateStart string
+		courseDateEnd   *string
+		wantErr         error
+	}{
+		{
+			name:            "before course end date",
+			certificateDate: "2026-03-12",
+			courseDateStart: "2026-03-10",
+			courseDateEnd:   ptr("2026-03-15"),
+			wantErr:         ErrCertificateDateBeforeCourseEnd,
+		},
+		{
+			name:            "before course start without end date",
+			certificateDate: "2026-03-08",
+			courseDateStart: "2026-03-10",
+			wantErr:         ErrCertificateDateBeforeCourseEnd,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &Service{
+				beginTx: func(context.Context) (txScope, error) {
+					t.Fatal("transaction should not start for invalid certificate date")
+					return txScope{}, nil
+				},
+			}
+
+			_, err := service.Create(context.Background(), CreateCertificateInput{
+				StudentID:       12,
+				CourseID:        3,
+				CertificateDate: tc.certificateDate,
+				CourseDateStart: tc.courseDateStart,
+				CourseDateEnd:   tc.courseDateEnd,
+				RegistryYear:    2026,
+				RegistryNumber:  18,
+			})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestUpdateRejectsCertificateDateBeforeCourseEnd(t *testing.T) {
+	service := &Service{
+		beginTx: func(context.Context) (txScope, error) {
+			t.Fatal("transaction should not start for invalid certificate date")
+			return txScope{}, nil
+		},
+	}
+
+	_, err := service.Update(context.Background(), 21, UpdateCertificateInput{
+		StudentID:       12,
+		CertificateDate: "2026-03-12",
+		CourseDateStart: "2026-03-10",
+		CourseDateEnd:   ptr("2026-03-15"),
+	})
+	if !errors.Is(err, ErrCertificateDateBeforeCourseEnd) {
+		t.Fatalf("expected ErrCertificateDateBeforeCourseEnd, got %v", err)
+	}
+}
+
+func TestCreateAllowsCertificateDateEqualToCourseEnd(t *testing.T) {
+	err := validateCertificateDateAfterCourse(
+		pgtype.Date{Time: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+		pgtype.Date{Time: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC), Valid: true},
+		pgtype.Date{Time: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC), Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("expected no error for certificate date equal to course end, got %v", err)
+	}
+}
+
 func TestCreateMapsUniqueViolationToRegistryNumberTaken(t *testing.T) {
 	tests := []struct {
 		name           string

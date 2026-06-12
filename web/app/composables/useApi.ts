@@ -663,6 +663,7 @@ const apiErrorMessages: Record<string, string> = {
   // certificates
   'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',
   'bad_request:invalid certificate data': 'Nieprawidłowe dane zaświadczenia.',
+  'bad_request:certificate date cannot be before course end date': 'Data wystawienia nie może być wcześniejsza niż data zakończenia szkolenia.',
   'conflict:registry number already taken for the given year': 'Numer rejestru jest już zajęty dla wybranego kursu i roku.',
 
   // journals

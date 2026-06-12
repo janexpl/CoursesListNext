@@ -24,6 +24,7 @@ var (
 	ErrInvalidRegistryDate            = errors.New("invalid registry chronology")
 	ErrCertificateTranslationNotFound = errors.New("certificate translation not found")
 	ErrRegistryNumberTaken            = errors.New("registry number already taken")
+	ErrCertificateDateBeforeCourseEnd = errors.New("certificate date before course end")
 )
 
 type CreateCertificateInput struct {
@@ -115,6 +116,10 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 
 	if courseDateEnd.Valid && courseDateEnd.Time.Before(courseDateStart.Time) {
 		return CreateCertificateResult{}, ErrInvalidInput
+	}
+
+	if err := validateCertificateDateAfterCourse(certificateDate, courseDateStart, courseDateEnd); err != nil {
+		return CreateCertificateResult{}, err
 	}
 
 	if input.StudentID > math.MaxInt32 {
@@ -278,6 +283,10 @@ func (s *Service) Update(ctx context.Context, certificateID int64, input UpdateC
 		return dbsqlc.UpdateCertificateRow{}, ErrInvalidInput
 	}
 
+	if err := validateCertificateDateAfterCourse(certificateDate, courseDateStart, courseDateEnd); err != nil {
+		return dbsqlc.UpdateCertificateRow{}, err
+	}
+
 	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
 	if err != nil {
 		return dbsqlc.UpdateCertificateRow{}, err
@@ -391,6 +400,17 @@ func validateUpdateInput(input UpdateCertificateInput) error {
 		return ErrInvalidInput
 	}
 
+	return nil
+}
+
+func validateCertificateDateAfterCourse(certificateDate, courseDateStart, courseDateEnd pgtype.Date) error {
+	courseEnd := courseDateStart.Time
+	if courseDateEnd.Valid {
+		courseEnd = courseDateEnd.Time
+	}
+	if certificateDate.Time.Before(courseEnd) {
+		return ErrCertificateDateBeforeCourseEnd
+	}
 	return nil
 }
 

@@ -158,6 +158,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
 			return
 		}
+		if errors.Is(err, ErrCertificateDateBeforeCourseEnd) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate date cannot be before course end date")
+			return
+		}
 		if errors.Is(err, ErrCertificateTranslationNotFound) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate translation not found")
 			return
@@ -276,6 +280,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+			return
+		}
+		if errors.Is(err, ErrCertificateDateBeforeCourseEnd) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate date cannot be before course end date")
 			return
 		}
 		response.HandleDBError(w, err, "certificate")
