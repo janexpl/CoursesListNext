@@ -17,12 +17,16 @@ import (
 )
 
 type fakeServiceDB struct {
+	exec     func(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error)
 	query    func(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
 	queryRow func(ctx context.Context, sql string, args ...interface{}) pgx.Row
 }
 
-func (f fakeServiceDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, errors.New("unexpected exec call")
+func (f fakeServiceDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	if f.exec == nil {
+		return pgconn.CommandTag{}, errors.New("unexpected exec call")
+	}
+	return f.exec(ctx, sql, args...)
 }
 
 func (f fakeServiceDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
@@ -154,6 +158,52 @@ func TestCreateReturnsInvalidInputForInvalidDate(t *testing.T) {
 	}
 }
 
+func scanStudentRow(companyID int64) func(dest ...interface{}) error {
+	return func(dest ...interface{}) error {
+		*(dest[0].(*int64)) = 12
+		*(dest[1].(*string)) = "Jan"
+		*(dest[2].(*string)) = "Nowak"
+		*(dest[3].(*pgtype.Text)) = pgtype.Text{}
+		*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
+		*(dest[5].(*string)) = "Warszawa"
+		*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
+		*(dest[7].(*pgtype.Text)) = pgtype.Text{}
+		*(dest[8].(*pgtype.Text)) = pgtype.Text{}
+		*(dest[9].(*pgtype.Text)) = pgtype.Text{}
+		*(dest[10].(*pgtype.Text)) = pgtype.Text{}
+		*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: companyID, Valid: true}
+		*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
+		return nil
+	}
+}
+
+func scanCourseRow(dest ...interface{}) error {
+	*(dest[0].(*int64)) = 3
+	*(dest[1].(*pgtype.Text)) = pgtype.Text{String: "Szkolenie", Valid: true}
+	*(dest[2].(*string)) = "Szkolenie BHP"
+	*(dest[3].(*string)) = "BHP"
+	*(dest[4].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
+	*(dest[5].(*[]byte)) = []byte(`{"sections":["intro"]}`)
+	*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
+	return nil
+}
+
+func baseStudentCourseQuerier(t *testing.T, companyID int64) *dbsqlc.Queries {
+	t.Helper()
+	return dbsqlc.New(fakeServiceDB{
+		queryRow: func(_ context.Context, sql string, _ ...interface{}) pgx.Row {
+			switch {
+			case strings.Contains(sql, "FROM students s"):
+				return fakeServiceRow{scan: scanStudentRow(companyID)}
+			case strings.Contains(sql, "FROM courses"):
+				return fakeServiceRow{scan: scanCourseRow}
+			default:
+				return fakeServiceRow{err: errors.New("unexpected base query row call")}
+			}
+		},
+	})
+}
+
 func TestCreateReturnsInvalidRegistryDateWhenChronologyDoesNotMatch(t *testing.T) {
 	rows := &fakeServiceRows{
 		scans: []func(dest ...any) error{
@@ -169,19 +219,41 @@ func TestCreateReturnsInvalidRegistryDateWhenChronologyDoesNotMatch(t *testing.T
 			},
 		},
 	}
+	lockAcquired := false
+	rollbackCalled := false
+	commitCalled := false
 
 	service := &Service{
-		queries: dbsqlc.New(fakeServiceDB{
-			query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
-				if len(args) != 2 {
-					t.Fatalf("expected 2 query args, got %d", len(args))
-				}
-				return rows, nil
-			},
-		}),
+		queries: baseStudentCourseQuerier(t, 3),
 		beginTx: func(context.Context) (txScope, error) {
-			t.Fatal("transaction should not start for invalid chronology")
-			return txScope{}, nil
+			return txScope{
+				queries: dbsqlc.New(fakeServiceDB{
+					exec: func(_ context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+						if !strings.Contains(sql, "pg_advisory_xact_lock") {
+							t.Fatalf("unexpected exec sql: %s", sql)
+						}
+						lockAcquired = true
+						return pgconn.CommandTag{}, nil
+					},
+					query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+						if !lockAcquired {
+							t.Fatal("expected registry lock before chronology validation")
+						}
+						if len(args) != 2 {
+							t.Fatalf("expected 2 query args, got %d", len(args))
+						}
+						return rows, nil
+					},
+				}),
+				commit: func(context.Context) error {
+					commitCalled = true
+					return nil
+				},
+				rollback: func(context.Context) error {
+					rollbackCalled = true
+					return nil
+				},
+			}, nil
 		},
 	}
 
@@ -196,65 +268,58 @@ func TestCreateReturnsInvalidRegistryDateWhenChronologyDoesNotMatch(t *testing.T
 	if !errors.Is(err, ErrInvalidRegistryDate) {
 		t.Fatalf("expected ErrInvalidRegistryDate, got %v", err)
 	}
+	if commitCalled {
+		t.Fatal("did not expect commit for invalid chronology")
+	}
+	if !rollbackCalled {
+		t.Fatal("expected rollback for invalid chronology")
+	}
 }
 
 func TestCreateReturnsRegistryNumberTakenWhenActiveCertificateAlreadyUsesNumber(t *testing.T) {
 	readRows := &fakeServiceRows{}
+	rollbackCalled := false
+	commitCalled := false
 
 	service := &Service{
-		queries: dbsqlc.New(fakeServiceDB{
-			query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
-				if len(args) != 2 {
-					t.Fatalf("expected 2 query args, got %d", len(args))
-				}
-				return readRows, nil
-			},
-			queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
-				switch {
-				case strings.Contains(sql, "FROM students s"):
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*int64)) = 12
-						*(dest[1].(*string)) = "Jan"
-						*(dest[2].(*string)) = "Nowak"
-						*(dest[3].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
-						*(dest[5].(*string)) = "Warszawa"
-						*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-						*(dest[7].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[8].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[9].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[10].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: 3, Valid: true}
-						*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-						return nil
-					}}
-				case strings.Contains(sql, "FROM courses"):
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*int64)) = 3
-						*(dest[1].(*pgtype.Text)) = pgtype.Text{String: "Szkolenie", Valid: true}
-						*(dest[2].(*string)) = "Szkolenie BHP"
-						*(dest[3].(*string)) = "BHP"
-						*(dest[4].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
-						*(dest[5].(*[]byte)) = []byte(`{"sections":["intro"]}`)
-						*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
-						return nil
-					}}
-				case strings.Contains(sql, "SELECT EXISTS"):
-					if len(args) != 3 {
-						t.Fatalf("expected 3 args for active registry lookup, got %d", len(args))
-					}
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*bool)) = true
-						return nil
-					}}
-				default:
-					return fakeServiceRow{err: errors.New("unexpected base query row call")}
-				}
-			},
-		}),
+		queries: baseStudentCourseQuerier(t, 3),
 		beginTx: func(context.Context) (txScope, error) {
-			t.Fatal("transaction should not start when registry number is already taken")
-			return txScope{}, nil
+			return txScope{
+				queries: dbsqlc.New(fakeServiceDB{
+					exec: func(_ context.Context, sql string, _ ...interface{}) (pgconn.CommandTag, error) {
+						if !strings.Contains(sql, "pg_advisory_xact_lock") {
+							t.Fatalf("unexpected exec sql: %s", sql)
+						}
+						return pgconn.CommandTag{}, nil
+					},
+					query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+						if len(args) != 2 {
+							t.Fatalf("expected 2 query args, got %d", len(args))
+						}
+						return readRows, nil
+					},
+					queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
+						if !strings.Contains(sql, "SELECT EXISTS") {
+							return fakeServiceRow{err: errors.New("unexpected tx query row call")}
+						}
+						if len(args) != 3 {
+							t.Fatalf("expected 3 args for active registry lookup, got %d", len(args))
+						}
+						return fakeServiceRow{scan: func(dest ...interface{}) error {
+							*(dest[0].(*bool)) = true
+							return nil
+						}}
+					},
+				}),
+				commit: func(context.Context) error {
+					commitCalled = true
+					return nil
+				},
+				rollback: func(context.Context) error {
+					rollbackCalled = true
+					return nil
+				},
+			}, nil
 		},
 	}
 
@@ -269,87 +334,63 @@ func TestCreateReturnsRegistryNumberTakenWhenActiveCertificateAlreadyUsesNumber(
 	if !errors.Is(err, ErrRegistryNumberTaken) {
 		t.Fatalf("expected ErrRegistryNumberTaken, got %v", err)
 	}
+	if commitCalled {
+		t.Fatal("did not expect commit when registry number is already taken")
+	}
+	if !rollbackCalled {
+		t.Fatal("expected rollback when registry number is already taken")
+	}
 }
 
 func TestCreateReturnsCertificateIDOnSuccess(t *testing.T) {
 	readRows := &fakeServiceRows{}
 	txCallCount := 0
-	baseQueryRowCount := 0
+	lockArgs := []interface{}(nil)
 	commitCalled := false
 	rollbackCalled := false
 
 	service := &Service{
-		queries: dbsqlc.New(fakeServiceDB{
-			query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
-				if len(args) != 2 {
-					t.Fatalf("expected 2 query args, got %d", len(args))
-				}
-				return readRows, nil
-			},
-			queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
-				baseQueryRowCount++
-				switch {
-				case strings.Contains(sql, "SELECT EXISTS"):
-					if len(args) != 3 {
-						t.Fatalf("expected 3 args for active registry lookup, got %d", len(args))
-					}
-					return fakeServiceRow{
-						scan: func(dest ...interface{}) error {
-							*(dest[0].(*bool)) = false
-							return nil
-						},
-					}
-				case strings.Contains(sql, "FROM students s"):
-					return fakeServiceRow{
-						scan: func(dest ...interface{}) error {
-							*(dest[0].(*int64)) = 12
-							*(dest[1].(*string)) = "Jan"
-							*(dest[2].(*string)) = "Nowak"
-							*(dest[3].(*pgtype.Text)) = pgtype.Text{}
-							*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
-							*(dest[5].(*string)) = "Warszawa"
-							*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-							*(dest[7].(*pgtype.Text)) = pgtype.Text{}
-							*(dest[8].(*pgtype.Text)) = pgtype.Text{}
-							*(dest[9].(*pgtype.Text)) = pgtype.Text{}
-							*(dest[10].(*pgtype.Text)) = pgtype.Text{}
-							*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: 3, Valid: true}
-							*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-							return nil
-						},
-					}
-				case strings.Contains(sql, "FROM courses"):
-					return fakeServiceRow{
-						scan: func(dest ...interface{}) error {
-							*(dest[0].(*int64)) = 3
-							*(dest[1].(*pgtype.Text)) = pgtype.Text{String: "Szkolenie", Valid: true}
-							*(dest[2].(*string)) = "Szkolenie BHP"
-							*(dest[3].(*string)) = "BHP"
-							*(dest[4].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
-							*(dest[5].(*[]byte)) = []byte(`{"sections":["intro"]}`)
-							*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
-							return nil
-						},
-					}
-				default:
-					return fakeServiceRow{err: errors.New("unexpected base query row call")}
-				}
-			},
-		}),
+		queries: baseStudentCourseQuerier(t, 3),
 		beginTx: func(context.Context) (txScope, error) {
 			return txScope{
 				queries: dbsqlc.New(fakeServiceDB{
-					queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
+					exec: func(_ context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+						if !strings.Contains(sql, "pg_advisory_xact_lock") {
+							t.Fatalf("unexpected exec sql: %s", sql)
+						}
+						lockArgs = args
+						return pgconn.CommandTag{}, nil
+					},
+					query: func(_ context.Context, _ string, args ...interface{}) (pgx.Rows, error) {
+						if len(args) != 2 {
+							t.Fatalf("expected 2 query args, got %d", len(args))
+						}
+						return readRows, nil
+					},
+					queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
 						txCallCount++
 						switch txCallCount {
 						case 1:
+							if !strings.Contains(sql, "SELECT EXISTS") {
+								t.Fatalf("expected active registry lookup first, got: %s", sql)
+							}
+							if len(args) != 3 {
+								t.Fatalf("expected 3 args for active registry lookup, got %d", len(args))
+							}
+							return fakeServiceRow{
+								scan: func(dest ...interface{}) error {
+									*(dest[0].(*bool)) = false
+									return nil
+								},
+							}
+						case 2:
 							return fakeServiceRow{
 								scan: func(dest ...interface{}) error {
 									*(dest[0].(*int64)) = 77
 									return nil
 								},
 							}
-						case 2:
+						case 3:
 							if len(args) != 19 {
 								t.Fatalf("expected 19 create certificate args, got %d", len(args))
 							}
@@ -400,8 +441,8 @@ func TestCreateReturnsCertificateIDOnSuccess(t *testing.T) {
 	if rollbackCalled {
 		t.Fatal("did not expect rollback after successful commit")
 	}
-	if baseQueryRowCount != 3 {
-		t.Fatalf("expected 3 base query row calls, got %d", baseQueryRowCount)
+	if len(lockArgs) != 2 || lockArgs[0] != "3" || lockArgs[1] != "2026" {
+		t.Fatalf("expected registry lock args [3 2026], got %+v", lockArgs)
 	}
 }
 
@@ -418,73 +459,44 @@ func TestCreateRecordsAuditLogWithCreatedCertificateSnapshot(t *testing.T) {
 	auditRecorded := false
 
 	service := &Service{
-		queries: dbsqlc.New(fakeServiceDB{
-			query: func(_ context.Context, _ string, _ ...interface{}) (pgx.Rows, error) {
-				return readRows, nil
-			},
-			queryRow: func(_ context.Context, sql string, _ ...interface{}) pgx.Row {
-				switch {
-				case strings.Contains(sql, "SELECT EXISTS"):
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*bool)) = false
-						return nil
-					}}
-				case strings.Contains(sql, "FROM students s"):
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*int64)) = 12
-						*(dest[1].(*string)) = "Jan"
-						*(dest[2].(*string)) = "Nowak"
-						*(dest[3].(*pgtype.Text)) = pgtype.Text{String: "Adam", Valid: true}
-						*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, time.January, 10, 0, 0, 0, 0, time.UTC), Valid: true}
-						*(dest[5].(*string)) = "Warszawa"
-						*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "90011012345", Valid: true}
-						*(dest[7].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[8].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[9].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[10].(*pgtype.Text)) = pgtype.Text{}
-						*(dest[11].(*pgtype.Int8)) = pgtype.Int8{Int64: 3, Valid: true}
-						*(dest[12].(*pgtype.Text)) = pgtype.Text{String: "ABC Sp. z o.o.", Valid: true}
-						return nil
-					}}
-				case strings.Contains(sql, "FROM courses"):
-					return fakeServiceRow{scan: func(dest ...interface{}) error {
-						*(dest[0].(*int64)) = 3
-						*(dest[1].(*pgtype.Text)) = pgtype.Text{String: "Szkolenie", Valid: true}
-						*(dest[2].(*string)) = "Szkolenie BHP"
-						*(dest[3].(*string)) = "BHP"
-						*(dest[4].(*pgtype.Text)) = pgtype.Text{String: "3", Valid: true}
-						*(dest[5].(*[]byte)) = []byte(`{"sections":["intro"]}`)
-						*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
-						return nil
-					}}
-				default:
-					return fakeServiceRow{err: errors.New("unexpected base query row call")}
-				}
-			},
-		}),
+		queries:  baseStudentCourseQuerier(t, 3),
 		recorder: auditlog.NewRecorder(),
 		beginTx: func(context.Context) (txScope, error) {
 			return txScope{
 				queries: dbsqlc.New(fakeServiceDB{
+					exec: func(_ context.Context, sql string, _ ...interface{}) (pgconn.CommandTag, error) {
+						if !strings.Contains(sql, "pg_advisory_xact_lock") {
+							t.Fatalf("unexpected exec sql: %s", sql)
+						}
+						return pgconn.CommandTag{}, nil
+					},
+					query: func(_ context.Context, _ string, _ ...interface{}) (pgx.Rows, error) {
+						return readRows, nil
+					},
 					queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
 						txCallCount++
 						switch txCallCount {
 						case 1:
+							if !strings.Contains(sql, "SELECT EXISTS") {
+								t.Fatalf("expected active registry lookup first, got: %s", sql)
+							}
 							return fakeServiceRow{scan: func(dest ...interface{}) error {
-								*(dest[0].(*int64)) = 77
+								*(dest[0].(*bool)) = false
 								return nil
 							}}
 						case 2:
 							return fakeServiceRow{scan: func(dest ...interface{}) error {
-								*(dest[0].(*int64)) = 101
+								*(dest[0].(*int64)) = 77
 								return nil
 							}}
 						case 3:
-							if !strings.Contains(sql, "SELECT\n    c.id,") && !strings.Contains(sql, "SELECT c.id,") {
-								return fakeServiceRow{scan: scanCertificateDetailsRow}
-							}
-							return fakeServiceRow{scan: scanCertificateDetailsRow}
+							return fakeServiceRow{scan: func(dest ...interface{}) error {
+								*(dest[0].(*int64)) = 101
+								return nil
+							}}
 						case 4:
+							return fakeServiceRow{scan: scanCertificateDetailsRow}
+						case 5:
 							var after CertificateDetailsDTO
 							if err := json.Unmarshal(args[8].([]byte), &after); err != nil {
 								t.Fatalf("failed to unmarshal audit after payload: %v", err)
@@ -527,6 +539,105 @@ func TestCreateRecordsAuditLogWithCreatedCertificateSnapshot(t *testing.T) {
 	}
 	if !auditRecorded {
 		t.Fatal("expected audit log to be recorded")
+	}
+}
+
+func TestCreateMapsUniqueViolationToRegistryNumberTaken(t *testing.T) {
+	tests := []struct {
+		name           string
+		insertErr      error
+		expectTakenErr bool
+	}{
+		{
+			name:           "registries unique constraint",
+			insertErr:      &pgconn.PgError{Code: "23505", ConstraintName: "registries_course_year_number_key"},
+			expectTakenErr: true,
+		},
+		{
+			name:           "active certificate partial index",
+			insertErr:      &pgconn.PgError{Code: "23505", ConstraintName: "certificates_active_registry_uidx"},
+			expectTakenErr: true,
+		},
+		{
+			name:           "unrelated unique constraint is not mapped",
+			insertErr:      &pgconn.PgError{Code: "23505", ConstraintName: "some_other_constraint"},
+			expectTakenErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			readRows := &fakeServiceRows{}
+			txCallCount := 0
+			rollbackCalled := false
+
+			service := &Service{
+				queries: baseStudentCourseQuerier(t, 3),
+				beginTx: func(context.Context) (txScope, error) {
+					return txScope{
+						queries: dbsqlc.New(fakeServiceDB{
+							exec: func(_ context.Context, _ string, _ ...interface{}) (pgconn.CommandTag, error) {
+								return pgconn.CommandTag{}, nil
+							},
+							query: func(_ context.Context, _ string, _ ...interface{}) (pgx.Rows, error) {
+								return readRows, nil
+							},
+							queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+								txCallCount++
+								switch txCallCount {
+								case 1:
+									return fakeServiceRow{scan: func(dest ...interface{}) error {
+										*(dest[0].(*bool)) = false
+										return nil
+									}}
+								case 2:
+									return fakeServiceRow{scan: func(dest ...interface{}) error {
+										*(dest[0].(*int64)) = 77
+										return nil
+									}}
+								case 3:
+									return fakeServiceRow{err: tc.insertErr}
+								default:
+									return fakeServiceRow{err: errors.New("unexpected tx query row call")}
+								}
+							},
+						}),
+						commit: func(context.Context) error {
+							t.Fatal("did not expect commit after insert failure")
+							return nil
+						},
+						rollback: func(context.Context) error {
+							rollbackCalled = true
+							return nil
+						},
+					}, nil
+				},
+			}
+
+			_, err := service.Create(context.Background(), CreateCertificateInput{
+				StudentID:       12,
+				CourseID:        3,
+				CertificateDate: "2026-03-15",
+				CourseDateStart: "2026-03-10",
+				RegistryYear:    2026,
+				RegistryNumber:  18,
+			})
+			if tc.expectTakenErr {
+				if !errors.Is(err, ErrRegistryNumberTaken) {
+					t.Fatalf("expected ErrRegistryNumberTaken, got %v", err)
+				}
+			} else {
+				if errors.Is(err, ErrRegistryNumberTaken) {
+					t.Fatal("did not expect ErrRegistryNumberTaken for unrelated constraint")
+				}
+				if !errors.Is(err, tc.insertErr) {
+					t.Fatalf("expected original insert error, got %v", err)
+				}
+			}
+			if !rollbackCalled {
+				t.Fatal("expected rollback after insert failure")
+			}
+		})
 	}
 }
 

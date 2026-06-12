@@ -5,16 +5,14 @@ JOIN certificates c ON c.registry_id = registries.id
 WHERE course_id = $1 AND year = $2 AND c.deleted_at IS NULL;
 
 -- name: CreateRegistry :one
-INSERT INTO registries (
-    course_id,
-    year,
-    number
-) VALUES (
-    $1,
-    $2,
-    $3
-)
-RETURNING id;
+  INSERT INTO registries (course_id, year, number)
+  VALUES ($1, $2, $3)
+  ON CONFLICT (course_id, year, number)
+    DO UPDATE SET number = EXCLUDED.number
+  RETURNING id;
+
+-- name: AcquireRegistryLock :exec
+  SELECT pg_advisory_xact_lock(hashtextextended('registry:' || @course_id::text || ':' || @year::text, 0));
 
 -- name: ListRegistryDatesForCourseYear :many
 SELECT

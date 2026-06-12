@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireRegistryLock = `-- name: AcquireRegistryLock :exec
+  SELECT pg_advisory_xact_lock(hashtextextended('registry:' || $1::text || ':' || $2::text, 0))
+`
+
+type AcquireRegistryLockParams struct {
+	CourseID string `json:"course_id"`
+	Year     string `json:"year"`
+}
+
+func (q *Queries) AcquireRegistryLock(ctx context.Context, arg AcquireRegistryLockParams) error {
+	_, err := q.db.Exec(ctx, acquireRegistryLock, arg.CourseID, arg.Year)
+	return err
+}
+
 const activeRegistryNumberExistsForCourseYear = `-- name: ActiveRegistryNumberExistsForCourseYear :one
  SELECT EXISTS (
    SELECT 1
@@ -37,16 +51,11 @@ func (q *Queries) ActiveRegistryNumberExistsForCourseYear(ctx context.Context, a
 }
 
 const createRegistry = `-- name: CreateRegistry :one
-INSERT INTO registries (
-    course_id,
-    year,
-    number
-) VALUES (
-    $1,
-    $2,
-    $3
-)
-RETURNING id
+  INSERT INTO registries (course_id, year, number)
+  VALUES ($1, $2, $3)
+  ON CONFLICT (course_id, year, number)
+    DO UPDATE SET number = EXCLUDED.number
+  RETURNING id
 `
 
 type CreateRegistryParams struct {

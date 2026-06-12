@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
@@ -119,17 +121,6 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		return CreateCertificateResult{}, ErrInvalidInput
 	}
 	languageCode := normalizeLanguageCode(input.LanguageCode)
-	rows, err := s.queries.ListRegistryDatesForCourseYear(ctx, dbsqlc.ListRegistryDatesForCourseYearParams{
-		CourseID: input.CourseID,
-		Year:     input.RegistryYear,
-	})
-	if err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	if err := validateRegistryChronology(rows, input.RegistryNumber, certificateDate); err != nil {
-		return CreateCertificateResult{}, err
-	}
 	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
 	if err != nil {
 		return CreateCertificateResult{}, err
@@ -160,17 +151,6 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 
 	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
 
-	exists, err := s.queries.ActiveRegistryNumberExistsForCourseYear(ctx, dbsqlc.ActiveRegistryNumberExistsForCourseYearParams{
-		CourseID: input.CourseID,
-		Year:     input.RegistryYear,
-		Number:   input.RegistryNumber,
-	})
-	if err != nil {
-		return CreateCertificateResult{}, err
-	}
-	if exists {
-		return CreateCertificateResult{}, ErrRegistryNumberTaken
-	}
 	tx, err := s.beginTx(ctx)
 	if err != nil {
 		return CreateCertificateResult{}, err
@@ -184,6 +164,35 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 			}
 		}
 	}()
+	if err = tx.queries.AcquireRegistryLock(ctx, dbsqlc.AcquireRegistryLockParams{
+		CourseID: strconv.FormatInt(input.CourseID, 10),
+		Year:     strconv.FormatInt(input.RegistryYear, 10),
+	}); err != nil {
+		return CreateCertificateResult{}, err
+	}
+	rows, err := tx.queries.ListRegistryDatesForCourseYear(ctx, dbsqlc.ListRegistryDatesForCourseYearParams{
+		CourseID: input.CourseID,
+		Year:     input.RegistryYear,
+	})
+	if err != nil {
+		return CreateCertificateResult{}, err
+	}
+
+	if err := validateRegistryChronology(rows, input.RegistryNumber, certificateDate); err != nil {
+		return CreateCertificateResult{}, err
+	}
+
+	exists, err := tx.queries.ActiveRegistryNumberExistsForCourseYear(ctx, dbsqlc.ActiveRegistryNumberExistsForCourseYearParams{
+		CourseID: input.CourseID,
+		Year:     input.RegistryYear,
+		Number:   input.RegistryNumber,
+	})
+	if err != nil {
+		return CreateCertificateResult{}, err
+	}
+	if exists {
+		return CreateCertificateResult{}, ErrRegistryNumberTaken
+	}
 
 	registryID, err := tx.queries.CreateRegistry(ctx, dbsqlc.CreateRegistryParams{
 		CourseID: input.CourseID,
@@ -202,9 +211,16 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		courseDateEnd,
 		studentSnapshot,
 		courseSnapshot,
-		languageCode)
+		languageCode,
+	)
 	certificateID, err := tx.queries.CreateCertificate(ctx, certificateParams)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+			(pgErr.ConstraintName == "registries_course_year_number_key" ||
+				pgErr.ConstraintName == "certificates_active_registry_uidx") {
+			return CreateCertificateResult{}, ErrRegistryNumberTaken
+		}
 		return CreateCertificateResult{}, err
 	}
 
