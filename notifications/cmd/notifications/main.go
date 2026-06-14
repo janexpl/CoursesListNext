@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"io"
 	"log"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/http"
 	"net/mail"
@@ -125,7 +128,7 @@ type EmailMessage struct {
 }
 
 type Mailer interface {
-	Send(ctx context.Context, msg EmailMessage) error
+	Send(ctx context.Context, now func() time.Time, msg EmailMessage) error
 }
 
 type SMTPMailer struct {
@@ -216,7 +219,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 			continue
 		}
 
-		if err := w.mailer.Send(ctx, message); err != nil {
+		if err := w.mailer.Send(ctx, w.now, message); err != nil {
 			return fmt.Errorf("send notification to %s: %w", batch.RecipientEmail, err)
 		}
 
@@ -452,7 +455,7 @@ func formatRegistryNumber(candidate CertificateCandidate) string {
 	return symbol + " " + number
 }
 
-func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
+func (m SMTPMailer) Send(ctx context.Context, now func() time.Time, msg EmailMessage) error {
 	ctx, cancel := context.WithTimeout(ctx, m.cfg.Timeout)
 	defer cancel()
 
@@ -460,6 +463,12 @@ func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
 	to := mail.Address{Address: msg.To}
 
 	var data bytes.Buffer
+	data.WriteString("Date: ")
+	data.WriteString(now().Format(time.RFC1123Z))
+	data.WriteString("\r\n")
+	data.WriteString("Message-ID: ")
+	data.WriteString(newMessageID(m.cfg.From))
+	data.WriteString("\r\n")
 	data.WriteString("From: ")
 	data.WriteString(from.String())
 	data.WriteString("\r\n")
@@ -471,9 +480,16 @@ func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
 	data.WriteString("\r\n")
 	data.WriteString("MIME-Version: 1.0\r\n")
 	data.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	data.WriteString("Content-Transfer-Encoding: 8bit\r\n")
+	data.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	data.WriteString("\r\n")
-	data.WriteString(msg.Body)
+
+	qp := quotedprintable.NewWriter(&data)
+	if _, err := qp.Write([]byte(msg.Body)); err != nil {
+		return err
+	}
+	if err := qp.Close(); err != nil {
+		return err
+	}
 
 	address := net.JoinHostPort(m.cfg.Host, m.cfg.Port)
 	client, err := dialSMTP(ctx, m.cfg, address)
@@ -525,6 +541,16 @@ func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
 	}
 
 	return client.Quit()
+}
+
+func newMessageID(from string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	domain := "localhost"
+	if i := strings.LastIndex(from, "@"); i >= 0 && i < len(from)-1 {
+		domain = from[i+1:]
+	}
+	return "<" + hex.EncodeToString(b) + "@" + domain + ">"
 }
 
 func dialSMTP(ctx context.Context, cfg SMTPConfig, address string) (*smtp.Client, error) {
