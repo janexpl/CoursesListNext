@@ -48,7 +48,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     }
 
     html, body {
-      margin: -;
+      margin: 0;
       padding: 0;
       color: #0f172a;
       background: white;
@@ -178,7 +178,7 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) strin
 		}
 
 		normalized := strings.Join(strings.Fields(matches[1]), "")
-		return values[normalized]
+		return html.EscapeString(values[normalized])
 	})
 }
 
@@ -206,21 +206,17 @@ func buildCourseProgramPage(raw string, languageCode string) string {
 		theorySum += theoryValue
 		practiceSum += practiceValue
 
-		rows.WriteString(fmt.Sprintf(
-			"<tr><td>%d</td><td>%s</td><td class='hour'>%s</td><td class='hour'>%s</td></tr>",
+		fmt.Fprintf(&rows, "<tr><td>%d</td><td>%s</td><td class='hour'>%s</td><td class='hour'>%s</td></tr>",
 			index+1,
 			html.EscapeString(entry.Subject),
 			html.EscapeString(entry.TheoryTime),
-			html.EscapeString(entry.PracticeTime),
-		))
+			html.EscapeString(entry.PracticeTime))
 	}
 
-	rows.WriteString(fmt.Sprintf(
-		"<tr><td colspan='2'>%s</td><td class='hour'>%.1f</td><td class='hour'>%.1f</td></tr>",
+	fmt.Fprintf(&rows, "<tr><td colspan='2'>%s</td><td class='hour'>%.1f</td><td class='hour'>%.1f</td></tr>",
 		html.EscapeString(labels.Total),
 		theorySum,
-		practiceSum,
-	))
+		practiceSum)
 
 	return `
 <div class="break"></div>
