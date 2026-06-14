@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -78,11 +79,23 @@ func (rl *ipLimiter) cleanup() {
 func RateLimitByIP(limiter *ipLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !limiter.allow(r.RemoteAddr) {
+			if !limiter.allow(clientIP(r)) {
 				response.WriteError(w, http.StatusTooManyRequests, "too_many_requests", "too many requests, please try again later")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// clientIP returns the host portion of r.RemoteAddr, dropping the per-connection
+// port so the rate limiter keys on the source address rather than a value that
+// changes with every TCP connection. X-Forwarded-For is intentionally ignored:
+// the API is reachable directly, so that header is attacker-controlled.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
