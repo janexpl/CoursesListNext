@@ -17,10 +17,12 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -47,6 +49,7 @@ type SMTPConfig struct {
 	From     string
 	FromName string
 	TLSMode  string
+	Timeout  time.Duration
 }
 
 type CandidateResponse struct {
@@ -151,19 +154,26 @@ func main() {
 		cfg.StateFile,
 		cfg.RunInterval,
 	)
-
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	if cfg.RunInterval <= 0 {
-		if err := worker.RunOnce(context.Background()); err != nil {
+		if err := worker.RunOnce(ctx); err != nil {
 			log.Fatalf("notification run failed: %v", err)
 		}
 		return
 	}
 
 	for {
-		if err := worker.RunOnce(context.Background()); err != nil {
+		if err := worker.RunOnce(ctx); err != nil {
 			log.Printf("notification run failed: %v", err)
 		}
-		time.Sleep(cfg.RunInterval)
+		select {
+		case <-ctx.Done():
+			log.Printf("shutting down notifications: %v", ctx.Err())
+			return
+		case <-time.After(cfg.RunInterval):
+
+		}
 	}
 }
 
@@ -246,6 +256,7 @@ func loadConfig() (Config, error) {
 			From:     strings.TrimSpace(os.Getenv("SMTP_FROM")),
 			FromName: stringEnv("SMTP_FROM_NAME", "Powiadomienia BHP"),
 			TLSMode:  strings.ToLower(stringEnv("SMTP_TLS_MODE", "auto")),
+			Timeout:  durationEnv("SMTP_TIMEOUT", 30*time.Second),
 		},
 	}
 
@@ -271,6 +282,9 @@ func loadConfig() (Config, error) {
 		if cfg.SMTP.Host == "" || cfg.SMTP.From == "" {
 			return Config{}, errors.New("SMTP_HOST and SMTP_FROM are required when NOTIFICATIONS_DRY_RUN=false")
 		}
+	}
+	if cfg.SMTP.Timeout <= 0 {
+		return Config{}, errors.New("SMTP_TIMEOUT must be positive")
 	}
 
 	return cfg, nil
@@ -439,13 +453,22 @@ func formatRegistryNumber(candidate CertificateCandidate) string {
 }
 
 func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
+	ctx, cancel := context.WithTimeout(ctx, m.cfg.Timeout)
+	defer cancel()
+
 	from := mail.Address{Name: m.cfg.FromName, Address: m.cfg.From}
 	to := mail.Address{Address: msg.To}
 
 	var data bytes.Buffer
-	data.WriteString("From: " + from.String() + "\r\n")
-	data.WriteString("To: " + to.String() + "\r\n")
-	data.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", msg.Subject) + "\r\n")
+	data.WriteString("From: ")
+	data.WriteString(from.String())
+	data.WriteString("\r\n")
+	data.WriteString("To: ")
+	data.WriteString(to.String())
+	data.WriteString("\r\n")
+	data.WriteString("Subject: ")
+	data.WriteString(mime.QEncoding.Encode("utf-8", msg.Subject))
+	data.WriteString("\r\n")
 	data.WriteString("MIME-Version: 1.0\r\n")
 	data.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	data.WriteString("Content-Transfer-Encoding: 8bit\r\n")
@@ -505,18 +528,20 @@ func (m SMTPMailer) Send(ctx context.Context, msg EmailMessage) error {
 }
 
 func dialSMTP(ctx context.Context, cfg SMTPConfig, address string) (*smtp.Client, error) {
-	dialer := net.Dialer{}
+	dialer := net.Dialer{Timeout: cfg.Timeout}
+	var conn net.Conn
+	var err error
 	if cfg.TLSMode == "tls" {
-		conn, err := tls.DialWithDialer(&dialer, "tcp", address, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
-		if err != nil {
-			return nil, err
-		}
-		return smtp.NewClient(conn, cfg.Host)
+		tlsDialer := tls.Dialer{NetDialer: &dialer, Config: &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}}
+		conn, err = tlsDialer.DialContext(ctx, "tcp", address)
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", address)
 	}
-
-	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
 	}
 	return smtp.NewClient(conn, cfg.Host)
 }
