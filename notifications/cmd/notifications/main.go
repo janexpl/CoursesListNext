@@ -211,8 +211,12 @@ func (w Worker) RunOnce(ctx context.Context) error {
 		log.Printf("no pending notifications for %s..%s", dateFrom, dateTo)
 		return nil
 	}
-
+	var sendErrs []error
 	for _, batch := range batches {
+		if ctx.Err() != nil {
+			sendErrs = append(sendErrs, ctx.Err())
+			break
+		}
 		message := buildEmailMessage(batch, w.cfg, dateFrom, dateTo)
 		if w.cfg.DryRun {
 			log.Printf("dry run: would send %d certificate notifications to %s <%s>; state is not marked as sent", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail)
@@ -220,7 +224,9 @@ func (w Worker) RunOnce(ctx context.Context) error {
 		}
 
 		if err := w.mailer.Send(ctx, w.now, message); err != nil {
-			return fmt.Errorf("send notification to %s: %w", batch.RecipientEmail, err)
+			log.Printf("failed to send to %s <%s>: %v", batch.CompanyName, batch.RecipientEmail, err)
+			sendErrs = append(sendErrs, fmt.Errorf("send to %s: %w", batch.RecipientEmail, err))
+			continue
 		}
 
 		sentAt := w.now().UTC().Format(time.RFC3339)
@@ -232,12 +238,13 @@ func (w Worker) RunOnce(ctx context.Context) error {
 			}
 		}
 		if err := saveState(w.cfg.StateFile, state); err != nil {
-			return err
+			log.Printf("failed to persist state after %s <%s>: %v", batch.CompanyName, batch.RecipientEmail, err)
+			sendErrs = append(sendErrs, fmt.Errorf("save state after %s: %w", batch.RecipientEmail, err))
 		}
 		log.Printf("sent %d certificate notifications to %s <%s>; state entries=%d", len(batch.Candidates), batch.CompanyName, batch.RecipientEmail, len(state.Sent))
 	}
 
-	return nil
+	return errors.Join(sendErrs...)
 }
 
 func loadConfig() (Config, error) {
