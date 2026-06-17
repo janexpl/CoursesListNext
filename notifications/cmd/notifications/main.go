@@ -292,6 +292,12 @@ func loadConfig() (Config, error) {
 		if cfg.SMTP.Host == "" || cfg.SMTP.From == "" {
 			return Config{}, errors.New("SMTP_HOST and SMTP_FROM are required when NOTIFICATIONS_DRY_RUN=false")
 		}
+		if cfg.SMTP.Username != "" && cfg.SMTP.TLSMode == "none" {
+			return Config{}, errors.New("SMTP_USERNAME requires SMTP_TLS_MODE starttls or tls; refusing to send credentials over an unencrypted connection")
+		}
+		if cfg.SMTP.Username != "" && cfg.SMTP.TLSMode == "auto" {
+			log.Printf("warning: SMTP_USERNAME is set with SMTP_TLS_MODE=auto; authentication will fail if the server does not advertise STARTTLS")
+		}
 	}
 	if cfg.SMTP.Timeout <= 0 {
 		return Config{}, errors.New("SMTP_TIMEOUT must be positive")
