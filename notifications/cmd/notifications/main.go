@@ -31,6 +31,12 @@ import (
 
 const dateFormat = "2006-01-02"
 
+// stateRetention is how long a sent-notification record is kept after the
+// certificate's expiry date before it is pruned from the state file. Once a
+// certificate has expired no further notifications are sent for it, so the
+// record only needs to outlive the expiry by a safety margin.
+const stateRetention = 90 * 24 * time.Hour
+
 type Config struct {
 	APIBaseURL    string
 	APIToken      string
@@ -201,6 +207,9 @@ func (w Worker) RunOnce(ctx context.Context) error {
 	state, err := loadState(w.cfg.StateFile)
 	if err != nil {
 		return err
+	}
+	if removed := pruneState(state, today, stateRetention); removed > 0 {
+		log.Printf("pruned %d expired notification state entries", removed)
 	}
 	if err := saveState(w.cfg.StateFile, state); err != nil {
 		return err
@@ -633,6 +642,30 @@ func wasNotificationSent(state State, candidate CertificateCandidate, lookaheadD
 		return true
 	}
 	return false
+}
+
+// pruneState removes sent-notification records whose certificate expiry date is
+// older than retention before today, keeping the state file from growing without
+// bound. Keys are "<id>:<expiry>" (or the legacy "<id>:<expiry>:<lookahead>"), so
+// the expiry is always the second field. Unparseable keys are left untouched.
+func pruneState(state State, today time.Time, retention time.Duration) int {
+	cutoff := today.Add(-retention)
+	removed := 0
+	for key := range state.Sent {
+		parts := strings.Split(key, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		expiry, err := time.Parse(dateFormat, parts[1])
+		if err != nil {
+			continue
+		}
+		if expiry.Before(cutoff) {
+			delete(state.Sent, key)
+			removed++
+		}
+	}
+	return removed
 }
 
 func notificationKey(candidate CertificateCandidate) string {
