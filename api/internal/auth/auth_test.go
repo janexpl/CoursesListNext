@@ -134,6 +134,106 @@ func TestLoginInvalidCredentialsReturnsUnauthorized(t *testing.T) {
 	assertErrorResponse(t, rec, http.StatusUnauthorized, response.CodeInvalidCredentials)
 }
 
+func TestLoginUnknownEmailReturnsUnauthorized(t *testing.T) {
+	queries := dbsql.New(fakeDB{
+		queryRow: func(_ context.Context, _ string, _ ...interface{}) pgx.Row {
+			return fakeRow{err: pgx.ErrNoRows}
+		},
+	})
+
+	handler := NewHandler(queries, testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"missing@example.com","password":"whatever"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Login(rec, req)
+
+	assertErrorResponse(t, rec, http.StatusUnauthorized, response.CodeInvalidCredentials)
+}
+
+func TestHashTokenIsDeterministicAndNotRaw(t *testing.T) {
+	raw := "session-token-value"
+	hashed := hashToken(raw)
+
+	if hashed == raw {
+		t.Fatal("hashed token must differ from the raw token")
+	}
+	if hashed != hashToken(raw) {
+		t.Fatal("hashToken must be deterministic")
+	}
+	if len(hashed) != 64 {
+		t.Fatalf("expected 64-character hex SHA-256, got %d chars", len(hashed))
+	}
+}
+
+func TestLoginStoresHashedTokenAndSetsRawCookie(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("failed to generate bcrypt hash: %v", err)
+	}
+
+	var storedToken string
+	callCount := 0
+	queries := dbsql.New(fakeDB{
+		queryRow: func(_ context.Context, _ string, args ...interface{}) pgx.Row {
+			callCount++
+			switch callCount {
+			case 1:
+				return fakeRow{scan: func(dest ...interface{}) error {
+					*(dest[0].(*int64)) = 1
+					*(dest[1].(*string)) = "user@example.com"
+					*(dest[2].(*[]byte)) = hash
+					*(dest[3].(*string)) = "Jan"
+					*(dest[4].(*string)) = "Nowak"
+					*(dest[5].(*int32)) = 1
+					return nil
+				}}
+			case 2:
+				storedToken, _ = args[0].(string)
+				return fakeRow{scan: func(dest ...interface{}) error {
+					*(dest[0].(*string)) = storedToken
+					*(dest[1].(*int64)) = 1
+					*(dest[2].(*pgtype.Timestamptz)) = pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true}
+					*(dest[3].(*pgtype.Timestamptz)) = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+					return nil
+				}}
+			default:
+				return fakeRow{err: errors.New("unexpected query row call")}
+			}
+		},
+	})
+
+	handler := NewHandler(queries, testConfig())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"user@example.com","password":"correct-password"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	setCookie := rec.Header().Get("Set-Cookie")
+	const cookiePrefix = "session_token="
+	idx := strings.Index(setCookie, cookiePrefix)
+	if idx < 0 {
+		t.Fatalf("expected session cookie, got %q", setCookie)
+	}
+	cookieValue := setCookie[idx+len(cookiePrefix):]
+	if i := strings.IndexByte(cookieValue, ';'); i >= 0 {
+		cookieValue = cookieValue[:i]
+	}
+
+	if storedToken == "" {
+		t.Fatal("expected CreateSession to be called with a token")
+	}
+	if cookieValue == storedToken {
+		t.Fatal("cookie must carry the raw token, not the stored hash")
+	}
+	if hashToken(cookieValue) != storedToken {
+		t.Fatalf("stored token must be the hash of the cookie value")
+	}
+}
+
 func TestLoginSetsSessionCookieOnSuccess(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
 	if err != nil {
@@ -354,8 +454,8 @@ func TestLogoutClearsCookieOnSuccess(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
 	}
-	if deletedToken != "logout-token" {
-		t.Fatalf("expected deleted token %q, got %q", "logout-token", deletedToken)
+	if deletedToken != hashToken("logout-token") {
+		t.Fatalf("expected deleted token to be the hash of the cookie value, got %q", deletedToken)
 	}
 
 	setCookie := rec.Header().Get("Set-Cookie")

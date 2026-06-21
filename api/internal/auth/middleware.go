@@ -44,7 +44,7 @@ func RequireAuth(queries *dbsqlc.Queries, config *config.Config) func(http.Handl
 				return
 			}
 			token := cookie.Value
-			session, err := queries.GetSessionByToken(r.Context(), token)
+			session, err := queries.GetSessionByToken(r.Context(), hashToken(token))
 			if err != nil || session.ExpiresAt.Time.Before(time.Now()) {
 				clearSessionCookie(w, config)
 				response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "invalid or expired token")
