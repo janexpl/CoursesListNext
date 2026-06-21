@@ -21,4 +21,7 @@ DELETE FROM api_sessions WHERE token = $1;
 -- name: DeleteSessionsByUserID :exec
 DELETE FROM api_sessions WHERE user_id = $1;
 
+-- name: DeleteExpiredSessions :execrows
+DELETE FROM api_sessions WHERE expires_at < NOW();
+
 
