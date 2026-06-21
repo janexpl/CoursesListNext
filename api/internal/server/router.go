@@ -61,6 +61,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(limitRequestBody(maxJSONBodyBytes))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
