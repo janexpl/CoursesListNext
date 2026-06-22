@@ -14,8 +14,6 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/server"
 )
 
-const sessionCleanupInterval = time.Hour
-
 // expiredSessionPurger deletes expired session rows; *dbsql.Queries satisfies it.
 type expiredSessionPurger interface {
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
@@ -38,7 +36,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	go startSessionCleanup(ctx, queries, sessionCleanupInterval)
+	go startSessionCleanup(ctx, queries, cfg.SessionCleanupInterval)
 
 	go func() {
 		log.Printf("api listening on :%s", cfg.Port)

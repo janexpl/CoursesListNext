@@ -12,21 +12,22 @@ import (
 )
 
 type Config struct {
-	Port                  string
-	DBHost                string
-	DBPort                string
-	DBUser                string
-	DBPassword            string
-	DBName                string
-	DBSSLMode             string
-	SessionTTL            time.Duration
-	SessionCookieName     string
-	SessionCookieSecure   bool
-	CORSAllowedOrigins    []string
-	LoginRateLimit        float64
-	GUSUrl                string
-	GUSToken              string
-	NotificationsAPIToken string
+	Port                   string
+	DBHost                 string
+	DBPort                 string
+	DBUser                 string
+	DBPassword             string
+	DBName                 string
+	DBSSLMode              string
+	SessionTTL             time.Duration
+	SessionCleanupInterval time.Duration
+	SessionCookieName      string
+	SessionCookieSecure    bool
+	CORSAllowedOrigins     []string
+	LoginRateLimit         float64
+	GUSUrl                 string
+	GUSToken               string
+	NotificationsAPIToken  string
 }
 
 func Load() Config {
@@ -73,6 +74,18 @@ func Load() Config {
 	if err != nil {
 		log.Fatalf("Invalid SESSION_TTL value: %v", err)
 	}
+
+	sessionCleanupInterval := os.Getenv("SESSION_CLEANUP_INTERVAL")
+	if sessionCleanupInterval == "" {
+		sessionCleanupInterval = "1h"
+	}
+	sessionCleanupIntervalDuration, err := time.ParseDuration(sessionCleanupInterval)
+	if err != nil {
+		log.Fatalf("Invalid SESSION_CLEANUP_INTERVAL value: %v", err)
+	}
+	if sessionCleanupIntervalDuration <= 0 {
+		log.Fatalf("SESSION_CLEANUP_INTERVAL must be positive")
+	}
 	sessionCookieSecureBool, err := strconv.ParseBool(sessionCookieSecure)
 	if err != nil {
 		log.Fatalf("Invalid SESSION_COOKIE_SECURE value: %v", err)
@@ -105,21 +118,22 @@ func Load() Config {
 	notificationsAPIToken := strings.TrimSpace(os.Getenv("NOTIFICATIONS_API_TOKEN"))
 
 	return Config{
-		Port:                  port,
-		DBHost:                dbhost,
-		DBPort:                dbport,
-		DBUser:                dbuser,
-		DBPassword:            dbpass,
-		DBName:                dbname,
-		DBSSLMode:             dbSSLMode,
-		SessionTTL:            sessionTTLDuration,
-		SessionCookieName:     sessionCookieName,
-		SessionCookieSecure:   sessionCookieSecureBool,
-		CORSAllowedOrigins:    corsOriginsList,
-		LoginRateLimit:        loginRateLimit,
-		GUSUrl:                gusURL,
-		GUSToken:              gusToken,
-		NotificationsAPIToken: notificationsAPIToken,
+		Port:                   port,
+		DBHost:                 dbhost,
+		DBPort:                 dbport,
+		DBUser:                 dbuser,
+		DBPassword:             dbpass,
+		DBName:                 dbname,
+		DBSSLMode:              dbSSLMode,
+		SessionTTL:             sessionTTLDuration,
+		SessionCleanupInterval: sessionCleanupIntervalDuration,
+		SessionCookieName:      sessionCookieName,
+		SessionCookieSecure:    sessionCookieSecureBool,
+		CORSAllowedOrigins:     corsOriginsList,
+		LoginRateLimit:         loginRateLimit,
+		GUSUrl:                 gusURL,
+		GUSToken:               gusToken,
+		NotificationsAPIToken:  notificationsAPIToken,
 	}
 }
 

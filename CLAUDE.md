@@ -120,7 +120,7 @@ docker-compose up     # Start db + api + web
 
 ## Environment Variables
 
-Backend (`api/.env`): `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_SSLMODE`, `SESSION_COOKIE_NAME`, `SESSION_TTL`, `SESSION_COOKIE_SECURE`, `CORS_ALLOWED_ORIGINS`, `LOGIN_RATE_LIMIT`
+Backend (`api/.env`): `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_SSLMODE`, `SESSION_COOKIE_NAME`, `SESSION_TTL`, `SESSION_CLEANUP_INTERVAL` (default `1h`), `SESSION_COOKIE_SECURE`, `CORS_ALLOWED_ORIGINS`, `LOGIN_RATE_LIMIT`
 
 Frontend: `NUXT_API_TARGET` (default `http://127.0.0.1:8081`)
 
