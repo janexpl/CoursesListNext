@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
+import { parseNotificationEmails } from '~/utils/notificationEmails'
 
 definePageMeta({
   middleware: 'auth'
@@ -104,6 +105,16 @@ const companyAddress = computed(() => {
   return [company.value.street, `${company.value.zipcode} ${company.value.city}`]
     .filter(Boolean)
     .join(', ')
+})
+
+const notificationRecipients = computed(() => {
+  if (!company.value) {
+    return []
+  }
+
+  return parseNotificationEmails(
+    company.value.expiryNotificationEmail || company.value.email || ''
+  )
 })
 
 const refreshAll = async () => {
@@ -302,9 +313,21 @@ useSeoMeta({
                 </dd>
                 <dd
                   v-if="company.expiryNotificationsEnabled"
-                  class="mt-1 break-all text-xs text-slate-500"
+                  class="mt-2 flex flex-wrap gap-1.5"
                 >
-                  Adres: {{ company.expiryNotificationEmail || company.email || 'brak adresu e-mail' }}
+                  <span
+                    v-for="recipient in notificationRecipients"
+                    :key="recipient.toLocaleLowerCase()"
+                    class="max-w-full break-all rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600"
+                  >
+                    {{ recipient }}
+                  </span>
+                  <span
+                    v-if="notificationRecipients.length === 0"
+                    class="text-xs text-slate-500"
+                  >
+                    Brak adresu e-mail
+                  </span>
                 </dd>
               </div>
 

@@ -56,7 +56,10 @@ func TestBuildCompanyBatchesSkipsAlreadySentAndGroupsByCompanyRecipient(t *testi
 		notificationKey(alreadySent): {},
 	}}
 
-	batches := buildCompanyBatches(candidates, state, 30)
+	batches, err := buildCompanyBatches(candidates, state, 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(batches) != 1 {
 		t.Fatalf("expected one batch, got %+v", batches)
@@ -138,9 +141,61 @@ func TestBuildCompanyBatchesSkipsLegacyAlreadySentKey(t *testing.T) {
 		legacyNotificationKey(candidate, 30): {},
 	}}
 
-	batches := buildCompanyBatches([]CertificateCandidate{candidate}, state, 30)
+	batches, err := buildCompanyBatches([]CertificateCandidate{candidate}, state, 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(batches) != 0 {
 		t.Fatalf("expected legacy sent candidate to be skipped, got %+v", batches)
+	}
+}
+
+func TestBuildCompanyBatchesCreatesOneBatchPerRecipientAndSkipsOnlySentRecipient(t *testing.T) {
+	candidate := CertificateCandidate{
+		CertificateID: 123,
+		ExpiryDate:    "2026-06-10",
+		Company: CandidateCompany{
+			ID:             10,
+			Name:           "ABC Sp. z o.o.",
+			RecipientEmail: "kadry@abc.pl, bhp@abc.pl",
+		},
+	}
+	state := State{Sent: map[string]SentNotification{
+		recipientNotificationKey(candidate, "kadry@abc.pl"): {},
+	}}
+
+	batches, err := buildCompanyBatches([]CertificateCandidate{candidate}, state, 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(batches) != 1 {
+		t.Fatalf("expected one pending recipient batch, got %+v", batches)
+	}
+	if batches[0].RecipientEmail != "bhp@abc.pl" {
+		t.Fatalf("expected only bhp recipient, got %+v", batches[0])
+	}
+	if len(batches[0].Candidates) != 1 || batches[0].Candidates[0].CertificateID != candidate.CertificateID {
+		t.Fatalf("unexpected candidates: %+v", batches[0].Candidates)
+	}
+}
+
+func TestBuildCompanyBatchesRejectsInvalidRecipientList(t *testing.T) {
+	candidate := CertificateCandidate{
+		CertificateID: 123,
+		ExpiryDate:    "2026-06-10",
+		Company: CandidateCompany{
+			ID:             10,
+			Name:           "ABC Sp. z o.o.",
+			RecipientEmail: "kadry@abc.pl, invalid-email",
+		},
+	}
+
+	_, err := buildCompanyBatches([]CertificateCandidate{candidate}, State{Sent: map[string]SentNotification{}}, 30)
+	if err == nil {
+		t.Fatal("expected invalid recipient list error")
+	}
+	if !strings.Contains(err.Error(), "company 10") {
+		t.Fatalf("expected error to identify company, got %v", err)
 	}
 }
 
@@ -152,6 +207,17 @@ func TestNotificationKeyIncludesCertificateAndExpiry(t *testing.T) {
 
 	if got := notificationKey(candidate); got != "123:2026-06-10" {
 		t.Fatalf("unexpected notification key: %q", got)
+	}
+}
+
+func TestRecipientNotificationKeyIncludesNormalizedRecipient(t *testing.T) {
+	candidate := CertificateCandidate{
+		CertificateID: 123,
+		ExpiryDate:    "2026-06-10",
+	}
+
+	if got := recipientNotificationKey(candidate, " Kadry@ABC.pl "); got != "123:2026-06-10:kadry@abc.pl" {
+		t.Fatalf("unexpected recipient notification key: %q", got)
 	}
 }
 

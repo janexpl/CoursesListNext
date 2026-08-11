@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -99,6 +100,52 @@ func TestBuildCreateCompanyParamsRejectsInvalidExpiryNotificationEmail(t *testin
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
+}
+
+func TestBuildCreateCompanyParamsAcceptsTenExpiryNotificationEmails(t *testing.T) {
+	emails := notificationEmailList(10)
+
+	params, err := buildCreateCompanyParams(CreateCompanyRequest{
+		Name:                    "ABC Sp. z o.o.",
+		Street:                  "Koszykowa 1",
+		City:                    "Warszawa",
+		Zipcode:                 "00-001",
+		Nip:                     "1234567890",
+		Telephone:               "500600700",
+		ExpiryNotificationEmail: ptrString(emails),
+	})
+	if err != nil {
+		t.Fatalf("expected ten notification emails to be accepted, got %v", err)
+	}
+	if !params.ExpiryNotificationEmail.Valid {
+		t.Fatal("expected expiry notification emails to be stored")
+	}
+	if params.ExpiryNotificationEmail.String != emails {
+		t.Fatalf("expected %q, got %q", emails, params.ExpiryNotificationEmail.String)
+	}
+}
+
+func TestBuildCreateCompanyParamsRejectsElevenExpiryNotificationEmails(t *testing.T) {
+	_, err := buildCreateCompanyParams(CreateCompanyRequest{
+		Name:                    "ABC Sp. z o.o.",
+		Street:                  "Koszykowa 1",
+		City:                    "Warszawa",
+		Zipcode:                 "00-001",
+		Nip:                     "1234567890",
+		Telephone:               "500600700",
+		ExpiryNotificationEmail: ptrString(notificationEmailList(11)),
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for eleven notification emails, got %v", err)
+	}
+}
+
+func notificationEmailList(count int) string {
+	emails := make([]string, count)
+	for i := range emails {
+		emails[i] = fmt.Sprintf("recipient%d@example.com", i+1)
+	}
+	return strings.Join(emails, ",")
 }
 
 func TestBuildUpdateCompanyParamsCopiesExpiryNotificationSettings(t *testing.T) {

@@ -150,6 +150,7 @@ func (s *Service) Update(ctx context.Context, companyID int64, req UpdateCompany
 }
 
 func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyParams, error) {
+	const maxExpiryNotificationRecipients = 10
 	name := strings.TrimSpace(req.Name)
 	street := strings.TrimSpace(req.Street)
 	city := strings.TrimSpace(req.City)
@@ -160,10 +161,15 @@ func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyPar
 	if req.ExpiryNotificationEmail != nil {
 		expiryEmail := strings.TrimSpace(*req.ExpiryNotificationEmail)
 		if expiryEmail != "" {
-			if !validation.CheckEmail(expiryEmail) {
+			emails, err := validation.ParseEmailList(expiryEmail)
+			if err != nil {
 				return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
 			}
-			expiryEmailPg = pgtype.Text{String: expiryEmail, Valid: true}
+			if len(emails) > maxExpiryNotificationRecipients {
+				return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
+			}
+			expiryEmails := strings.Join(emails, ",")
+			expiryEmailPg = pgtype.Text{String: expiryEmails, Valid: true}
 		}
 	}
 

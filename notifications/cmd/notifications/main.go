@@ -215,7 +215,10 @@ func (w Worker) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	batches := buildCompanyBatches(candidates, state, w.cfg.LookaheadDays)
+	batches, err := buildCompanyBatches(candidates, state, w.cfg.LookaheadDays)
+	if err != nil {
+		return err
+	}
 	if len(batches) == 0 {
 		log.Printf("no pending notifications for %s..%s", dateFrom, dateTo)
 		return nil
@@ -240,7 +243,7 @@ func (w Worker) RunOnce(ctx context.Context) error {
 
 		sentAt := w.now().UTC().Format(time.RFC3339)
 		for _, candidate := range batch.Candidates {
-			state.Sent[notificationKey(candidate)] = SentNotification{
+			state.Sent[recipientNotificationKey(candidate, batch.RecipientEmail)] = SentNotification{
 				SentAt:         sentAt,
 				RecipientEmail: batch.RecipientEmail,
 				CompanyID:      batch.CompanyID,
@@ -373,32 +376,43 @@ func fetchCandidates(ctx context.Context, client *http.Client, cfg Config, dateF
 	return all, nil
 }
 
-func buildCompanyBatches(candidates []CertificateCandidate, state State, lookaheadDays int) []CompanyBatch {
+func buildCompanyBatches(candidates []CertificateCandidate, state State, lookaheadDays int) ([]CompanyBatch, error) {
 	byKey := make(map[string]*CompanyBatch)
 
 	for _, candidate := range candidates {
 		if candidate.Company.RecipientEmail == "" {
 			continue
 		}
-		if wasNotificationSent(state, candidate, lookaheadDays) {
-			continue
+		recipients, err := parseRecipientEmails(candidate.Company.RecipientEmail)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"parse notification recipients for company %d: %w",
+				candidate.Company.ID,
+				err,
+			)
 		}
 
-		key := fmt.Sprintf("%d:%s", candidate.Company.ID, strings.ToLower(candidate.Company.RecipientEmail))
-		batch, exists := byKey[key]
-		if !exists {
-			companyName := strings.TrimSpace(candidate.Company.Name)
-			if companyName == "" {
-				companyName = candidate.Company.CurrentName
+		for _, recipient := range recipients {
+			if wasNotificationSent(state, candidate, recipient, lookaheadDays) {
+				continue
 			}
-			batch = &CompanyBatch{
-				CompanyID:      candidate.Company.ID,
-				CompanyName:    companyName,
-				RecipientEmail: candidate.Company.RecipientEmail,
+
+			key := fmt.Sprintf("%d:%s", candidate.Company.ID, strings.ToLower(recipient))
+			batch, exists := byKey[key]
+			if !exists {
+				companyName := strings.TrimSpace(candidate.Company.Name)
+				if companyName == "" {
+					companyName = candidate.Company.CurrentName
+				}
+				batch = &CompanyBatch{
+					CompanyID:      candidate.Company.ID,
+					CompanyName:    companyName,
+					RecipientEmail: recipient,
+				}
+				byKey[key] = batch
 			}
-			byKey[key] = batch
+			batch.Candidates = append(batch.Candidates, candidate)
 		}
-		batch.Candidates = append(batch.Candidates, candidate)
 	}
 
 	batches := make([]CompanyBatch, 0, len(byKey))
@@ -412,10 +426,13 @@ func buildCompanyBatches(candidates []CertificateCandidate, state State, lookahe
 		batches = append(batches, *batch)
 	}
 	sort.Slice(batches, func(i, j int) bool {
+		if batches[i].CompanyName == batches[j].CompanyName {
+			return batches[i].RecipientEmail < batches[j].RecipientEmail
+		}
 		return batches[i].CompanyName < batches[j].CompanyName
 	})
 
-	return batches
+	return batches, nil
 }
 
 func buildEmailMessage(batch CompanyBatch, cfg Config, dateFrom, dateTo string) EmailMessage {
@@ -634,7 +651,10 @@ func saveState(path string, state State) error {
 	return os.Rename(tmp, path)
 }
 
-func wasNotificationSent(state State, candidate CertificateCandidate, lookaheadDays int) bool {
+func wasNotificationSent(state State, candidate CertificateCandidate, recipientEmail string, lookaheadDays int) bool {
+	if _, exists := state.Sent[recipientNotificationKey(candidate, recipientEmail)]; exists {
+		return true
+	}
 	if _, exists := state.Sent[notificationKey(candidate)]; exists {
 		return true
 	}
@@ -646,8 +666,8 @@ func wasNotificationSent(state State, candidate CertificateCandidate, lookaheadD
 
 // pruneState removes sent-notification records whose certificate expiry date is
 // older than retention before today, keeping the state file from growing without
-// bound. Keys are "<id>:<expiry>" (or the legacy "<id>:<expiry>:<lookahead>"), so
-// the expiry is always the second field. Unparseable keys are left untouched.
+// bound. Keys begin with "<id>:<expiry>", so the expiry is always the second
+// field for current and legacy entries. Unparseable keys are left untouched.
 func pruneState(state State, today time.Time, retention time.Duration) int {
 	cutoff := today.Add(-retention)
 	removed := 0
@@ -670,6 +690,15 @@ func pruneState(state State, today time.Time, retention time.Duration) int {
 
 func notificationKey(candidate CertificateCandidate) string {
 	return fmt.Sprintf("%d:%s", candidate.CertificateID, candidate.ExpiryDate)
+}
+
+func recipientNotificationKey(candidate CertificateCandidate, recipientEmail string) string {
+	return fmt.Sprintf(
+		"%d:%s:%s",
+		candidate.CertificateID,
+		candidate.ExpiryDate,
+		strings.ToLower(strings.TrimSpace(recipientEmail)),
+	)
 }
 
 func legacyNotificationKey(candidate CertificateCandidate, lookaheadDays int) string {
@@ -723,4 +752,32 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return parsed
+}
+
+func parseRecipientEmails(value string) ([]string, error) {
+
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	addresses, err := mail.ParseAddressList(value)
+	if err != nil {
+		return []string{}, err
+	}
+	emails := make([]string, 0, len(addresses))
+	seen := make(map[string]struct{}, len(addresses))
+
+	for _, addr := range addresses {
+		email := strings.TrimSpace(addr.Address)
+		key := strings.ToLower(email)
+
+		if _, exists := seen[key]; exists {
+			continue
+		}
+
+		seen[key] = struct{}{}
+		emails = append(emails, email)
+	}
+
+	return emails, nil
 }

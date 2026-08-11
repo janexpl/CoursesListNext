@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import type { GUSCompanyDetails } from '~/composables/useApi'
+import {
+  getNotificationEmailsError,
+  MAX_NOTIFICATION_RECIPIENTS,
+  normalizeNotificationEmails,
+  parseNotificationEmails
+} from '~/utils/notificationEmails'
 
 definePageMeta({
   middleware: 'auth'
@@ -54,6 +60,8 @@ const trimmedZipcode = computed(() => form.zipcode.trim())
 const trimmedNip = computed(() => form.nip.trim())
 const trimmedTelephone = computed(() => form.telephone.trim())
 const normalizedNip = computed(() => form.nip.replaceAll(/\D/g, ''))
+const customNotificationRecipients = computed(() => parseNotificationEmails(form.expiryNotificationEmail))
+const notificationEmailsError = computed(() => getNotificationEmailsError(form.expiryNotificationEmail))
 
 function optionalValue(value: string) {
   const trimmed = value.trim()
@@ -72,12 +80,17 @@ function buildPayload() {
     telephone: trimmedTelephone.value,
     note: optionalValue(form.note),
     expiryNotificationsEnabled: form.expiryNotificationsEnabled,
-    expiryNotificationEmail: optionalValue(form.expiryNotificationEmail)
+    expiryNotificationEmail: normalizeNotificationEmails(form.expiryNotificationEmail)
   }
 }
 
-const notificationRecipient = computed(() => {
-  return optionalValue(form.expiryNotificationEmail) || optionalValue(form.email)
+const notificationRecipients = computed(() => {
+  if (customNotificationRecipients.value.length > 0) {
+    return customNotificationRecipients.value
+  }
+
+  const companyEmail = optionalValue(form.email)
+  return companyEmail ? [companyEmail] : []
 })
 
 function applyCompanyToForm() {
@@ -195,6 +208,11 @@ async function onSubmit() {
     || !trimmedTelephone.value
   ) {
     errorMessage.value = 'Uzupełnij wszystkie wymagane pola.'
+    return
+  }
+
+  if (notificationEmailsError.value) {
+    errorMessage.value = notificationEmailsError.value
     return
   }
 
@@ -484,17 +502,36 @@ useSeoMeta({
               </span>
             </label>
 
-            <label class="mt-4 block space-y-2">
-              <span class="text-sm font-medium text-slate-700">E-mail do powiadomień</span>
+            <label
+              class="mt-4 block space-y-2"
+              :data-show-validation="notificationEmailsError ? 'true' : null"
+            >
+              <span class="flex items-center justify-between gap-3">
+                <span class="text-sm font-medium text-slate-700">Adresy do powiadomień</span>
+                <span class="text-xs tabular-nums text-slate-400">
+                  {{ customNotificationRecipients.length }}/{{ MAX_NOTIFICATION_RECIPIENTS }}
+                </span>
+              </span>
               <input
                 v-model="form.expiryNotificationEmail"
                 type="email"
-                placeholder="Domyślnie główny e-mail firmy"
+                multiple
+                placeholder="np. kadry@firma.pl, bhp@firma.pl"
                 :disabled="!form.expiryNotificationsEnabled"
+                :data-manual-invalid="notificationEmailsError ? 'true' : null"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
               >
-              <p class="text-xs leading-5 text-slate-500">
-                Jeśli pole zostanie puste, system użyje głównego adresu e-mail firmy.
+              <p
+                v-if="notificationEmailsError"
+                class="text-xs leading-5 text-red-600"
+              >
+                {{ notificationEmailsError }}
+              </p>
+              <p
+                v-else
+                class="text-xs leading-5 text-slate-500"
+              >
+                Oddziel adresy przecinkami. Puste pole oznacza wysyłkę na główny e-mail firmy.
               </p>
             </label>
           </div>
@@ -591,9 +628,21 @@ useSeoMeta({
               </dd>
               <dd
                 v-if="form.expiryNotificationsEnabled"
-                class="mt-1 break-all text-xs text-slate-500"
+                class="mt-2 flex flex-wrap gap-1.5"
               >
-                {{ notificationRecipient || 'Brak adresu e-mail' }}
+                <span
+                  v-for="recipient in notificationRecipients"
+                  :key="recipient.toLocaleLowerCase()"
+                  class="max-w-full break-all rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600"
+                >
+                  {{ recipient }}
+                </span>
+                <span
+                  v-if="notificationRecipients.length === 0"
+                  class="text-xs text-slate-500"
+                >
+                  Brak adresu e-mail
+                </span>
               </dd>
             </div>
           </dl>

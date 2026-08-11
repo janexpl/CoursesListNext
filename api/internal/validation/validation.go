@@ -80,3 +80,30 @@ func NormalizeNIP(value string) string {
 	replacer := strings.NewReplacer("-", "", " ", "", "\t", "", "\n", "")
 	return replacer.Replace(strings.TrimSpace(value))
 }
+
+func ParseEmailList(value string) ([]string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	addresses, err := mail.ParseAddressList(value)
+	if err != nil {
+		return []string{}, err
+	}
+	emails := make([]string, 0, len(addresses))
+	seen := make(map[string]struct{}, len(addresses))
+
+	for _, addr := range addresses {
+		email := strings.TrimSpace(addr.Address)
+		key := strings.ToLower(email)
+
+		if _, exists := seen[key]; exists {
+			continue
+		}
+
+		seen[key] = struct{}{}
+		emails = append(emails, email)
+	}
+
+	return emails, nil
+}
