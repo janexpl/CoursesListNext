@@ -52,7 +52,20 @@ Inside transactions, call `s.recorder.Record(ctx, tx.queries, auditlog.Entry{...
 
 ### Auth
 
-Session-based with HTTP-only cookies. Roles: regular user and admin (role=1). Frontend middleware: `auth`, `guest`, `admin`. Use `auth.UserFromContext(ctx)` to get the authenticated user in handlers.
+Two credential types feed the same authenticated routes via `auth.Authenticate(...)`, which tries each `Authenticator` in order and puts a `Principal` (user + method + scopes) in the request context:
+
+1. **Session cookie** (`SessionAuthenticator`) — HTTP-only cookie, browser only. Carries no scopes; access is decided by role.
+2. **API key** (`APIKeyAuthenticator`) — `Authorization: Bearer clk_...`, for server-to-server integrations. Bound to a service-account row in `users`, so role checks and audit logging work unchanged. Restricted by scopes.
+
+The session cookie wins when both are present. Handlers only ever call `auth.UserFromContext(ctx)` and are unaware of which method authenticated the request.
+
+Roles: regular user and admin (role=1). Frontend middleware: `auth`, `guest`, `admin`.
+
+**Scopes** (`internal/auth/scopes.go`) constrain API keys only — sessions pass `RequireScope` unconditionally. Format `<resource>:<action>`; `write` implies `read` on the same resource. Every scope must be in `assignableScopes` to be grantable. Wire routes with `r.With(auth.RequireScope(auth.ScopeX))`.
+
+`auth.RequireSession()` marks routes that must not be reachable by an API key: `/auth/logout`, `/account/*`, and all of `/admin/api-keys` (issuing keys with a key would be a privilege-escalation path).
+
+`/internal/notifications/*` still uses the separate static `NOTIFICATIONS_API_TOKEN` via `auth.RequireBearerToken` — it is not part of the API key system.
 
 ### Shared helpers
 

@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ApiKey struct {
+	ID         int64              `json:"id"`
+	Name       string             `json:"name"`
+	Prefix     string             `json:"prefix"`
+	TokenHash  string             `json:"token_hash"`
+	UserID     int64              `json:"user_id"`
+	Scopes     []string           `json:"scopes"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type ApiSession struct {
 	Token     string             `json:"token"`
 	UserID    int64              `json:"user_id"`

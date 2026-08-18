@@ -65,6 +65,42 @@ export interface DeleteUserResponse {
   }
 }
 
+export interface ApiKey {
+  id: number
+  name: string
+  prefix: string
+  userId: number
+  userEmail?: string
+  userName?: string
+  scopes: string[]
+  expiresAt: string | null
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string | null
+}
+
+export interface ApiKeysResponse {
+  data: ApiKey[]
+}
+
+export interface ApiKeyScopesResponse {
+  data: string[]
+}
+
+export interface CreateApiKeyPayload {
+  name: string
+  userId: number
+  scopes: string[]
+  expiresAt: string
+}
+
+export interface CreateApiKeyResponse {
+  data: ApiKey
+  // Surowy klucz wraca wyłącznie tutaj — w bazie leży tylko jego skrót,
+  // więc po zamknięciu widoku nie da się go już odczytać.
+  token: string
+}
+
 export interface AuditLogEntry {
   id: number
   entityType: string
@@ -648,6 +684,18 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:invalid email format': 'Nieprawidłowy format adresu e-mail.',
   'bad_request:invalid current password': 'Nieprawidłowe aktualne hasło.',
 
+  // klucze API
+  'bad_request:at least one scope is required': 'Wybierz co najmniej jedno uprawnienie dla klucza.',
+  'bad_request:unknown scope': 'Wybrano uprawnienie, którego serwer nie zna.',
+  'bad_request:expiry date must be in the future': 'Data wygaśnięcia musi być w przyszłości.',
+  'bad_request:service account not found': 'Nie znaleziono konta wskazanego dla klucza.',
+  'bad_request:invalid api key id': 'Nieprawidłowy identyfikator klucza.',
+  'conflict:api key is already revoked': 'Ten klucz został już unieważniony.',
+  'not_found:api key not found': 'Nie znaleziono klucza — mógł zostać usunięty.',
+  'internal_error:failed to create api key': 'Nie udało się utworzyć klucza.',
+  'internal_error:failed to retrieve api keys': 'Nie udało się pobrać listy kluczy.',
+  'forbidden:this endpoint requires an interactive session': 'Kluczami API można zarządzać wyłącznie po zalogowaniu w przeglądarce.',
+
   // companies
   'conflict:company with this NIP already exists': 'Firma o podanym NIP już istnieje.',
   'bad_request:invalid request body': 'Sprawdź poprawność danych formularza.',
@@ -776,6 +824,15 @@ export function useApi() {
       method: 'DELETE'
     }),
     userAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/admin/users/${id}/audit-log`),
+    apiKeys: async () => await request<ApiKeysResponse>('/api/v1/admin/api-keys'),
+    apiKeyScopes: async () => await request<ApiKeyScopesResponse>('/api/v1/admin/api-keys/scopes'),
+    createApiKey: async (payload: CreateApiKeyPayload) => await request<CreateApiKeyResponse>('/api/v1/admin/api-keys', {
+      method: 'POST',
+      body: payload
+    }),
+    revokeApiKey: async (id: number) => await request(`/api/v1/admin/api-keys/${id}`, {
+      method: 'DELETE'
+    }),
     dashboard: async () => await request<DashboardResponse>('/api/v1/dashboard'),
     companies: async (params: { search?: string, limit?: number } = {}) => await request<CompaniesResponse>('/api/v1/companies', {
       query: {

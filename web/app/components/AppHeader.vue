@@ -33,10 +33,16 @@ const navigationItems = computed(() => {
   ]
 
   if (auth.user.value?.role === 1) {
-    items.push({
-      label: 'Administracja',
-      to: '/admin/users'
-    })
+    items.push(
+      {
+        label: 'Administracja',
+        to: '/admin/users'
+      },
+      {
+        label: 'Klucze API',
+        to: '/admin/api-keys'
+      }
+    )
   }
 
   return items
