@@ -152,6 +152,113 @@ func (q *Queries) ListCourses(ctx context.Context, arg ListCoursesParams) ([]Lis
 	return items, nil
 }
 
+const listCoursesDetails = `-- name: ListCoursesDetails :many
+SELECT
+    c.id,
+    c.mainname,
+    c.name,
+    c.symbol,
+    c.expirytime,
+    c.courseprogram,
+    c.certfrontpage,
+    COALESCE(t.translations, '[]'::json)::json AS certificate_translations
+FROM courses c
+LEFT JOIN LATERAL (
+    SELECT json_agg(
+        json_build_object(
+            'languageCode', ct.language_code,
+            'courseName', ct.course_name,
+            -- ::text, bo CourseProgram w DTO jest stringiem niosącym JSON,
+            -- tak samo jak w ścieżce pojedynczego kursu.
+            'courseProgram', ct.course_program::text,
+            'certFrontPage', ct.cert_front_page
+        )
+        ORDER BY ct.language_code
+    ) AS translations
+    FROM course_certificate_translations ct
+    WHERE ct.course_id = c.id
+) t ON TRUE
+WHERE
+    (
+        $1::text IS NULL
+        OR COALESCE(c.mainname, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.name, '') ILIKE '%' || $1::text || '%'
+        OR COALESCE(c.symbol, '') ILIKE '%' || $1::text || '%'
+    )
+ORDER BY
+    CASE
+        WHEN $1::text IS NULL THEN 5
+        WHEN LOWER(COALESCE(c.symbol, '')) = LOWER($1::text) THEN 0
+        WHEN LOWER(COALESCE(c.symbol, '')) LIKE LOWER($1::text) || '%' THEN 1
+        WHEN LOWER(COALESCE(c.name, '')) LIKE LOWER($1::text) || '%' THEN 2
+        WHEN LOWER(COALESCE(c.mainname, '')) LIKE LOWER($1::text) || '%' THEN 3
+        WHEN LOWER(COALESCE(c.symbol, '')) LIKE '%' || LOWER($1::text) || '%' THEN 4
+        ELSE 5
+    END,
+    c.symbol,
+    c.name
+LIMIT $2
+`
+
+type ListCoursesDetailsParams struct {
+	Search     pgtype.Text `json:"search"`
+	LimitCount int32       `json:"limit_count"`
+}
+
+type ListCoursesDetailsRow struct {
+	ID                      int64       `json:"id"`
+	Mainname                pgtype.Text `json:"mainname"`
+	Name                    string      `json:"name"`
+	Symbol                  string      `json:"symbol"`
+	Expirytime              pgtype.Text `json:"expirytime"`
+	Courseprogram           []byte      `json:"courseprogram"`
+	Certfrontpage           pgtype.Text `json:"certfrontpage"`
+	CertificateTranslations []byte      `json:"certificate_translations"`
+}
+
+// To samo wyszukiwanie i ta sama kolejność co w ListCourses, ale z pełną
+// treścią kursu: programem szkolenia, szablonem zaświadczenia i tłumaczeniami.
+//
+// Tłumaczenia wracają jako gotowa tablica JSON z kluczami odpowiadającymi
+// tagom CourseCertificateTranslationDTO, więc kolumnę wystarczy odpakować
+// json.Unmarshal-em wprost do CourseDetailDTO.CertificateTranslations - bez
+// osobnego zapytania i bez pośrednich struktur.
+//
+// Kurs bez tłumaczeń dostaje '[]', nigdy NULL, żeby odpowiedź JSON zawsze
+// miała tablicę.
+//
+// Wszystkie te kolumny potrafią być duże, więc po to zapytanie warto sięgać
+// tylko wtedy, gdy treści są faktycznie potrzebne - do samej listy wystarczy
+// ListCourses.
+func (q *Queries) ListCoursesDetails(ctx context.Context, arg ListCoursesDetailsParams) ([]ListCoursesDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listCoursesDetails, arg.Search, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCoursesDetailsRow{}
+	for rows.Next() {
+		var i ListCoursesDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Mainname,
+			&i.Name,
+			&i.Symbol,
+			&i.Expirytime,
+			&i.Courseprogram,
+			&i.Certfrontpage,
+			&i.CertificateTranslations,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateCourse = `-- name: UpdateCourse :one
   UPDATE courses
   SET

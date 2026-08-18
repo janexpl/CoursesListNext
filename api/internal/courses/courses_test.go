@@ -17,6 +17,7 @@ import (
 
 type fakeQuerier struct {
 	ListCoursesFunc                                 func(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error)
+	ListCoursesDetailsFunc                          func(ctx context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error)
 	GetCourseByIDFunc                               func(ctx context.Context, id int64) (sqlc.Course, error)
 	UpdateCourseFunc                                func(ctx context.Context, arg sqlc.UpdateCourseParams) (sqlc.Course, error)
 	CreateCourseFunc                                func(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error)
@@ -30,6 +31,10 @@ type fakeCreator struct {
 
 func (f fakeQuerier) ListCourses(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error) {
 	return f.ListCoursesFunc(ctx, arg)
+}
+
+func (f fakeQuerier) ListCoursesDetails(ctx context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+	return f.ListCoursesDetailsFunc(ctx, arg)
 }
 
 func (f fakeQuerier) GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error) {
@@ -363,6 +368,166 @@ func TestListCoursesPassesFiltersToQuery(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
+}
+
+// TestListCoursesDetailsUnpacksAggregatedTranslations pilnuje kontraktu między
+// kluczami json_build_object w ListCoursesDetails a tagami JSON w
+// CourseCertificateTranslationDTO. Rozjazd nazw nie daje błędu, tylko ciche
+// puste tłumaczenia - dlatego ładunek poniżej jest zapisany tak, jak wychodzi
+// z bazy, a nie zbudowany ze struktur Go.
+func TestListCoursesDetailsUnpacksAggregatedTranslations(t *testing.T) {
+	aggregated := []byte(`[{"languageCode":"en","courseName":"Asbestos safety","courseProgram":"[{\"Subject\":\"Legal regulations\"}]","certFrontPage":"<h1>CERTIFICATE</h1>"}]`)
+
+	handler := NewHandler(fakeQuerier{
+		ListCoursesDetailsFunc: func(_ context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+			if arg.LimitCount != 50 {
+				t.Fatalf("expected default limit 50, got %d", arg.LimitCount)
+			}
+			return []sqlc.ListCoursesDetailsRow{
+				{
+					ID:                      1,
+					Mainname:                pgtype.Text{String: "Azbest", Valid: true},
+					Name:                    "Azbest - poziom podstawowy",
+					Symbol:                  "AZBEST_L",
+					Expirytime:              pgtype.Text{String: "5", Valid: true},
+					Courseprogram:           []byte(`[{"Subject":"Przepisy prawne"}]`),
+					Certfrontpage:           pgtype.Text{String: "<h1>ZAŚWIADCZENIE</h1>", Valid: true},
+					CertificateTranslations: aggregated,
+				},
+				{
+					// Kurs bez tłumaczeń - baza zwraca tu '[]' dzięki COALESCE.
+					ID:                      2,
+					Name:                    "Kurs bez tłumaczeń",
+					Symbol:                  "C2",
+					Courseprogram:           []byte(`[]`),
+					CertificateTranslations: []byte(`[]`),
+				},
+			}, nil
+		},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	handler.ListDetails(rec, httptest.NewRequest(http.MethodGet, "/courses/details", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	body := rec.Body.String()
+	if strings.Contains(body, `"certificateTranslations":null`) {
+		t.Fatalf("translations must serialize as [] rather than null, got %s", body)
+	}
+
+	var responseBody ListCoursesDetailsResponse
+	if err := json.Unmarshal([]byte(body), &responseBody); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(responseBody.Data) != 2 {
+		t.Fatalf("expected 2 courses, got %d", len(responseBody.Data))
+	}
+
+	first := responseBody.Data[0]
+	if first.MainName != "Azbest" || first.Symbol != "AZBEST_L" {
+		t.Fatalf("unexpected course header: %+v", first)
+	}
+	if first.CourseProgram != `[{"Subject":"Przepisy prawne"}]` {
+		t.Fatalf("unexpected course program: %q", first.CourseProgram)
+	}
+	if first.CertFrontPage != "<h1>ZAŚWIADCZENIE</h1>" {
+		t.Fatalf("unexpected front page: %q", first.CertFrontPage)
+	}
+	if first.ExpiryTime == nil || *first.ExpiryTime != "5" {
+		t.Fatalf("unexpected expiry time: %+v", first.ExpiryTime)
+	}
+
+	if len(first.CertificateTranslations) != 1 {
+		t.Fatalf("expected 1 translation, got %d - check that the SQL keys still match the DTO json tags", len(first.CertificateTranslations))
+	}
+	translation := first.CertificateTranslations[0]
+	if translation.LanguageCode != "en" {
+		t.Errorf("languageCode = %q, want %q", translation.LanguageCode, "en")
+	}
+	if translation.CourseName != "Asbestos safety" {
+		t.Errorf("courseName = %q, want %q", translation.CourseName, "Asbestos safety")
+	}
+	if translation.CertFrontPage != "<h1>CERTIFICATE</h1>" {
+		t.Errorf("certFrontPage = %q", translation.CertFrontPage)
+	}
+	// courseProgram jest stringiem niosącym JSON, tak samo jak dla kursu.
+	if translation.CourseProgram != `[{"Subject":"Legal regulations"}]` {
+		t.Errorf("courseProgram = %q", translation.CourseProgram)
+	}
+
+	if second := responseBody.Data[1]; len(second.CertificateTranslations) != 0 {
+		t.Fatalf("expected no translations for the second course, got %+v", second.CertificateTranslations)
+	}
+}
+
+func TestListCoursesDetailsPassesFiltersToQuery(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		ListCoursesDetailsFunc: func(_ context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+			if !arg.Search.Valid || arg.Search.String != "azbest" {
+				t.Fatalf("expected search arg %q, got %+v", "azbest", arg.Search)
+			}
+			if arg.LimitCount != 20 {
+				t.Fatalf("expected limit 20, got %d", arg.LimitCount)
+			}
+			return []sqlc.ListCoursesDetailsRow{}, nil
+		},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	handler.ListDetails(rec, httptest.NewRequest(http.MethodGet, "/courses/details?search=azbest&limit=20", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"data":[]`) {
+		t.Fatalf("expected an empty data array, got %s", body)
+	}
+}
+
+func TestListCoursesDetailsReturnsBadRequestForOutOfRangeLimit(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		ListCoursesDetailsFunc: func(context.Context, sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+			t.Fatal("query must not run for an invalid limit")
+			return nil, nil
+		},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	handler.ListDetails(rec, httptest.NewRequest(http.MethodGet, "/courses/details?limit=500", nil))
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestListCoursesDetailsReturnsInternalError(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		ListCoursesDetailsFunc: func(context.Context, sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+			return nil, errors.New("database error")
+		},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	handler.ListDetails(rec, httptest.NewRequest(http.MethodGet, "/courses/details", nil))
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestListCoursesDetailsReturnsInternalErrorForMalformedTranslations(t *testing.T) {
+	// Uszkodzony JSON w kolumnie to problem po stronie serwera, nie żądania.
+	handler := NewHandler(fakeQuerier{
+		ListCoursesDetailsFunc: func(context.Context, sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error) {
+			return []sqlc.ListCoursesDetailsRow{
+				{ID: 1, Name: "Kurs", Symbol: "C1", CertificateTranslations: []byte(`{"not":"an array"`)},
+			}, nil
+		},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	handler.ListDetails(rec, httptest.NewRequest(http.MethodGet, "/courses/details", nil))
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
 
 func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {

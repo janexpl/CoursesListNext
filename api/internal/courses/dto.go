@@ -23,6 +23,10 @@ type ListCoursesResponse struct {
 	Data []CourseDTO `json:"data"`
 }
 
+type ListCoursesDetailsResponse struct {
+	Data []CourseDetailDTO `json:"data"`
+}
+
 type GetCourseResponse struct {
 	Data CourseDetailDTO `json:"data"`
 }

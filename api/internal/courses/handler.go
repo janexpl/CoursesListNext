@@ -16,6 +16,7 @@ import (
 
 type Querier interface {
 	ListCourses(ctx context.Context, arg sqlc.ListCoursesParams) ([]sqlc.ListCoursesRow, error)
+	ListCoursesDetails(ctx context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error)
 	GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error)
 	ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
 }
@@ -56,6 +57,37 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, row := range courses {
 		resp.Data = append(resp.Data, makeCourseDTO(row))
+	}
+	response.WriteJSON(w, http.StatusOK, resp)
+}
+
+// ListDetails zwraca tę samą listę co List, ale z programem szkolenia,
+// szablonem zaświadczenia i tłumaczeniami. Wszystko przychodzi jednym
+// zapytaniem, więc liczba kursów nie przekłada się na liczbę zapytań.
+func (h *Handler) ListDetails(w http.ResponseWriter, r *http.Request) {
+	searchPg, limitInt, err := response.ParseListParams(r)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, err.Error())
+		return
+	}
+	rows, err := h.queries.ListCoursesDetails(r.Context(), sqlc.ListCoursesDetailsParams{
+		Search:     searchPg,
+		LimitCount: limitInt,
+	})
+	if err != nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
+		return
+	}
+	resp := ListCoursesDetailsResponse{
+		Data: make([]CourseDetailDTO, 0, len(rows)),
+	}
+	for _, row := range rows {
+		dto, err := makeCourseDetailDTOFromListRow(row)
+		if err != nil {
+			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
+			return
+		}
+		resp.Data = append(resp.Data, dto)
 	}
 	response.WriteJSON(w, http.StatusOK, resp)
 }
@@ -213,6 +245,38 @@ func makeCourseDetailDTO(row sqlc.Course, translations []sqlc.ListCourseCertific
 		CertFrontPage:           row.Certfrontpage.String,
 		CertificateTranslations: makeCourseCertificateTranslationsDTO(translations),
 	}
+}
+
+// makeCourseDetailDTOFromListRow rozpakowuje tłumaczenia, które
+// ListCoursesDetails agreguje po stronie bazy do tablicy JSON.
+//
+// Klucze budowane w json_build_object (internal/db/queries/courses.sql) muszą
+// odpowiadać tagom JSON w CourseCertificateTranslationDTO - rozjazd nie da
+// błędu, tylko ciche puste tłumaczenia. Pilnuje tego
+// TestListCoursesDetailsUnpacksAggregatedTranslations.
+func makeCourseDetailDTOFromListRow(row sqlc.ListCoursesDetailsRow) (CourseDetailDTO, error) {
+	var expiryTime *string
+	if row.Expirytime.Valid {
+		expiryTime = &row.Expirytime.String
+	}
+
+	translations := make([]CourseCertificateTranslationDTO, 0)
+	if len(row.CertificateTranslations) > 0 {
+		if err := json.Unmarshal(row.CertificateTranslations, &translations); err != nil {
+			return CourseDetailDTO{}, err
+		}
+	}
+
+	return CourseDetailDTO{
+		ID:                      row.ID,
+		MainName:                row.Mainname.String,
+		Name:                    row.Name,
+		Symbol:                  row.Symbol,
+		ExpiryTime:              expiryTime,
+		CourseProgram:           string(row.Courseprogram),
+		CertFrontPage:           row.Certfrontpage.String,
+		CertificateTranslations: translations,
+	}, nil
 }
 
 func isCourseSymbolConflict(err error) bool {

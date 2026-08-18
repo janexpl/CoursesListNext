@@ -124,6 +124,9 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeDashboardRead)).Get("/dashboard", dashboardHandler.Get)
 
 			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses", courseHandler.List)
+			// Statyczny segment wyprzedza w chi wzorzec /courses/{id}, więc
+			// "details" nie trafi do Get jako identyfikator kursu.
+			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses/details", courseHandler.ListDetails)
 			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses/{id}", courseHandler.Get)
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Patch("/courses/{id}", courseHandler.Patch)
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Post("/courses", courseHandler.CreateCourse)
