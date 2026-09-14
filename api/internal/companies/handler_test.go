@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
+	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
 
 type fakeDB struct {
@@ -217,7 +219,7 @@ func TestListReturnsCompaniesResponse(t *testing.T) {
 	if first.ID != 1 || first.Name != "ABC Sp. z o.o." || first.City != "Warszawa" {
 		t.Fatalf("unexpected first company payload: %+v", first)
 	}
-	if first.NIP != "1234567890" || first.ContactPerson != "Jan Nowak" || first.Telephone != "500600700" {
+	if first.NIP != "1234567890" || first.ContactPerson == nil || *first.ContactPerson != "Jan Nowak" || first.Telephone != "500600700" {
 		t.Fatalf("unexpected first company contact payload: %+v", first)
 	}
 
@@ -225,8 +227,10 @@ func TestListReturnsCompaniesResponse(t *testing.T) {
 	if second.ID != 2 || second.Name != "XYZ SA" || second.City != "Krakow" {
 		t.Fatalf("unexpected second company payload: %+v", second)
 	}
-	if second.ContactPerson != "" {
-		t.Fatalf("expected empty contact person, got %q", second.ContactPerson)
+	// Brak osoby kontaktowej to null, jak w pozostałych odpowiedziach - wcześniej
+	// klucz był pomijany w JSON-ie (omitempty).
+	if second.ContactPerson != nil {
+		t.Fatalf("expected nil contact person, got %q", *second.ContactPerson)
 	}
 }
 
@@ -950,4 +954,31 @@ func TestCreateCompanyReturnsConflictWhenNIPAlreadyExists(t *testing.T) {
 	if responseBody.Error.Message != "company with this NIP already exists" {
 		t.Fatalf("expected unique NIP error message, got %q", responseBody.Error.Message)
 	}
+}
+
+func TestCompanyHandlersReturnNIPValidationMessage(t *testing.T) {
+	serviceErr := fmt.Errorf("%w: %w", ErrInvalidNIP, validation.ErrInvalidChecksum)
+	handler := NewHandler(nil, fakeCompanyCreatorFunc(func() error { return serviceErr }))
+
+	body := `{"name":"ABC","street":"Prosta 1","city":"Warszawa","zipcode":"00-001","nip":"1234567890","telephone":"500600700"}`
+	rec := httptest.NewRecorder()
+	handler.CreateCompany(rec, httptest.NewRequest(http.MethodPost, "/api/v1/companies", strings.NewReader(body)))
+
+	var payload response.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest || payload.Error.Message != "nip validation error: invalid nip checksum" {
+		t.Fatalf("expected 400 with the lookup-by-nip message format, got %d %q", rec.Code, payload.Error.Message)
+	}
+}
+
+type fakeCompanyCreatorFunc func() error
+
+func (f fakeCompanyCreatorFunc) Create(context.Context, CreateCompanyRequest) (CompanyDetailsDTO, error) {
+	return CompanyDetailsDTO{}, f()
+}
+
+func (f fakeCompanyCreatorFunc) Update(context.Context, int64, UpdateCompanyDTO) (CompanyDetailsDTO, error) {
+	return CompanyDetailsDTO{}, f()
 }

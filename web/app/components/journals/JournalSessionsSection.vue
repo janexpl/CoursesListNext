@@ -24,8 +24,8 @@ const emit = defineEmits<{
   saveSession: [session: JournalSession]
 }>()
 
-function formatSessionHours(value: string) {
-  return `${value.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} h`
+function formatSessionHours(value: number) {
+  return `${String(value)} h`
 }
 </script>
 

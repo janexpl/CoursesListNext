@@ -3,6 +3,7 @@ package students
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"log"
 	"strings"
 	"time"
@@ -16,6 +17,29 @@ import (
 )
 
 var ErrInvalidInput = errors.New("invalid input")
+
+// ErrCompanyNotFound oznacza, że companyId z ciała żądania nie wskazuje istniejącej
+// firmy. Wcześniej naruszenie klucza obcego docierało do klienta jako 500.
+var ErrCompanyNotFound = errors.New("company not found")
+
+// studentCompanyForeignKeys to nazwy klucza obcego students.company_id. Bazy
+// założone ze starego schematu mają oba ograniczenia (fk_company oraz dodane
+// migracją 0013 students_company_id_fkey), a PostgreSQL zgłasza to, które sprawdzi
+// jako pierwsze - dlatego dopasowanie do jednej nazwy nie działało na takiej bazie.
+var studentCompanyForeignKeys = map[string]struct{}{
+	"students_company_id_fkey": {},
+	"fk_company":               {},
+}
+
+func companyNotFoundAs(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		if _, ok := studentCompanyForeignKeys[pgErr.ConstraintName]; ok {
+			return ErrCompanyNotFound
+		}
+	}
+	return err
+}
 
 type txScope struct {
 	queries  *dbsqlc.Queries
@@ -67,7 +91,7 @@ func (s *Service) Create(ctx context.Context, req CreateStudentRequest) (Student
 
 	createdStudent, err := tx.queries.CreateStudent(ctx, params)
 	if err != nil {
-		return StudentDetailsDTO{}, err
+		return StudentDetailsDTO{}, companyNotFoundAs(err)
 	}
 
 	createdSnapshot := mapCreateStudentRow(createdStudent)
@@ -122,7 +146,7 @@ func (s *Service) Update(ctx context.Context, studentID int64, req UpdateStudent
 
 	updatedStudent, err := tx.queries.UpdateStudent(ctx, params)
 	if err != nil {
-		return StudentDetailsDTO{}, err
+		return StudentDetailsDTO{}, companyNotFoundAs(err)
 	}
 
 	beforeSnapshot := mapStudentGetRow(beforeStudent)

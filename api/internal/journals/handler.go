@@ -52,6 +52,7 @@ type Querier interface {
 type Handler struct {
 	querier   Querier
 	generator CertificateGenerator
+	scheduler SessionScheduler
 }
 
 func NewHandler(querier Querier, generators ...CertificateGenerator) *Handler {
@@ -60,7 +61,11 @@ func NewHandler(querier Querier, generators ...CertificateGenerator) *Handler {
 		generator = generators[0]
 	}
 
-	return &Handler{querier: querier, generator: generator}
+	// Serwis dzienników realizuje oba interfejsy; bez niego zapis dzienników z sesjami
+	// jest niedostępny, bo nie ma jak sprawdzić, czy program mieści się w datach.
+	scheduler, _ := generator.(SessionScheduler)
+
+	return &Handler{querier: querier, generator: generator, scheduler: scheduler}
 }
 
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -181,13 +186,25 @@ func (h *Handler) AddJournalAttendee(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
+	// Zamknięty dziennik jest dokumentem końcowym - blokujemy dodawanie uczestników
+	// tak samo jak ich usuwanie i zmiany obecności.
+	journal, err := h.querier.GetJournalByID(r.Context(), id)
+	if err != nil {
+		response.HandleDBError(w, err, "journal")
+		return
+	}
+	if journal.Status == "closed" {
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "journal is closed")
+		return
+	}
 	row, err := h.querier.AddJournalAttendee(r.Context(), sqlc.AddJournalAttendeeParams{
 		JournalID: id,
 		StudentID: req.StudentID,
 	})
 	if err != nil {
+		// Dziennik istnieje (sprawdzony wyżej), więc brak wiersza oznacza brak kursanta.
 		if errors.Is(err, pgx.ErrNoRows) {
-			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "journal or student not found")
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "student not found")
 			return
 		}
 		var pgErr *pgconn.PgError
@@ -446,9 +463,13 @@ func (h *Handler) GenerateSessionsFromCourse(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, err = h.querier.GetJournalByID(r.Context(), id)
+	journal, err := h.querier.GetJournalByID(r.Context(), id)
 	if err != nil {
 		response.HandleDBError(w, err, "journal")
+		return
+	}
+	if h.scheduler == nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "journal service is not configured")
 		return
 	}
 
@@ -462,8 +483,12 @@ func (h *Handler) GenerateSessionsFromCourse(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	generatedCount, err := h.querier.GenerateJournalSessionsFromCourse(r.Context(), id)
+	generatedCount, err := h.scheduler.GenerateSessionsFromCourse(r.Context(), id, journal.DateEnd)
 	if err != nil {
+		if errors.Is(err, ErrProgramExceedsJournalDates) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "course program does not fit within journal dates")
+			return
+		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to generate journal sessions")
 		return
 	}
@@ -649,7 +674,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.querier.CreateJournal(r.Context(), sqlc.CreateJournalParams{
+	if h.scheduler == nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "journal service is not configured")
+		return
+	}
+
+	row, err := h.scheduler.CreateJournal(r.Context(), sqlc.CreateJournalParams{
 		CourseID:         req.CourseID,
 		CompanyID:        pgutil.OptionalInt8(req.CompanyID),
 		Title:            title,
@@ -664,6 +694,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		CreatedByUserID:  user.ID,
 	})
 	if err != nil {
+		if errors.Is(err, ErrProgramExceedsJournalDates) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "course program does not fit within journal dates")
+			return
+		}
 		response.HandleDBError(w, err, "course")
 		return
 	}
@@ -1298,7 +1332,7 @@ func mapJournalSessionRow(row sqlc.TrainingJournalSession) JournalSessionDTO {
 		SessionDate: row.SessionDate.Time.Format(response.DateFormat),
 		StartTime:   formatTimeValue(row.StartTime),
 		EndTime:     formatTimeValue(row.EndTime),
-		Hours:       formatNumeric(row.Hours),
+		Hours:       numericToFloat64(row.Hours),
 		Topic:       row.Topic,
 		TrainerName: row.TrainerName,
 		SortOrder:   row.SortOrder,

@@ -448,7 +448,7 @@ const printProgramSplitBySortOrder = computed(() => {
 
     if (!entry) {
       map[session.sortOrder] = {
-        theory: formatProgramHours(session.hours),
+        theory: formatProgramHours(String(session.hours)),
         practice: '0'
       }
       continue

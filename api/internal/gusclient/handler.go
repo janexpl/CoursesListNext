@@ -54,7 +54,7 @@ func (h *Handler) FindCompany(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if fault, ok := errors.AsType[*nip.FaultError](err); ok {
 			if fault.Code == "4" {
-				response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
+				response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found in GUS registry")
 				return
 			}
 		}

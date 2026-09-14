@@ -3,6 +3,7 @@ package students
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -20,6 +21,7 @@ type Querier interface {
 	ListStudents(ctx context.Context, arg dbsqlc.ListStudentsParams) ([]dbsqlc.ListStudentsRow, error)
 	ListCertificatesByStudentID(ctx context.Context, studentID int32) ([]dbsqlc.ListCertificatesByStudentIDRow, error)
 	ListStudentsByCompanyID(ctx context.Context, companyID pgtype.Int8) ([]dbsqlc.ListStudentsByCompanyIDRow, error)
+	GetCompanyByID(ctx context.Context, id int64) (dbsqlc.Company, error)
 }
 
 type Creator interface {
@@ -122,6 +124,14 @@ func (h *Handler) ListCertificatesByStudent(w http.ResponseWriter, r *http.Reque
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list certificates for student")
 		return
 	}
+	// Pusta lista może oznaczać kursanta bez zaświadczeń albo nieistniejącego kursanta -
+	// tylko w tym przypadku dopytujemy o kursanta, żeby odróżnić 200 od 404.
+	if len(rows) == 0 {
+		if _, err := h.querier.GetStudentByID(r.Context(), id); err != nil {
+			response.HandleDBError(w, err, "student")
+			return
+		}
+	}
 	resp := ListCertificatesByStudentResponse{
 		Data: make([]CertificateByStudentDTO, 0, len(rows)),
 	}
@@ -147,6 +157,12 @@ func (h *Handler) ListStudentsByCompanyId(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list students")
 		return
+	}
+	if len(rows) == 0 {
+		if _, err := h.querier.GetCompanyByID(r.Context(), id); err != nil {
+			response.HandleDBError(w, err, "company")
+			return
+		}
 	}
 
 	resp := ListStudentsByCompanyIdResult{
@@ -206,6 +222,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		if errors.Is(err, ErrCompanyNotFound) {
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
+			return
+		}
 		response.HandleDBError(w, err, "student")
 		return
 	}
@@ -260,6 +280,10 @@ func (h *Handler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		if errors.Is(err, ErrCompanyNotFound) {
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
+			return
+		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create student")
 		return
 	}

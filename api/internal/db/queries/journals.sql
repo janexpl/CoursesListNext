@@ -862,3 +862,11 @@
 -- name: DeleteJournalSignedScan :execrows
   DELETE FROM training_journal_signed_scans
   WHERE journal_id = $1;
+
+-- name: GetJournalLastSessionDate :one
+-- Data ostatniej sesji dziennika (NULL, gdy brak sesji). Sprawdzana w tej samej
+-- transakcji co generowanie sesji, żeby odrzucić program, który nie mieści się
+-- w zakresie dat dziennika.
+SELECT MAX(session_date)::date AS last_session_date
+FROM training_journal_sessions
+WHERE journal_id = $1;

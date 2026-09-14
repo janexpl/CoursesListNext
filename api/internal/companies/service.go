@@ -3,6 +3,7 @@ package companies
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 
@@ -15,6 +16,10 @@ import (
 )
 
 var ErrInvalidInput = errors.New("invalid input")
+
+// ErrInvalidNIP opakowuje konkretny błąd z pakietu validation, żeby handler mógł
+// zwrócić ten sam komunikat co GET /companies/lookup-by-nip.
+var ErrInvalidNIP = errors.New("invalid nip")
 
 type txScope struct {
 	queries  *dbsqlc.Queries
@@ -175,6 +180,13 @@ func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyPar
 
 	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" || telephone == "" {
 		return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
+	}
+	// NIP zapisujemy jako same cyfry - w tym formacie są wszystkie istniejące
+	// wartości, a jednolity zapis pozwala ograniczeniu unikalności wyłapać ten sam
+	// NIP wpisany z myślnikami.
+	nip = validation.NormalizeNIP(nip)
+	if err := validation.ValidateNIP(nip); err != nil {
+		return dbsqlc.CreateCompanyParams{}, fmt.Errorf("%w: %w", ErrInvalidNIP, err)
 	}
 
 	return dbsqlc.CreateCompanyParams{

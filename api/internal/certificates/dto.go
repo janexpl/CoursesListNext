@@ -20,13 +20,13 @@ type CertificateDetailsDTO struct {
 	Date              string                       `json:"date"`
 	StudentID         int64                        `json:"studentId"`
 	CourseID          int64                        `json:"courseId"`
-	StudentName       string                       `json:"studentName"`
-	StudentSecondname string                       `json:"studentSecondname"`
+	StudentFirstname  string                       `json:"studentFirstname"`
+	StudentSecondname *string                      `json:"studentSecondname"`
 	StudentLastname   string                       `json:"studentLastname"`
 	StudentBirthdate  string                       `json:"studentBirthdate"`
 	StudentBirthplace string                       `json:"studentBirthplace"`
-	StudentPesel      string                       `json:"studentPesel"`
-	CompanyName       string                       `json:"companyName"`
+	StudentPesel      *string                      `json:"studentPesel"`
+	CompanyName       *string                      `json:"companyName"`
 	CourseDateStart   string                       `json:"courseDateStart"`
 	CourseDateEnd     *string                      `json:"courseDateEnd"`
 	RegistryYear      int                          `json:"registryYear"`

@@ -68,7 +68,7 @@ func mapExpiringCertificates(rows []sqlc.ListExpiringCertificatesRow) []Expiring
 			CompanyName:    row.CompanyName,
 			CourseSymbol:   row.CourseSymbol,
 			RegistryYear:   row.Year,
-			RegistryNumber: float64(row.Number),
+			RegistryNumber: int64(row.Number),
 		})
 	}
 	return dtos

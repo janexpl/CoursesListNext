@@ -2,7 +2,9 @@ package courses
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -64,6 +66,13 @@ func newTxScope(tx pgx.Tx, queries *sqlc.Queries) txScope {
 var (
 	ErrInvalidInput             = errors.New("invalid input")
 	ErrDatabaseTransactionError = errors.New("database error")
+
+	// Szczegółowe błędy walidacji opakowują ErrInvalidInput, więc kod sprawdzający
+	// ogólny błąd działa jak dotąd, a handler może zwrócić konkretny komunikat.
+	ErrInvalidCourseProgram           = fmt.Errorf("%w: course program must be a JSON array", ErrInvalidInput)
+	ErrUnsupportedTranslationLanguage = fmt.Errorf("%w: unsupported translation language", ErrInvalidInput)
+	ErrDuplicateTranslationLanguage   = fmt.Errorf("%w: duplicate translation language", ErrInvalidInput)
+	ErrIncompleteTranslation          = fmt.Errorf("%w: translation fields are required", ErrInvalidInput)
 )
 
 func NewService(pool *pgxpool.Pool, queries *sqlc.Queries, recorder *auditlog.Recorder) *Service {
@@ -205,8 +214,12 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 		}
 		return CourseDetailDTO{}, ErrDatabaseTransactionError
 	}
-	if err := syncCourseCertificateTranslations(ctx, tx.queries, courseID, translations); err != nil {
-		return CourseDetailDTO{}, ErrDatabaseTransactionError
+	// Pominięte certificateTranslations zostawiają tłumaczenia bez zmian; pusta
+	// lista usuwa je jawnie. Wcześniej pominięcie pola kasowało wszystkie tłumaczenia.
+	if translations != nil {
+		if err := syncCourseCertificateTranslations(ctx, tx.queries, courseID, translations); err != nil {
+			return CourseDetailDTO{}, ErrDatabaseTransactionError
+		}
 	}
 
 	courseTranslations, err := tx.queries.ListCourseCertificateTranslationsByCourseID(ctx, courseID)
@@ -244,10 +257,28 @@ func validateCourseInput(input CreateCourseInput) error {
 	if mainName == "" || name == "" || symbol == "" || courseProgram == "" || certFrontPage == "" {
 		return ErrInvalidInput
 	}
+	return validateCourseProgram(courseProgram)
+}
+
+// validateCourseProgram sprawdza, że program jest tablicą JSON. Kolumna w bazie ma
+// typ json, więc bez tej kontroli niepoprawna wartość kończyła się błędem zapisu
+// zgłaszanym klientowi jako 500.
+func validateCourseProgram(program string) error {
+	var entries []json.RawMessage
+	// json.Unmarshal przyjmuje "null" do slice'a bez błędu i zostawia nil, dlatego
+	// poza błędem sprawdzamy też, czy faktycznie powstała tablica ("[]" daje pusty, nie-nil slice).
+	if err := json.Unmarshal([]byte(program), &entries); err != nil || entries == nil {
+		return ErrInvalidCourseProgram
+	}
 	return nil
 }
 
+// normalizeTranslationInput zachowuje rozróżnienie między brakiem listy (nil - nie
+// zmieniaj tłumaczeń) a pustą listą (usuń wszystkie tłumaczenia).
 func normalizeTranslationInput(input []CourseTranslationInput) ([]CourseTranslationInput, error) {
+	if input == nil {
+		return nil, nil
+	}
 	output := make([]CourseTranslationInput, 0, len(input))
 	seen := make(map[string]struct{}, len(input))
 	for _, translation := range input {
@@ -256,16 +287,17 @@ func normalizeTranslationInput(input []CourseTranslationInput) ([]CourseTranslat
 		certFrontPage := strings.TrimSpace(translation.CertFrontPage)
 		languageCode := strings.ToLower(strings.TrimSpace(translation.LanguageCode))
 		if languageCode == "" || courseProgram == "" || certFrontPage == "" || courseName == "" {
-			return nil, ErrInvalidInput
+			return nil, ErrIncompleteTranslation
 		}
-		if languageCode == "pl" {
-			return nil, ErrInvalidInput
-		}
+		// "pl" nie jest na liście obsługiwanych - to język bazowy kursu.
 		if _, supported := supportedTranslationLanguageCodes[languageCode]; !supported {
-			return nil, ErrInvalidInput
+			return nil, ErrUnsupportedTranslationLanguage
 		}
 		if _, exists := seen[languageCode]; exists {
-			return nil, ErrInvalidInput
+			return nil, ErrDuplicateTranslationLanguage
+		}
+		if err := validateCourseProgram(courseProgram); err != nil {
+			return nil, err
 		}
 		seen[languageCode] = struct{}{}
 		output = append(output, CourseTranslationInput{

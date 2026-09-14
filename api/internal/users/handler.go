@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
@@ -68,6 +69,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Role:      req.Role,
 	})
 	if err != nil {
+		if isEmailConflict(err) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "user with this email already exists")
+			return
+		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create user")
 		return
 	}
@@ -217,6 +222,10 @@ func (h *Handler) PatchProfile(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusUnauthorized, response.CodeUnauthorized, "unauthorized")
 			return
 		}
+		if isEmailConflict(err) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "user with this email already exists")
+			return
+		}
 		response.HandleDBError(w, err, "user")
 		return
 	}
@@ -270,6 +279,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusForbidden, response.CodeForbidden, "cannot update last admin role")
 			return
 		}
+		if isEmailConflict(err) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "user with this email already exists")
+			return
+		}
 		response.HandleDBError(w, err, "user")
 		return
 	}
@@ -277,6 +290,26 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		Data: row,
 	})
 }
+
+// isEmailConflict rozpoznaje naruszenie unikalności adresu e-mail. Wcześniej
+// zajęty adres przy tworzeniu kończył się 500, a przy zmianie - "failed to get user".
+func isEmailConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return false
+	}
+	_, ok := userEmailUniqueConstraints[pgErr.ConstraintName]
+	return ok
+}
+
+// userEmailUniqueConstraints to nazwy ograniczenia unikalności users.email. Bazy ze
+// starego schematu mają oba (unique_email oraz users_email_unique z migracji 0004),
+// a zgłaszane jest to, które PostgreSQL sprawdzi jako pierwsze.
+var userEmailUniqueConstraints = map[string]struct{}{
+	"users_email_unique": {},
+	"unique_email":       {},
+}
+
 func mapUpdateUserRow(row sqlc.UpdateUserRow) UserDTO {
 	return mapUserRow(sqlc.ListUsersRow(row))
 }

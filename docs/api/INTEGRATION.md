@@ -157,7 +157,8 @@ Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem.
 
 ### Pola opcjonalne
 
-W odpowiedziach brakująca wartość to zwykle `null`. Wyjątki, na które trzeba uważać, są w sekcji 5.
+W odpowiedziach brakująca wartość to `null`. Jedyny wyjątek: `companyName` na listach zaświadczeń i na pulpicie
+to pusty string, gdy kursant nie miał firmy.
 W żądaniach pusty string w polu opcjonalnym jest zapisywany jako `null` (białe znaki na brzegach są obcinane).
 
 ### Ciała żądań
@@ -189,13 +190,13 @@ W żądaniach pusty string w polu opcjonalnym jest zapisywany jako `null` (biał
 ## 4. `PATCH` oznacza pełne nadpisanie
 
 **To najważniejsza reguła tego API.** Wszystkie operacje `PATCH` zapisujące obiekt działają jak `PUT`:
-pole pominięte w żądaniu **nie zostaje bez zmian**, tylko jest czyszczone.
+pole pominięte w żądaniu **nie zostaje bez zmian**, tylko jest czyszczone. Jedyny wyjątek to tłumaczenia kursu (niżej).
 
 | Operacja | Co zniknie, jeśli pole pominiesz |
 |---|---|
 | `PATCH /students/{id}` | `secondName`, `pesel`, adres, `telephone`, `companyId` (kursant straci firmę) |
 | `PATCH /companies/{id}` | `email`, `contactPerson`, `note`, `expiryNotificationEmail`; `expiryNotificationsEnabled` → `false` |
-| `PATCH /courses/{id}` | **wszystkie tłumaczenia kursu** (lista jest synchronizowana — co nie jest na liście, jest usuwane) |
+| `PATCH /courses/{id}` | — (wszystkie pola kursu wymagane). **Wyjątek:** pominięte `certificateTranslations` zostawia tłumaczenia bez zmian; podana lista je zastępuje, a `[]` usuwa wszystkie |
 | `PATCH /certificates/{id}` | `courseDateEnd` |
 | `PATCH /journals/{id}` | `companyId`, `organizerAddress`, `notes` |
 | `PATCH /admin/users/{id}` | — (wszystkie pola wymagane) |
@@ -221,59 +222,55 @@ Operacje `PATCH` o innej semantyce (nie nadpisują obiektu): `PATCH /journals/{i
 
 ---
 
-## 5. Pułapki i niespójności
+## 5. Zachowania, o których trzeba wiedzieć
 
-Zachowania zgodne z obecnym kodem, o których schemat pola nie mówi wprost. Nie traktuj ich jako błędów
-do obejścia sprytem — zakoduj je jawnie.
+Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łatwo je przeoczyć.
 
 ### Zaświadczenia
 
-1. **`studentName` znaczy co innego** na liście (imię i nazwisko) i w szczegółach (samo imię; nazwisko w `studentLastname`).
-2. W szczegółach zaświadczenia brakujące `studentSecondname`, `studentPesel`, `companyName` to **pusty string**, nie `null`.
-3. Odpowiedź `PATCH /certificates/{id}` zawiera w `printVariants` tylko wariant oryginalny. Pełną listę zwraca GET.
-4. `DELETE /certificates/{id}` wymaga konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF.
+1. `studentName` na liście zaświadczeń to imię i nazwisko. W szczegółach dane są rozbite na
+   `studentFirstname`, `studentSecondname` i `studentLastname`.
+2. `DELETE /certificates/{id}` wymaga konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF,
+   a jego numer rejestru można wykorzystać ponownie.
+3. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
+   (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 
 ### Kursy
 
-5. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
+4. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
    `"[{\"Subject\":\"Przepisy BHP\",\"TheoryTime\":\"4\",\"PracticeTime\":\"0\"}]"`.
-   Klucze wielką literą, godziny jako stringi. Niepoprawny JSON przy zapisie → 500.
-6. `PATCH /courses/{id}` bez `certificateTranslations` usuwa wszystkie tłumaczenia (sekcja 4).
-7. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy. Nieobsługiwany kod,
-   duplikat kodu albo puste pole tłumaczenia → 400 `invalid request body` (bez wskazania, które pole).
-8. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
+   Musi być tablicą JSON (inaczej 400 `course program must be a JSON array`); klucze wielką literą, godziny jako stringi.
+5. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy.
+   Przy `PATCH /courses/{id}` pominięte `certificateTranslations` zostawia je bez zmian, a `[]` usuwa wszystkie (sekcja 4).
+6. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
    nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
 
 ### Kursanci i firmy
 
-9. Na liście firm `contactPerson` i `telephone` są **pomijane w JSON**, gdy puste (nie `null`) — traktuj brak klucza jako brak wartości.
-10. `POST /students` / `PATCH /students/{id}` z nieistniejącym `companyId` → 500, nie 400/404.
-11. NIP przy zapisie firmy **nie jest walidowany** (tylko unikalność → 409). Waliduj go przez
-    `GET /companies/lookup-by-nip` albo po swojej stronie. PESEL nie jest walidowany nigdzie.
-12. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-13. Brak operacji usuwania kursantów, firm i kursów.
+7. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
+   `GET /companies/lookup-by-nip`) i zapisywany jako same cyfry — `123-456-32-18` wróci jako `1234563218`.
+8. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+9. Brak operacji usuwania kursantów, firm i kursów.
 
 ### Dzienniki
 
-14. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
-    ich liczbę podaje `sessionsCount` w odpowiedzi. `POST .../sessions/generate-from-course` zwykle zwróci wtedy 409.
-15. Wygenerowane sesje mogą wypaść **po** `dateEnd`, jeśli program jest dłuższy niż zakres dat — API tego nie sprawdza
-    przy tworzeniu, ale `PATCH /journals/{id}` odrzuci później zakres, który nie obejmuje wszystkich sesji (409 `session outside range`).
-16. `JournalSession.hours` to **string** z liczbą, podczas gdy `totalHours` dziennika to liczba.
-17. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-18. Zamknięty dziennik blokuje (409): zmianę nagłówka, zmianę sesji, obecność, usuwanie uczestników.
-    **Nie blokuje**: dodawania uczestników, wgrywania skanów, powiązywania zaświadczeń, usunięcia całego dziennika.
-19. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+10. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+    ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
+    `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
+    `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
+11. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+12. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+    **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
+    zaświadczeń ani usunięcia całego dziennika.
+13. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-20. Listy „podrzędne" (`/students/{id}/certificates`, `/companies/{id}/students`, `/companies|courses/{id}/certificates`,
-    historia zmian) dla nieistniejącego rodzica zwracają **pustą listę, nie 404**.
-21. `dashboard.expiringCertificates[].registryNumber` to `number`, nie `integer` (wartość zawsze całkowita).
-    Lista obejmuje tylko kursantów z firmą i liczy ważność z **aktualnego** okresu ważności kursu,
-    a `/certificates.expiryDate` — z okresu zapisanego w zaświadczeniu. Daty mogą się różnić.
-22. `POST /admin/users` z zajętym e-mailem → 500, nie 409.
+14. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+    dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
+15. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+    to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
 
@@ -294,7 +291,8 @@ POST /api/v1/companies                                         # companies:write
   "telephone": "...", "expiryNotificationsEnabled": false }
 ```
 
-409 = firma już istnieje → znajdź ją przez `GET /companies?search=1234563218`.
+409 = firma już istnieje → znajdź ją przez `GET /companies?search=1234563218`. 400 `nip validation error: …` = niepoprawny NIP;
+`lookup-by-nip` stosuje tę samą walidację, więc NIP, który przeszedł wyszukiwanie w GUS, przejdzie też zapis.
 
 ### 6.2. Wystawienie zaświadczenia ręcznie
 
@@ -369,12 +367,12 @@ Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) 
 
 | Status | Ponawiać? | Uwagi |
 |---|---|---|
-| 400 | Nie | Błąd po stronie aplikacji. `invalid request body` nie wskazuje pola — sprawdź sekcje 4 i 5 oraz schemat. |
+| 400 | Nie | Błąd po stronie aplikacji. Ogólne `invalid request body` nie wskazuje pola (brak wymaganego pola, pole spoza schematu, zła data) — sprawdź sekcje 4 i 5 oraz schemat; walidacja NIP-u, programu kursu i tłumaczeń zwraca konkretne komunikaty. |
 | 401 | Nie | Klucz nieważny — zatrzymaj integrację i zgłoś potrzebę nowego klucza. |
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
 | 409 | Zależy | Konflikt stanu. Dla numeru rejestru: pobierz nowy numer i ponów. |
-| 500 | Ostrożnie | Część 500 to w rzeczywistości błędy danych wejściowych (sekcja 5: pkt 5, 10, 22). Ponów najwyżej raz, z opóźnieniem; operacje `POST` nie są idempotentne. |
+| 500 | Ostrożnie | Błąd serwera. Ponów najwyżej raz, z opóźnieniem; operacje `POST` nie są idempotentne. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany — przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
 API nie obsługuje kluczy idempotencji.

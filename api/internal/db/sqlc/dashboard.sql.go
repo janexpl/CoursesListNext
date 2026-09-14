@@ -10,15 +10,25 @@ import (
 )
 
 const countExpiringCertificates = `-- name: CountExpiringCertificates :one
-SELECT COUNT(*) FROM certificates c
-JOIN registries r ON c.registry_id = r.id
-JOIN courses cr ON r.course_id = cr.id
-WHERE c.coursedateend IS NOT NULL
-  AND (c.coursedateend + cr.expirytime::int * 365) >= CURRENT_DATE
-  AND (c.coursedateend + cr.expirytime::int * 365) < CURRENT_DATE + INTERVAL '30 days'
-  AND c.deleted_at IS NULL
+SELECT COUNT(*)
+FROM certificates c
+WHERE c.deleted_at IS NULL
+  AND (
+      CASE
+          WHEN c.coursedateend IS NOT NULL AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+          THEN c.coursedateend + c.course_expiry_time_snapshot::int * 365
+      END
+  ) >= CURRENT_DATE
+  AND (
+      CASE
+          WHEN c.coursedateend IS NOT NULL AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+          THEN c.coursedateend + c.course_expiry_time_snapshot::int * 365
+      END
+  ) < CURRENT_DATE + 30
 `
 
+// Ten sam zbiór co ListExpiringCertificates, bez limitu. Wcześniej licznik i lista
+// różniły się warunkami (lista pomijała kursantów bez firmy).
 func (q *Queries) CountExpiringCertificates(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countExpiringCertificates)
 	var count int64
@@ -47,26 +57,37 @@ func (q *Queries) GetDashboardStats(ctx context.Context) (GetDashboardStatsRow, 
 }
 
 const listExpiringCertificates = `-- name: ListExpiringCertificates :many
+WITH expiring AS (
+    SELECT
+        c.id,
+        CASE
+            WHEN c.coursedateend IS NOT NULL AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN c.coursedateend + c.course_expiry_time_snapshot::int * 365
+        END AS expiry,
+        c.student_firstname_snapshot,
+        c.student_lastname_snapshot,
+        c.company_name_snapshot,
+        c.course_name_snapshot,
+        c.course_symbol_snapshot,
+        c.registry_id
+    FROM certificates c
+    WHERE c.deleted_at IS NULL
+)
 SELECT
-    c.id,
-    TO_CHAR(c.coursedateend + cr.expirytime::int * 365, 'YYYY-MM-DD') AS expiry_date,
-    s.firstname,
-    s.lastname,
-    comp.name AS company_name,
+    e.id,
+    TO_CHAR(e.expiry, 'YYYY-MM-DD') AS expiry_date,
+    e.student_firstname_snapshot AS firstname,
+    e.student_lastname_snapshot AS lastname,
+    COALESCE(e.company_name_snapshot, '') AS company_name,
     r.year,
     r.number,
-    cr.name AS course_name,
-    cr.symbol AS course_symbol
-FROM certificates c
-JOIN students s ON c.student_id = s.id
-JOIN companies comp ON s.company_id = comp.id
-JOIN registries r ON c.registry_id = r.id
-JOIN courses cr ON r.course_id = cr.id
-WHERE c.coursedateend IS NOT NULL
-  AND (c.coursedateend + cr.expirytime::int * 365) >= CURRENT_DATE
-  AND (c.coursedateend + cr.expirytime::int * 365) < CURRENT_DATE + INTERVAL '30 days'
-  AND c.deleted_at IS NULL
-ORDER BY expiry_date ASC
+    e.course_name_snapshot AS course_name,
+    e.course_symbol_snapshot AS course_symbol
+FROM expiring e
+JOIN registries r ON r.id = e.registry_id
+WHERE e.expiry >= CURRENT_DATE
+  AND e.expiry < CURRENT_DATE + 30
+ORDER BY e.expiry ASC, e.id ASC
 LIMIT 50
 `
 
@@ -82,6 +103,11 @@ type ListExpiringCertificatesRow struct {
 	CourseSymbol string `json:"course_symbol"`
 }
 
+// Ważność liczona tak samo jak expiry_date w ListCertificates: z okresu ważności
+// zapisanego w zaświadczeniu w chwili wystawienia, a nie z aktualnego okresu kursu.
+// Dane kursanta, firmy i kursu też pochodzą z kopii w zaświadczeniu, więc zaświadczenie
+// kursanta bez firmy jest na liście (z pustą nazwą firmy), tak jak w ogólnej liście.
+// CASE gwarantuje, że rzutowanie na int nie wykona się dla nieliczbowego okresu.
 func (q *Queries) ListExpiringCertificates(ctx context.Context) ([]ListExpiringCertificatesRow, error) {
 	rows, err := q.db.Query(ctx, listExpiringCertificates)
 	if err != nil {

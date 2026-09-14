@@ -153,8 +153,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		CertificateTranslations: mapCourseTranslationInputs(req.CertificateTranslations),
 	})
 	if err != nil {
-		if errors.Is(err, ErrInvalidInput) {
-			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		if message, ok := courseValidationMessage(err); ok {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, message)
 			return
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -200,8 +200,8 @@ func (h *Handler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		CertificateTranslations: mapCourseTranslationInputs(req.CertificateTranslations),
 	})
 	if err != nil {
-		if errors.Is(err, ErrInvalidInput) {
-			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		if message, ok := courseValidationMessage(err); ok {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, message)
 			return
 		}
 		if isCourseSymbolConflict(err) {
@@ -286,6 +286,25 @@ func parseExpiryTime(value pgtype.Text) *int {
 	return &years
 }
 
+// courseValidationMessage zamienia błąd walidacji na komunikat dla klienta.
+// Szczegółowe błędy mają pierwszeństwo przed ogólnym "invalid request body".
+func courseValidationMessage(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ErrInvalidCourseProgram):
+		return "course program must be a JSON array", true
+	case errors.Is(err, ErrUnsupportedTranslationLanguage):
+		return "unsupported translation language", true
+	case errors.Is(err, ErrDuplicateTranslationLanguage):
+		return "duplicate translation language", true
+	case errors.Is(err, ErrIncompleteTranslation):
+		return "translation fields are required", true
+	case errors.Is(err, ErrInvalidInput):
+		return "invalid request body", true
+	default:
+		return "", false
+	}
+}
+
 func isCourseSymbolConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "check_unique_symbol"
@@ -306,7 +325,12 @@ func makeCourseCertificateTranslationsDTO(
 	return translationsDTO
 }
 
+// mapCourseTranslationInputs przenosi nil dalej: brak pola w JSON-ie oznacza
+// "nie zmieniaj tłumaczeń", a pusta tablica - "usuń wszystkie".
 func mapCourseTranslationInputs(translations []CourseCertificateTranslationDTO) []CourseTranslationInput {
+	if translations == nil {
+		return nil
+	}
 	result := make([]CourseTranslationInput, 0, len(translations))
 	for _, translation := range translations {
 		result = append(result, CourseTranslationInput(translation))

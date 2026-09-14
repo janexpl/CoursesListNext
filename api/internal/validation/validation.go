@@ -56,6 +56,13 @@ func ValidateNIP(nip string) error {
 	if len(digits) != 10 {
 		return ErrInvalidLength
 	}
+	// Bez tej kontroli litery dawały w sumie kontrolnej przypadkowe wartości
+	// (digits[i]-'0'), więc np. "12345abcde" mógł przejść walidację.
+	for _, char := range digits {
+		if char < '0' || char > '9' {
+			return ErrInvalidFormat
+		}
+	}
 
 	weights := [9]int{6, 5, 7, 2, 3, 4, 5, 6, 7}
 

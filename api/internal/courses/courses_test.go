@@ -1142,3 +1142,81 @@ func TestParseExpiryTime(t *testing.T) {
 func intPtr(value int) *int {
 	return &value
 }
+
+func TestCourseHandlersReturnSpecificValidationMessages(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceErr  error
+		wantMessage string
+	}{
+		{name: "program", serviceErr: ErrInvalidCourseProgram, wantMessage: "course program must be a JSON array"},
+		{name: "język", serviceErr: ErrUnsupportedTranslationLanguage, wantMessage: "unsupported translation language"},
+		{name: "duplikat", serviceErr: ErrDuplicateTranslationLanguage, wantMessage: "duplicate translation language"},
+		{name: "niekompletne", serviceErr: ErrIncompleteTranslation, wantMessage: "translation fields are required"},
+		{name: "ogólny", serviceErr: ErrInvalidInput, wantMessage: "invalid request body"},
+	}
+	body := `{"mainName":"BHP","name":"Szkolenie","symbol":"BHP","expiryTime":5,"courseProgram":"[]","certFrontPage":"<p>x</p>"}`
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := NewHandler(fakeQuerier{}, fakeCreator{
+				CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+					return CourseDetailDTO{}, tc.serviceErr
+				},
+				UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
+					return CourseDetailDTO{}, tc.serviceErr
+				},
+			})
+
+			for _, run := range []func() *httptest.ResponseRecorder{
+				func() *httptest.ResponseRecorder {
+					rec := httptest.NewRecorder()
+					handler.CreateCourse(rec, httptest.NewRequest(http.MethodPost, "/courses", strings.NewReader(body)))
+					return rec
+				},
+				func() *httptest.ResponseRecorder {
+					rec := httptest.NewRecorder()
+					req := httptest.NewRequest(http.MethodPatch, "/courses/12", strings.NewReader(body))
+					req.SetPathValue("id", "12")
+					handler.Patch(rec, req)
+					return rec
+				},
+			} {
+				rec := run()
+				var payload response.ErrorResponse
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				if rec.Code != http.StatusBadRequest || payload.Error.Message != tc.wantMessage {
+					t.Fatalf("expected 400 %q, got %d %q", tc.wantMessage, rec.Code, payload.Error.Message)
+				}
+			}
+		})
+	}
+}
+
+func TestPatchCoursePassesOmittedTranslationsAsNil(t *testing.T) {
+	var received []CourseTranslationInput
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		UpdateFunc: func(_ context.Context, _ int64, input UpdateCourseInput) (CourseDetailDTO, error) {
+			received = input.CertificateTranslations
+			return CourseDetailDTO{}, nil
+		},
+	})
+
+	send := func(body string) {
+		req := httptest.NewRequest(http.MethodPatch, "/courses/12", strings.NewReader(body))
+		req.SetPathValue("id", "12")
+		handler.Patch(httptest.NewRecorder(), req)
+	}
+
+	send(`{"mainName":"BHP","name":"Szkolenie","symbol":"BHP","expiryTime":5,"courseProgram":"[]","certFrontPage":"<p>x</p>"}`)
+	if received != nil {
+		t.Fatalf("omitted certificateTranslations must reach the service as nil, got %#v", received)
+	}
+
+	send(`{"mainName":"BHP","name":"Szkolenie","symbol":"BHP","expiryTime":5,"courseProgram":"[]","certFrontPage":"<p>x</p>","certificateTranslations":[]}`)
+	if received == nil || len(received) != 0 {
+		t.Fatalf("an explicit empty list must reach the service as an empty non-nil slice, got %#v", received)
+	}
+}

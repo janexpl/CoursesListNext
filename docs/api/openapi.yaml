@@ -145,14 +145,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-        "500":
-          description: >-
-            Także gdy `companyId` wskazuje nieistniejącą firmę — API nie rozróżnia tego przypadku
-            (`failed to create student`).
+        "404":
+          description: "Firma wskazana w `companyId` nie istnieje (`company not found`)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /students/{id}:
     parameters:
@@ -206,7 +206,11 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: "Kursant nie istnieje (`student not found`) albo firma z `companyId` nie istnieje (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -219,7 +223,7 @@ paths:
       summary: Zaświadczenia kursanta
       description: >-
         Bez paginacji, sortowanie: data wystawienia malejąco. Pomija zaświadczenia usunięte.
-        Nieistniejący kursant daje pustą listę, nie 404. `id` musi mieścić się w int32.
+        `id` musi mieścić się w int32.
       x-required-scope: certificates:read
       responses:
         "200":
@@ -234,6 +238,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Kursant nie istnieje (`student not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /students/{id}/audit-log:
     parameters:
@@ -299,7 +309,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CompanyDetailsResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `invalid request body` albo niepoprawny NIP: `nip validation error: nip must contain exactly 10 digits`,
+            `nip validation error: nip contains invalid characters`, `nip validation error: invalid nip checksum`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -341,7 +357,7 @@ paths:
           description: >-
             Brak NIP-u (`no nip value in request`) lub błędny NIP
             (`nip validation error: nip must contain exactly 10 digits`,
-            `nip validation error: invalid nip checksum`).
+            `nip validation error: nip contains invalid characters`, `nip validation error: invalid nip checksum`).
           content:
             application/json:
               schema:
@@ -351,7 +367,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: "GUS nie zna firmy o tym NIP-ie (`company not found`)."
+          description: "GUS nie zna firmy o tym NIP-ie (`company not found in GUS registry`)."
           content:
             application/json:
               schema:
@@ -411,7 +427,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CompanyDetailsResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `invalid request body` albo niepoprawny NIP: `nip validation error: nip must contain exactly 10 digits`,
+            `nip validation error: nip contains invalid characters`, `nip validation error: invalid nip checksum`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -435,7 +457,7 @@ paths:
       operationId: listCompanyStudents
       summary: Kursanci firmy
       description: >-
-        Bez paginacji i limitu, sortowanie: nazwisko, imię. Nieistniejąca firma daje pustą listę, nie 404.
+        Bez paginacji i limitu, sortowanie: nazwisko, imię.
       x-required-scope: students:read
       responses:
         "200":
@@ -450,6 +472,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Firma nie istnieje (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /companies/{id}/certificates:
     parameters:
@@ -480,6 +508,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Firma nie istnieje (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /companies/{id}/audit-log:
     parameters:
@@ -547,7 +581,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CourseDetailsResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `invalid request body` (brak wymaganego pola, ujemne `expiryTime`), `course program must be a JSON array`,
+            `unsupported translation language`, `duplicate translation language`, `translation fields are required`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -559,11 +599,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "Także gdy `courseProgram` nie jest poprawnym JSON-em (`failed to create course`)."
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+          $ref: "#/components/responses/InternalError"
 
   /courses/details:
     get:
@@ -622,9 +658,9 @@ paths:
       operationId: replaceCourse
       summary: Aktualizacja kursu (pełne nadpisanie, łącznie z tłumaczeniami)
       description: >-
-        **Mimo metody PATCH to pełne nadpisanie.** Lista `certificateTranslations` jest synchronizowana
-        z bazą: tłumaczenia z listy są wstawiane lub nadpisywane, a **każde tłumaczenie, którego nie ma
-        na liście, jest usuwane**. Pominięcie pola usuwa wszystkie tłumaczenia kursu. Zmiana kursu nie
+        **Mimo metody PATCH to pełne nadpisanie** pól kursu. Wyjątkiem są tłumaczenia: pominięte
+        `certificateTranslations` zostawia je bez zmian. Podana lista jest synchronizowana z bazą — tłumaczenia
+        z listy są wstawiane lub nadpisywane, a te spoza listy usuwane (`[]` usuwa wszystkie). Zmiana kursu nie
         wpływa na wystawione już zaświadczenia (przechowują kopię treści).
       x-required-scope: courses:write
       requestBody:
@@ -641,7 +677,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CourseDetailsResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `invalid request body` (brak wymaganego pola, ujemne `expiryTime`), `course program must be a JSON array`,
+            `unsupported translation language`, `duplicate translation language`, `translation fields are required`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -678,6 +720,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Kurs nie istnieje (`course not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /courses/{id}/audit-log:
     parameters:
@@ -816,8 +864,7 @@ paths:
       description: >-
         Pozwala zmienić kursanta i daty. Numer rejestru, kurs i język są niezmienne. Pominięte
         `courseDateEnd` zostanie ustawione na `null`. Zmiana kursanta odświeża kopię jego danych w
-        zaświadczeniu. W odpowiedzi `printVariants` zawiera **tylko** wariant oryginalny — pełną listę
-        wariantów zwraca GET.
+        zaświadczeniu. Odpowiedź ma ten sam kształt co GET, łącznie z pełną listą `printVariants`.
       x-required-scope: certificates:write
       requestBody:
         required: true
@@ -1081,7 +1128,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/JournalDetailsResponse"
         "400":
-          description: "`invalid request body`, `invalid dateStart`, `invalid dateEnd`."
+          description: >-
+            `invalid request body`, `invalid dateStart`, `invalid dateEnd` albo program kursu nie mieści się
+            w zakresie dat (`course program does not fit within journal dates`) — wtedy dziennik nie zostaje utworzony.
           content:
             application/json:
               schema:
@@ -1295,7 +1344,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenerateSessionsResponse"
         "400":
-          description: "`course program is empty`."
+          description: >-
+            `course program is empty` albo wygenerowane sesje nie mieściłyby się w zakresie dat dziennika
+            (`course program does not fit within journal dates`) — wtedy żadna sesja nie zostaje zapisana.
           content:
             application/json:
               schema:
@@ -1391,7 +1442,7 @@ paths:
       summary: Dodanie kursanta do dziennika
       description: >-
         Zapisuje kopię imienia i nazwiska, daty urodzenia i firmy kursanta z chwili dodania.
-        API nie blokuje dodawania do dziennika zamkniętego.
+        Zamknięty dziennik odrzuca dodawanie uczestników.
       x-required-scope: journals:write
       requestBody:
         required: true
@@ -1413,13 +1464,13 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: "`journal or student not found`."
+          description: "`journal not found` albo `student not found`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: "`student already added to journal`."
+          description: "`student already added to journal` albo `journal is closed`."
           content:
             application/json:
               schema:
@@ -1861,12 +1912,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-        "500":
-          description: "Także przy zajętym adresie e-mail (`failed to create user`)."
+        "409":
+          description: "Adres e-mail jest zajęty (`user with this email already exists`)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /admin/users/{id}:
     parameters:
@@ -1908,6 +1961,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: "Adres e-mail jest zajęty (`user with this email already exists`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
     delete:
@@ -2418,7 +2477,7 @@ components:
     # ------------------------------------------------------------- companies
     CompanyListItem:
       type: object
-      required: [id, name, city, nip]
+      required: [id, name, city, nip, contactPerson, telephone]
       properties:
         id:
           type: integer
@@ -2430,11 +2489,9 @@ components:
         nip:
           type: string
         contactPerson:
-          type: string
-          description: "**Pole pomijane** w JSON, gdy puste (a nie `null`)."
+          type: [string, "null"]
         telephone:
           type: string
-          description: "**Pole pomijane** w JSON, gdy puste (a nie `null`)."
     CompanyListResponse:
       type: object
       required: [data]
@@ -2484,8 +2541,8 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        Wymagane pola nie mogą być puste po obcięciu białych znaków. NIP **nie** jest tu walidowany
-        (tylko unikalność) — do walidacji i pobrania danych użyj `GET /companies/lookup-by-nip`.
+        Wymagane pola nie mogą być puste po obcięciu białych znaków. NIP jest walidowany (10 cyfr, suma
+        kontrolna), a myślniki i spacje są usuwane — w odpowiedzi i w bazie NIP to same cyfry.
       required: [name, street, city, zipcode, nip, telephone]
       properties:
         name:
@@ -2686,8 +2743,9 @@ components:
         certificateTranslations:
           type: array
           description: >-
-            **Pełna lista** tłumaczeń — przy PATCH tłumaczenia spoza listy są usuwane. Kody języków nie mogą się
-            powtarzać; wszystkie pola każdego tłumaczenia są wymagane.
+            Pełna lista tłumaczeń. Przy PATCH: pominięcie pola zostawia tłumaczenia bez zmian, podana lista
+            zastępuje istniejące (tłumaczenia spoza listy są usuwane, `[]` usuwa wszystkie). Kody języków nie mogą
+            się powtarzać; wszystkie pola każdego tłumaczenia są wymagane, a `courseProgram` musi być tablicą JSON.
           items:
             $ref: "#/components/schemas/CourseCertificateTranslation"
 
@@ -2778,7 +2836,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentName, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants]
       properties:
         id:
           type: integer
@@ -2791,12 +2849,10 @@ components:
         courseId:
           type: integer
           format: int64
-        studentName:
+        studentFirstname:
           type: string
-          description: "**Samo imię** (inaczej niż `studentName` na liście, gdzie to imię i nazwisko)."
         studentSecondname:
-          type: string
-          description: Pusty string, gdy brak.
+          type: [string, "null"]
         studentLastname:
           type: string
         studentBirthdate:
@@ -2804,11 +2860,12 @@ components:
         studentBirthplace:
           type: string
         studentPesel:
-          type: string
-          description: Pusty string, gdy brak.
+          type: [string, "null"]
+          description: >-
+            Numer z pola `pesel` kursanta z chwili wystawienia. Nie jest walidowany — dla cudzoziemców bywa to numer
+            innego dokumentu.
         companyName:
-          type: string
-          description: Pusty string, gdy brak.
+          type: [string, "null"]
         courseDateStart:
           $ref: "#/components/schemas/Date"
         courseDateEnd:
@@ -2947,8 +3004,9 @@ components:
             expiringCertificates:
               type: array
               description: >-
-                Maks. 50 zaświadczeń wygasających w ciągu 30 dni, od najbliższego. Ważność liczona z **aktualnego**
-                okresu ważności kursu. Obejmuje tylko kursantów przypisanych do firmy.
+                Maks. 50 zaświadczeń wygasających w ciągu 30 dni, od najbliższego. `expiryDate` jest liczona tak samo
+                jak w `GET /certificates` (z okresu ważności zapisanego w zaświadczeniu), a dane kursanta, firmy i kursu
+                pochodzą z kopii w zaświadczeniu. `companyName` jest pustym stringiem, gdy kursant nie miał firmy.
               items:
                 type: object
                 required: [certificateId, expiryDate, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber]
@@ -2969,8 +3027,7 @@ components:
                   registryYear:
                     type: integer
                   registryNumber:
-                    type: number
-                    description: Liczba całkowita serializowana jako number.
+                    type: integer
 
     # -------------------------------------------------------------- journals
     JournalStatus:
@@ -3179,8 +3236,7 @@ components:
           type: [string, "null"]
           pattern: "^\\d{2}:\\d{2}:\\d{2}$"
         hours:
-          type: string
-          description: Liczba godzin jako **string** z liczbą.
+          type: number
         topic:
           type: string
         trainerName:

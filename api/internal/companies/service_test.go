@@ -14,6 +14,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
+	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
 
 type fakeServiceDB struct {
@@ -53,7 +54,7 @@ func TestBuildCreateCompanyParamsTrimsExpiryNotificationEmail(t *testing.T) {
 		Street:                     "Koszykowa 1",
 		City:                       "Warszawa",
 		Zipcode:                    "00-001",
-		Nip:                        "1234567890",
+		Nip:                        "1234563218",
 		Telephone:                  "500600700",
 		ExpiryNotificationsEnabled: true,
 		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
@@ -75,7 +76,7 @@ func TestBuildCreateCompanyParamsTreatsBlankExpiryNotificationEmailAsNull(t *tes
 		Street:                  "Koszykowa 1",
 		City:                    "Warszawa",
 		Zipcode:                 "00-001",
-		Nip:                     "1234567890",
+		Nip:                     "1234563218",
 		Telephone:               "500600700",
 		ExpiryNotificationEmail: ptrString("   "),
 	})
@@ -93,7 +94,7 @@ func TestBuildCreateCompanyParamsRejectsInvalidExpiryNotificationEmail(t *testin
 		Street:                  "Koszykowa 1",
 		City:                    "Warszawa",
 		Zipcode:                 "00-001",
-		Nip:                     "1234567890",
+		Nip:                     "1234563218",
 		Telephone:               "500600700",
 		ExpiryNotificationEmail: ptrString("invalid-email"),
 	})
@@ -110,7 +111,7 @@ func TestBuildCreateCompanyParamsAcceptsTenExpiryNotificationEmails(t *testing.T
 		Street:                  "Koszykowa 1",
 		City:                    "Warszawa",
 		Zipcode:                 "00-001",
-		Nip:                     "1234567890",
+		Nip:                     "1234563218",
 		Telephone:               "500600700",
 		ExpiryNotificationEmail: ptrString(emails),
 	})
@@ -131,7 +132,7 @@ func TestBuildCreateCompanyParamsRejectsElevenExpiryNotificationEmails(t *testin
 		Street:                  "Koszykowa 1",
 		City:                    "Warszawa",
 		Zipcode:                 "00-001",
-		Nip:                     "1234567890",
+		Nip:                     "1234563218",
 		Telephone:               "500600700",
 		ExpiryNotificationEmail: ptrString(notificationEmailList(11)),
 	})
@@ -154,7 +155,7 @@ func TestBuildUpdateCompanyParamsCopiesExpiryNotificationSettings(t *testing.T) 
 		Street:                     "Koszykowa 1",
 		City:                       "Warszawa",
 		Zipcode:                    "00-001",
-		Nip:                        "1234567890",
+		Nip:                        "1234563218",
 		Telephone:                  "500600700",
 		ExpiryNotificationsEnabled: true,
 		ExpiryNotificationEmail:    ptrString("  kadry@abc.pl "),
@@ -193,7 +194,7 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 							*(dest[2].(*string)) = "Koszykowa 1"
 							*(dest[3].(*string)) = "Warszawa"
 							*(dest[4].(*string)) = "00-001"
-							*(dest[5].(*string)) = "1234567890"
+							*(dest[5].(*string)) = "1234563218"
 							*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "biuro@abc.pl", Valid: true}
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
@@ -239,7 +240,7 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 		Street:                     "Koszykowa 1",
 		City:                       "Warszawa",
 		Zipcode:                    "00-001",
-		Nip:                        "1234567890",
+		Nip:                        "1234563218",
 		Email:                      ptrString("biuro@abc.pl"),
 		ContactPerson:              ptrString("Jan Nowak"),
 		Telephone:                  "500600700",
@@ -283,7 +284,7 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 							*(dest[2].(*string)) = "Koszykowa 1"
 							*(dest[3].(*string)) = "Warszawa"
 							*(dest[4].(*string)) = "00-001"
-							*(dest[5].(*string)) = "1234567890"
+							*(dest[5].(*string)) = "1234563218"
 							*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "biuro@abc.pl", Valid: true}
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
@@ -302,7 +303,7 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 							*(dest[2].(*string)) = "Koszykowa 2"
 							*(dest[3].(*string)) = "Warszawa"
 							*(dest[4].(*string)) = "00-001"
-							*(dest[5].(*string)) = "1234567890"
+							*(dest[5].(*string)) = "1234563218"
 							*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "biuro@abc.pl", Valid: true}
 							*(dest[7].(*pgtype.Text)) = pgtype.Text{String: "Jan Nowak", Valid: true}
 							*(dest[8].(*string)) = "500600700"
@@ -349,7 +350,7 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 		Street:                     "Koszykowa 2",
 		City:                       "Warszawa",
 		Zipcode:                    "00-001",
-		Nip:                        "1234567890",
+		Nip:                        "1234563218",
 		Email:                      ptrString("biuro@abc.pl"),
 		ContactPerson:              ptrString("Jan Nowak"),
 		Telephone:                  "500600700",
@@ -368,5 +369,39 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 	}
 	if !auditRecorded {
 		t.Fatal("expected audit log to be recorded")
+	}
+}
+
+func TestBuildCreateCompanyParamsValidatesAndNormalizesNIP(t *testing.T) {
+	base := CreateCompanyRequest{Name: "ABC", Street: "Prosta 1", City: "Warszawa", Zipcode: "00-001", Telephone: "500600700"}
+
+	valid := base
+	valid.Nip = "123-456-32-18"
+	params, err := buildCreateCompanyParams(valid)
+	if err != nil {
+		t.Fatalf("expected a valid NIP with dashes to be accepted, got %v", err)
+	}
+	if params.Nip != "1234563218" {
+		t.Fatalf("expected NIP to be stored as digits only, got %q", params.Nip)
+	}
+
+	tests := []struct {
+		name   string
+		nip    string
+		reason error
+	}{
+		{name: "zła suma kontrolna", nip: "1234567890", reason: validation.ErrInvalidChecksum},
+		{name: "za krótki", nip: "12345", reason: validation.ErrInvalidLength},
+		{name: "litery", nip: "12345abcde", reason: validation.ErrInvalidFormat},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := base
+			req.Nip = tc.nip
+			_, err := buildCreateCompanyParams(req)
+			if !errors.Is(err, ErrInvalidNIP) || !errors.Is(err, tc.reason) {
+				t.Fatalf("expected ErrInvalidNIP wrapping %v, got %v", tc.reason, err)
+			}
+		})
 	}
 }

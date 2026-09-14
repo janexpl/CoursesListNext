@@ -93,7 +93,7 @@ watchEffect(() => {
 
   initializeStudentSelection({
     id: certificate.value.studentId,
-    firstName: certificate.value.studentName,
+    firstName: certificate.value.studentFirstname,
     lastName: certificate.value.studentLastname,
     pesel: certificate.value.studentPesel || null,
     birthDate: certificate.value.studentBirthdate,

@@ -1,12 +1,12 @@
 package companies
 
 type CompanyDTO struct {
-	ID            int64  `json:"id"`
-	Name          string `json:"name"`
-	City          string `json:"city"`
-	NIP           string `json:"nip"`
-	ContactPerson string `json:"contactPerson,omitempty"`
-	Telephone     string `json:"telephone,omitempty"`
+	ID            int64   `json:"id"`
+	Name          string  `json:"name"`
+	City          string  `json:"city"`
+	NIP           string  `json:"nip"`
+	ContactPerson *string `json:"contactPerson"`
+	Telephone     string  `json:"telephone"`
 }
 
 type CompanyDetailsDTO struct {

@@ -12,6 +12,7 @@ import (
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
+	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
 
 type Querier interface {
@@ -123,6 +124,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		ExpiryNotificationEmail:    req.ExpiryNotificationEmail,
 	})
 	if err != nil {
+		if errors.Is(err, ErrInvalidNIP) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, nipValidationMessage(err))
+			return
+		}
 		if errors.Is(err, ErrInvalidInput) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 			return
@@ -177,6 +182,10 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 		ExpiryNotificationEmail:    req.ExpiryNotificationEmail,
 	})
 	if err != nil {
+		if errors.Is(err, ErrInvalidNIP) {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, nipValidationMessage(err))
+			return
+		}
 		if errors.Is(err, ErrInvalidInput) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 			return
@@ -193,6 +202,17 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// nipValidationMessage buduje komunikat w tym samym formacie, którego używa
+// GET /companies/lookup-by-nip, żeby klient obsługiwał oba miejsca jednakowo.
+func nipValidationMessage(err error) string {
+	for _, reason := range []error{validation.ErrInvalidLength, validation.ErrInvalidFormat, validation.ErrInvalidChecksum} {
+		if errors.Is(err, reason) {
+			return "nip validation error: " + reason.Error()
+		}
+	}
+	return "nip validation error: invalid nip"
+}
+
 func isCompanyNIPConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "check_unique_nip"
@@ -204,7 +224,7 @@ func mapCompanyRow(row dbsqlc.ListCompaniesRow) CompanyDTO {
 		Name:          row.Name,
 		City:          row.City,
 		NIP:           row.Nip,
-		ContactPerson: row.Contactperson.String,
+		ContactPerson: pgutil.NullableString(row.Contactperson),
 		Telephone:     row.Telephoneno,
 	}
 

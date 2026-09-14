@@ -231,3 +231,24 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 func ptrInt64(value int64) *int64 {
 	return &value
 }
+
+func TestCompanyNotFoundAsMapsOnlyTheCompanyForeignKey(t *testing.T) {
+	// Obie nazwy występują w prawdziwych bazach: fk_company ze starego schematu
+	// i students_company_id_fkey z migracji 0013.
+	for _, name := range []string{"students_company_id_fkey", "fk_company"} {
+		fkViolation := &pgconn.PgError{Code: "23503", ConstraintName: name}
+		if err := companyNotFoundAs(fkViolation); !errors.Is(err, ErrCompanyNotFound) {
+			t.Fatalf("expected ErrCompanyNotFound for %q, got %v", name, err)
+		}
+	}
+
+	otherConstraint := &pgconn.PgError{Code: "23503", ConstraintName: "some_other_fkey"}
+	if err := companyNotFoundAs(otherConstraint); errors.Is(err, ErrCompanyNotFound) {
+		t.Fatal("a different foreign key must not be reported as a missing company")
+	}
+
+	dbErr := errors.New("connection reset")
+	if err := companyNotFoundAs(dbErr); !errors.Is(err, dbErr) {
+		t.Fatalf("expected unrelated errors to pass through, got %v", err)
+	}
+}

@@ -25,6 +25,7 @@ type Querier interface {
 	ListCertificates(ctx context.Context, arg sqlc.ListCertificatesParams) ([]sqlc.ListCertificatesRow, error)
 	GetCertificateByID(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
 	GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error)
+	GetCompanyByID(ctx context.Context, id int64) (sqlc.Company, error)
 	ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
 	GetCourseCertificateTranslationByCourseAndLanguage(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error)
 	UpdateCertificate(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
@@ -302,8 +303,9 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		response.HandleDBError(w, err, "certificate")
 		return
 	}
+	certificate := sqlc.GetCertificateByIDRow(row)
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
-		Data: mapUpdateCertificateResponse(row),
+		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
 	})
 }
 
@@ -387,6 +389,13 @@ func (h *Handler) ListByCourseID(w http.ResponseWriter, r *http.Request) {
 		response.HandleDBError(w, err, "certificate")
 		return
 	}
+	// Zero wyników może oznaczać kurs bez zaświadczeń albo nieistniejący kurs.
+	if count == 0 {
+		if _, err := h.querier.GetCourseByID(r.Context(), courseID); err != nil {
+			response.HandleDBError(w, err, "course")
+			return
+		}
+	}
 	offset := (page - 1) * limit
 	totalPages := int(math.Ceil(float64(count) / float64(limit)))
 	rows, err := h.querier.ListCertificatesByCourseID(r.Context(), sqlc.ListCertificatesByCourseIDParams{
@@ -464,6 +473,12 @@ func (h *Handler) ListByCompanyID(w http.ResponseWriter, r *http.Request) {
 		response.HandleDBError(w, err, "certificate")
 		return
 	}
+	if count == 0 {
+		if _, err := h.querier.GetCompanyByID(r.Context(), companyID); err != nil {
+			response.HandleDBError(w, err, "company")
+			return
+		}
+	}
 	offset := (page - 1) * limit
 	totalPages := int(math.Ceil(float64(count) / float64(limit)))
 	rows, err := h.querier.ListCertificatesByCompanyID(r.Context(), sqlc.ListCertificatesByCompanyIDParams{
@@ -508,11 +523,6 @@ func mapCertificateRequest(cert CreateCertificateRequest) CreateCertificateInput
 	return CreateCertificateInput(cert)
 }
 
-func mapUpdateCertificateResponse(row sqlc.UpdateCertificateRow) CertificateDetailsDTO {
-	certificate := sqlc.GetCertificateByIDRow(row)
-	return mapCertificateDetailsResponse(certificate, []CertificatePrintVariantDTO{mapCertificatePrintVariantDTO(buildSnapshotPrintVariant(certificate))})
-}
-
 func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, printVariants []CertificatePrintVariantDTO) CertificateDetailsDTO {
 	var journal *CertificateJournalRefDTO
 	if certificate.JournalID.Valid {
@@ -537,13 +547,13 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		Date:              certificate.Date.Time.Format(response.DateFormat),
 		StudentID:         validation.SignedToInt64Clamped(certificate.StudentID),
 		CourseID:          certificate.CourseID,
-		StudentName:       certificate.StudentFirstname,
-		StudentSecondname: certificate.StudentSecondname.String,
+		StudentFirstname:  certificate.StudentFirstname,
+		StudentSecondname: pgutil.NullableString(certificate.StudentSecondname),
 		StudentLastname:   certificate.StudentLastname,
 		StudentBirthdate:  certificate.StudentBirthdate.Time.Format(response.DateFormat),
 		StudentBirthplace: certificate.StudentBirthplace,
-		StudentPesel:      certificate.StudentPesel.String,
-		CompanyName:       certificate.CompanyName.String,
+		StudentPesel:      pgutil.NullableString(certificate.StudentPesel),
+		CompanyName:       pgutil.NullableString(certificate.CompanyName),
 		CourseDateStart:   certificate.CourseDateStart.Time.Format(response.DateFormat),
 		CourseDateEnd:     pgutil.NullableDate(certificate.CourseDateEnd),
 		RegistryYear:      int(certificate.RegistryYear),

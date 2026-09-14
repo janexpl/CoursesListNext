@@ -407,7 +407,7 @@ func TestListReturnsJournals(t *testing.T) {
 }
 
 func TestCreateReturnsCreatedJournal(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			if arg.CourseID != 7 {
 				t.Fatalf("unexpected course id: %d", arg.CourseID)
@@ -516,7 +516,7 @@ func TestCreateReturnsCreatedJournal(t *testing.T) {
 }
 
 func TestCreateReturnsBadRequestForInvalidJSON(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			t.Fatalf("CreateJournal should not be called for invalid JSON, got %+v", arg)
 			return sqlc.CreateJournalRow{}, nil
@@ -532,7 +532,7 @@ func TestCreateReturnsBadRequestForInvalidJSON(t *testing.T) {
 }
 
 func TestCreateReturnsBadRequestForMissingRequiredFields(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			t.Fatalf("CreateJournal should not be called for invalid body, got %+v", arg)
 			return sqlc.CreateJournalRow{}, nil
@@ -558,7 +558,7 @@ func TestCreateReturnsBadRequestForMissingRequiredFields(t *testing.T) {
 }
 
 func TestCreateReturnsBadRequestForUnknownField(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			t.Fatalf("CreateJournal should not be called for unknown field, got %+v", arg)
 			return sqlc.CreateJournalRow{}, nil
@@ -584,7 +584,7 @@ func TestCreateReturnsBadRequestForUnknownField(t *testing.T) {
 }
 
 func TestCreateReturnsBadRequestForInvalidDates(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			t.Fatalf("CreateJournal should not be called for invalid dates, got %+v", arg)
 			return sqlc.CreateJournalRow{}, nil
@@ -610,7 +610,7 @@ func TestCreateReturnsBadRequestForInvalidDates(t *testing.T) {
 }
 
 func TestCreateReturnsUnauthorizedWhenUserMissingInContext(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			t.Fatalf("CreateJournal should not be called without user in context, got %+v", arg)
 			return sqlc.CreateJournalRow{}, nil
@@ -635,7 +635,7 @@ func TestCreateReturnsUnauthorizedWhenUserMissingInContext(t *testing.T) {
 }
 
 func TestCreateReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			return sqlc.CreateJournalRow{}, pgx.ErrNoRows
 		},
@@ -660,7 +660,7 @@ func TestCreateReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
 }
 
 func TestCreateReturnsInternalServerErrorWhenCreateFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
 			return sqlc.CreateJournalRow{}, errors.New("db error")
 		},
@@ -1606,6 +1606,7 @@ func TestListAttendeesReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 
 func TestAddJournalAttendeeReturnsCreatedAttendee(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: openJournalByID,
 		addJournalAttendeeFunc: func(_ context.Context, arg sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
 			if arg.JournalID != 21 {
 				t.Fatalf("unexpected journalID: %d", arg.JournalID)
@@ -1685,6 +1686,7 @@ func TestAddJournalAttendeeReturnsBadRequestForInvalidBody(t *testing.T) {
 
 func TestAddJournalAttendeeReturnsNotFound(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: openJournalByID,
 		addJournalAttendeeFunc: func(_ context.Context, _ sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
 			return sqlc.AddJournalAttendeeRow{}, pgx.ErrNoRows
 		},
@@ -1701,6 +1703,7 @@ func TestAddJournalAttendeeReturnsNotFound(t *testing.T) {
 
 func TestAddJournalAttendeeReturnsConflictForDuplicateStudent(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: openJournalByID,
 		addJournalAttendeeFunc: func(_ context.Context, _ sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
 			return sqlc.AddJournalAttendeeRow{}, &pgconn.PgError{Code: "23505"}
 		},
@@ -1717,6 +1720,7 @@ func TestAddJournalAttendeeReturnsConflictForDuplicateStudent(t *testing.T) {
 
 func TestAddJournalAttendeeReturnsInternalServerErrorWhenInsertFails(t *testing.T) {
 	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: openJournalByID,
 		addJournalAttendeeFunc: func(_ context.Context, _ sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
 			return sqlc.AddJournalAttendeeRow{}, errors.New("db error")
 		},
@@ -2386,7 +2390,7 @@ func TestListSessionsReturnsSessions(t *testing.T) {
 	if len(responseBody.Data) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(responseBody.Data))
 	}
-	if responseBody.Data[0].Hours != "3.5" || responseBody.Data[0].StartTime == nil || *responseBody.Data[0].StartTime != "08:00:00" {
+	if responseBody.Data[0].Hours != 3.5 || responseBody.Data[0].StartTime == nil || *responseBody.Data[0].StartTime != "08:00:00" {
 		t.Fatalf("unexpected first session: %+v", responseBody.Data[0])
 	}
 	if responseBody.Data[1].StartTime != nil || responseBody.Data[1].EndTime != nil {
@@ -2466,7 +2470,7 @@ func TestListSessionsReturnsNotFoundWhenJournalDoesNotExist(t *testing.T) {
 }
 
 func TestGenerateSessionsFromCourseReturnsGeneratedCount(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
 			return sqlc.GetJournalByIDRow{ID: id}, nil
 		},
@@ -2505,7 +2509,7 @@ func TestGenerateSessionsFromCourseReturnsGeneratedCount(t *testing.T) {
 }
 
 func TestGenerateSessionsFromCourseReturnsConflictWhenSessionsAlreadyExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
 			return sqlc.GetJournalByIDRow{ID: id}, nil
 		},
@@ -2524,7 +2528,7 @@ func TestGenerateSessionsFromCourseReturnsConflictWhenSessionsAlreadyExist(t *te
 }
 
 func TestGenerateSessionsFromCourseReturnsBadRequestWhenProgramEmpty(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
 			return sqlc.GetJournalByIDRow{ID: id}, nil
 		},
@@ -2546,7 +2550,7 @@ func TestGenerateSessionsFromCourseReturnsBadRequestWhenProgramEmpty(t *testing.
 }
 
 func TestGenerateSessionsFromCourseReturnsNotFoundWhenJournalDoesNotExist(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		getJournalByIDFunc: func(_ context.Context, _ int64) (sqlc.GetJournalByIDRow, error) {
 			return sqlc.GetJournalByIDRow{}, pgx.ErrNoRows
 		},
@@ -2562,7 +2566,7 @@ func TestGenerateSessionsFromCourseReturnsNotFoundWhenJournalDoesNotExist(t *tes
 }
 
 func TestGenerateSessionsFromCourseReturnsInternalServerErrorWhenGenerationFails(t *testing.T) {
-	handler := NewHandler(fakeQuerier{
+	handler := newSchedulingHandler(fakeQuerier{
 		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
 			return sqlc.GetJournalByIDRow{ID: id}, nil
 		},
@@ -3784,4 +3788,189 @@ func TestDeleteJournalSignedScanReturnsInternalServerError(t *testing.T) {
 	handler.DeleteJournalSignedScanFile(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+// fakeJournalService przekazuje zapis dziennika wprost do fakeQuerier. Kontrolę,
+// czy sesje mieszczą się w datach dziennika, testuje scheduler_test.go.
+type fakeJournalService struct {
+	fakeQuerier
+}
+
+func (f fakeJournalService) GenerateSessionsFromCourse(ctx context.Context, journalID int64, _ pgtype.Date) (int64, error) {
+	return f.fakeQuerier.GenerateJournalSessionsFromCourse(ctx, journalID)
+}
+
+func (f fakeJournalService) GenerateAttendeeCertificate(context.Context, int64, int64) (GenerateAttendeeCertificateResult, error) {
+	return GenerateAttendeeCertificateResult{}, errors.New("unexpected GenerateAttendeeCertificate call")
+}
+
+func newSchedulingHandler(q fakeQuerier) *Handler {
+	return NewHandler(q, fakeJournalService{fakeQuerier: q})
+}
+
+func openJournalByID(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+	return sqlc.GetJournalByIDRow{ID: id, Status: "draft"}, nil
+}
+
+func journalErrorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var payload response.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode error response: %v (%s)", err, rec.Body.String())
+	}
+	return payload.Error.Message
+}
+
+const validCreateJournalBody = `{
+	"courseId": 7,
+	"title": "Szkolenie BHP",
+	"organizerName": "Nasza Era",
+	"location": "Zyrardow",
+	"formOfTraining": "instruktaz",
+	"legalBasis": "§ 16",
+	"dateStart": "2026-03-10",
+	"dateEnd": "2026-03-10"
+}`
+
+func newCreateJournalRequest() *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/journals", strings.NewReader(validCreateJournalBody))
+	return req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 1}))
+}
+
+func TestCreateReturnsBadRequestWhenProgramExceedsJournalDates(t *testing.T) {
+	handler := newSchedulingHandler(fakeQuerier{
+		createJournalFunc: func(context.Context, sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
+			return sqlc.CreateJournalRow{}, ErrProgramExceedsJournalDates
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	handler.Create(rec, newCreateJournalRequest())
+
+	if rec.Code != http.StatusBadRequest || journalErrorMessage(t, rec) != "course program does not fit within journal dates" {
+		t.Fatalf("expected 400 about the program not fitting, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestJournalWritesRequireTheSchedulingService(t *testing.T) {
+	// Bez serwisu handler nie może zapisać dziennika, bo nie sprawdzi dat sesji -
+	// nie ma cichej ścieżki zapisu wprost przez querier.
+	handler := NewHandler(fakeQuerier{
+		createJournalFunc: func(context.Context, sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
+			t.Fatal("the querier must not be used to create journals")
+			return sqlc.CreateJournalRow{}, nil
+		},
+		getJournalByIDFunc: openJournalByID,
+		generateSessionsFunc: func(context.Context, int64) (int64, error) {
+			t.Fatal("the querier must not be used to generate sessions")
+			return 0, nil
+		},
+	})
+
+	create := httptest.NewRecorder()
+	handler.Create(create, newCreateJournalRequest())
+	if create.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 without the journal service, got %d", create.Code)
+	}
+
+	generateReq := httptest.NewRequest(http.MethodPost, "/api/v1/journals/5/sessions/generate-from-course", nil)
+	generateReq.SetPathValue("id", "5")
+	generate := httptest.NewRecorder()
+	handler.GenerateSessionsFromCourse(generate, generateReq)
+	if generate.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 without the journal service, got %d", generate.Code)
+	}
+}
+
+func TestGenerateSessionsFromCourseReturnsBadRequestWhenProgramExceedsJournalDates(t *testing.T) {
+	var receivedDateEnd pgtype.Date
+	q := fakeQuerier{
+		getJournalByIDFunc: func(context.Context, int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: 5, Status: "draft", DateEnd: pgtype.Date{Time: time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), Valid: true}}, nil
+		},
+		listJournalSessionsFunc: func(context.Context, int64) ([]sqlc.TrainingJournalSession, error) {
+			return nil, nil
+		},
+	}
+	handler := NewHandler(q, schedulerFunc{
+		generate: func(_ context.Context, _ int64, dateEnd pgtype.Date) (int64, error) {
+			receivedDateEnd = dateEnd
+			return 0, ErrProgramExceedsJournalDates
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/journals/5/sessions/generate-from-course", nil)
+	req.SetPathValue("id", "5")
+	rec := httptest.NewRecorder()
+	handler.GenerateSessionsFromCourse(rec, req)
+
+	if rec.Code != http.StatusBadRequest || journalErrorMessage(t, rec) != "course program does not fit within journal dates" {
+		t.Fatalf("expected 400 about the program not fitting, got %d %s", rec.Code, rec.Body.String())
+	}
+	if receivedDateEnd.Time.Format(response.DateFormat) != "2026-03-11" {
+		t.Fatalf("expected the journal end date to reach the scheduler, got %+v", receivedDateEnd)
+	}
+}
+
+func TestAddJournalAttendeeRejectsClosedJournal(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(_ context.Context, id int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{ID: id, Status: "closed"}, nil
+		},
+		addJournalAttendeeFunc: func(context.Context, sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
+			t.Fatal("attendees must not be added to a closed journal")
+			return sqlc.AddJournalAttendeeRow{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/journals/5/attendees", strings.NewReader(`{"studentId": 12}`))
+	req.SetPathValue("id", "5")
+	rec := httptest.NewRecorder()
+	handler.AddJournalAttendee(rec, req)
+
+	if rec.Code != http.StatusConflict || journalErrorMessage(t, rec) != "journal is closed" {
+		t.Fatalf("expected 409 journal is closed, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAddJournalAttendeeDistinguishesMissingJournalFromMissingStudent(t *testing.T) {
+	missingJournal := NewHandler(fakeQuerier{
+		getJournalByIDFunc: func(context.Context, int64) (sqlc.GetJournalByIDRow, error) {
+			return sqlc.GetJournalByIDRow{}, pgx.ErrNoRows
+		},
+	})
+	missingStudent := NewHandler(fakeQuerier{
+		getJournalByIDFunc: openJournalByID,
+		addJournalAttendeeFunc: func(context.Context, sqlc.AddJournalAttendeeParams) (sqlc.AddJournalAttendeeRow, error) {
+			return sqlc.AddJournalAttendeeRow{}, pgx.ErrNoRows
+		},
+	})
+
+	for want, handler := range map[string]*Handler{"journal not found": missingJournal, "student not found": missingStudent} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/journals/5/attendees", strings.NewReader(`{"studentId": 12}`))
+		req.SetPathValue("id", "5")
+		rec := httptest.NewRecorder()
+		handler.AddJournalAttendee(rec, req)
+
+		if rec.Code != http.StatusNotFound || journalErrorMessage(t, rec) != want {
+			t.Fatalf("expected 404 %q, got %d %s", want, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// schedulerFunc pozwala testowi podstawić samo generowanie sesji.
+type schedulerFunc struct {
+	generate func(ctx context.Context, journalID int64, dateEnd pgtype.Date) (int64, error)
+}
+
+func (s schedulerFunc) CreateJournal(context.Context, sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
+	return sqlc.CreateJournalRow{}, errors.New("unexpected CreateJournal call")
+}
+
+func (s schedulerFunc) GenerateSessionsFromCourse(ctx context.Context, journalID int64, dateEnd pgtype.Date) (int64, error) {
+	return s.generate(ctx, journalID, dateEnd)
+}
+
+func (s schedulerFunc) GenerateAttendeeCertificate(context.Context, int64, int64) (GenerateAttendeeCertificateResult, error) {
+	return GenerateAttendeeCertificateResult{}, errors.New("unexpected GenerateAttendeeCertificate call")
 }

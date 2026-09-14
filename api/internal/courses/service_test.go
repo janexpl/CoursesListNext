@@ -421,3 +421,119 @@ func TestNormalizeExpiryTime(t *testing.T) {
 		t.Fatalf("expected ErrInvalidInput for negative years, got %v", err)
 	}
 }
+
+// courseRowScan wypełnia wiersz kursu w kolejności kolumn zapytań sqlc.
+func courseRowScan(dest ...interface{}) error {
+	*(dest[0].(*int64)) = 12
+	*(dest[1].(*pgtype.Text)) = pgtype.Text{String: "BHP", Valid: true}
+	*(dest[2].(*string)) = "Szkolenie okresowe"
+	*(dest[3].(*string)) = "BHP-OKR"
+	*(dest[4].(*pgtype.Text)) = pgtype.Text{String: "5", Valid: true}
+	*(dest[5].(*[]byte)) = []byte(`[{"Subject":"Intro"}]`)
+	*(dest[6].(*pgtype.Text)) = pgtype.Text{String: "<p>Front</p>", Valid: true}
+	return nil
+}
+
+func TestServiceUpdateKeepsTranslationsWhenFieldIsOmitted(t *testing.T) {
+	// Pominięcie certificateTranslations nie może kasować tłumaczeń - wcześniej
+	// synchronizacja z pustą listą usuwała je wszystkie.
+	translationWrites := 0
+	service := &Service{
+		beginTx: func(context.Context) (txScope, error) {
+			return txScope{
+				queries: sqlc.New(fakeServiceDB{
+					queryRow: func(_ context.Context, sql string, _ ...interface{}) pgx.Row {
+						switch {
+						case strings.Contains(sql, "INSERT INTO course_certificate_translations"):
+							translationWrites++
+							return fakeServiceRow{err: errors.New("translations must not be written")}
+						case strings.Contains(sql, "SELECT id, mainname, name, symbol"), strings.Contains(sql, "UPDATE courses"):
+							return fakeServiceRow{scan: courseRowScan}
+						default:
+							return fakeServiceRow{err: errors.New("unexpected query row call: " + sql)}
+						}
+					},
+					exec: func(_ context.Context, sql string, _ ...interface{}) (pgconn.CommandTag, error) {
+						translationWrites++
+						return pgconn.CommandTag{}, errors.New("translations must not be deleted: " + sql)
+					},
+					query: func(_ context.Context, sql string, _ ...interface{}) (pgx.Rows, error) {
+						return &fakeServiceRows{}, nil
+					},
+				}),
+				commit:   func(context.Context) error { return nil },
+				rollback: func(context.Context) error { return nil },
+			}, nil
+		},
+	}
+
+	_, err := service.Update(context.Background(), 12, UpdateCourseInput{
+		MainName:                "BHP",
+		Name:                    "Szkolenie okresowe",
+		Symbol:                  "BHP-OKR",
+		ExpiryTime:              5,
+		CourseProgram:           `[{"Subject":"Intro"}]`,
+		CertFrontPage:           "<p>Front</p>",
+		CertificateTranslations: nil,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if translationWrites != 0 {
+		t.Fatalf("expected no translation writes, got %d", translationWrites)
+	}
+}
+
+func TestNormalizeTranslationInputDistinguishesNilFromEmpty(t *testing.T) {
+	got, err := normalizeTranslationInput(nil)
+	if err != nil || got != nil {
+		t.Fatalf("expected nil for omitted translations, got %#v (%v)", got, err)
+	}
+	got, err = normalizeTranslationInput([]CourseTranslationInput{})
+	if err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("expected an empty non-nil slice for an explicit empty list, got %#v (%v)", got, err)
+	}
+}
+
+func TestNormalizeTranslationInputReturnsSpecificErrors(t *testing.T) {
+	valid := CourseTranslationInput{LanguageCode: "en", CourseName: "OHS", CourseProgram: `[]`, CertFrontPage: "<p>EN</p>"}
+	withLanguage := func(code string) CourseTranslationInput { t := valid; t.LanguageCode = code; return t }
+	withProgram := func(program string) CourseTranslationInput { t := valid; t.CourseProgram = program; return t }
+
+	tests := []struct {
+		name  string
+		input []CourseTranslationInput
+		want  error
+	}{
+		{name: "nieobsługiwany język", input: []CourseTranslationInput{withLanguage("fr")}, want: ErrUnsupportedTranslationLanguage},
+		{name: "polski jako tłumaczenie", input: []CourseTranslationInput{withLanguage("pl")}, want: ErrUnsupportedTranslationLanguage},
+		{name: "powtórzony język", input: []CourseTranslationInput{valid, withLanguage("EN")}, want: ErrDuplicateTranslationLanguage},
+		{name: "puste pole", input: []CourseTranslationInput{{LanguageCode: "en"}}, want: ErrIncompleteTranslation},
+		{name: "program nie jest tablicą JSON", input: []CourseTranslationInput{withProgram(`{"a":1}`)}, want: ErrInvalidCourseProgram},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := normalizeTranslationInput(tc.input)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("specific errors must still match ErrInvalidInput, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateCourseProgram(t *testing.T) {
+	for _, program := range []string{`[]`, `[{"Subject":"BHP","TheoryTime":"4","PracticeTime":"0"}]`} {
+		if err := validateCourseProgram(program); err != nil {
+			t.Fatalf("expected %q to be valid, got %v", program, err)
+		}
+	}
+	for _, program := range []string{`{`, `{"Subject":"BHP"}`, `"tekst"`, `null`, `42`} {
+		if err := validateCourseProgram(program); !errors.Is(err, ErrInvalidCourseProgram) {
+			t.Fatalf("expected %q to be rejected, got %v", program, err)
+		}
+	}
+}

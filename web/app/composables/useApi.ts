@@ -169,7 +169,7 @@ export interface CompanySummary {
   name: string
   city: string
   nip: string
-  contactPerson: string
+  contactPerson: string | null
   telephone: string
 }
 
@@ -522,7 +522,7 @@ export interface JournalSession {
   sessionDate: string
   startTime: string | null
   endTime: string | null
-  hours: string
+  hours: number
   topic: string
   trainerName: string
   sortOrder: number
@@ -618,13 +618,13 @@ export interface CertificateDetails {
   date: string
   studentId: number
   courseId: number
-  studentName: string
-  studentSecondname: string
+  studentFirstname: string
+  studentSecondname: string | null
   studentLastname: string
   studentBirthdate: string
   studentBirthplace: string
-  studentPesel: string
-  companyName: string
+  studentPesel: string | null
+  companyName: string | null
   courseDateStart: string
   courseDateEnd: string | null
   registryYear: number
@@ -703,7 +703,9 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:no nip value in request': 'Podaj NIP, aby pobrać dane z GUS.',
   'bad_request:nip validation error: nip must contain exactly 10 digits': 'NIP musi zawierać dokładnie 10 cyfr.',
   'bad_request:nip validation error: invalid nip checksum': 'Podany NIP ma nieprawidłową sumę kontrolną.',
-  'not_found:company not found': 'Nie znaleziono firmy dla podanego NIP.',
+  'not_found:company not found in GUS registry': 'Nie znaleziono firmy dla podanego NIP.',
+  'not_found:company not found': 'Nie znaleziono firmy.',
+  'bad_request:nip validation error: nip contains invalid characters': 'NIP może zawierać wyłącznie cyfry.',
   'internal_error:gus lookup is not configured': 'Pobieranie danych z GUS nie jest skonfigurowane.',
 
   // courses
@@ -731,7 +733,13 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:unsupported file type': 'Nieobsługiwany typ pliku.',
   'not_found:course not found': 'Nie znaleziono kursu.',
   'not_found:journal attendee not found': 'Nie znaleziono uczestnika dziennika.',
-  'not_found:journal or student not found': 'Nie znaleziono dziennika lub kursanta.'
+  'not_found:journal not found': 'Nie znaleziono dziennika.',
+  'bad_request:course program does not fit within journal dates': 'Program kursu nie mieści się w zakresie dat dziennika. Wydłuż termin zakończenia szkolenia.',
+  'bad_request:course program must be a JSON array': 'Program kursu ma nieprawidłowy format.',
+  'bad_request:unsupported translation language': 'Wybrano nieobsługiwany język tłumaczenia.',
+  'bad_request:duplicate translation language': 'Każdy język tłumaczenia może wystąpić tylko raz.',
+  'bad_request:translation fields are required': 'Uzupełnij wszystkie pola tłumaczenia.',
+  'conflict:user with this email already exists': 'Użytkownik z tym adresem e-mail już istnieje.'
 }
 
 function parseApiError(error: unknown): { code: string, message: string } | null {

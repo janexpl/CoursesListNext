@@ -843,6 +843,22 @@ func (q *Queries) GetJournalByID(ctx context.Context, id int64) (GetJournalByIDR
 	return i, err
 }
 
+const getJournalLastSessionDate = `-- name: GetJournalLastSessionDate :one
+SELECT MAX(session_date)::date AS last_session_date
+FROM training_journal_sessions
+WHERE journal_id = $1
+`
+
+// Data ostatniej sesji dziennika (NULL, gdy brak sesji). Sprawdzana w tej samej
+// transakcji co generowanie sesji, żeby odrzucić program, który nie mieści się
+// w zakresie dat dziennika.
+func (q *Queries) GetJournalLastSessionDate(ctx context.Context, journalID int64) (pgtype.Date, error) {
+	row := q.db.QueryRow(ctx, getJournalLastSessionDate, journalID)
+	var last_session_date pgtype.Date
+	err := row.Scan(&last_session_date)
+	return last_session_date, err
+}
+
 const getJournalSignedScanFile = `-- name: GetJournalSignedScanFile :one
   SELECT
       id,

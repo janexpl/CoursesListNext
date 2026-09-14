@@ -1156,3 +1156,65 @@ func TestCreateStudentReturnsInternalServerErrorWhenQueryFails(t *testing.T) {
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
+
+func TestStudentWritesReturnNotFoundForMissingCompany(t *testing.T) {
+	// companyId wskazujący nieistniejącą firmę kończył się wcześniej 500.
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(context.Context, CreateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, ErrCompanyNotFound
+		},
+		updateFunc: func(context.Context, int64, UpdateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, ErrCompanyNotFound
+		},
+	})
+	body := `{"firstName":"Jan","lastName":"Nowak","birthDate":"1990-01-10","birthPlace":"Warszawa","companyId":999}`
+
+	create := httptest.NewRecorder()
+	handler.CreateStudent(create, httptest.NewRequest(http.MethodPost, "/api/v1/students", strings.NewReader(body)))
+
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/students/5", strings.NewReader(body))
+	patchReq.SetPathValue("id", "5")
+	patch := httptest.NewRecorder()
+	handler.Patch(patch, patchReq)
+
+	for name, rec := range map[string]*httptest.ResponseRecorder{"POST": create, "PATCH": patch} {
+		var payload response.ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: failed to decode response: %v", name, err)
+		}
+		if rec.Code != http.StatusNotFound || payload.Error.Message != "company not found" {
+			t.Fatalf("%s: expected 404 company not found, got %d %q", name, rec.Code, payload.Error.Message)
+		}
+	}
+}
+
+func TestSubordinateStudentListsReturnNotFoundForMissingParent(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{
+		query: func(context.Context, string, ...interface{}) (pgx.Rows, error) {
+			return &fakeRows{}, nil
+		},
+		queryRow: func(context.Context, string, ...interface{}) pgx.Row {
+			return fakeRow{err: pgx.ErrNoRows}
+		},
+	}))
+
+	certsReq := httptest.NewRequest(http.MethodGet, "/api/v1/students/999/certificates", nil)
+	certsReq.SetPathValue("id", "999")
+	certs := httptest.NewRecorder()
+	handler.ListCertificatesByStudent(certs, certsReq)
+
+	studentsReq := httptest.NewRequest(http.MethodGet, "/api/v1/companies/999/students", nil)
+	studentsReq.SetPathValue("id", "999")
+	students := httptest.NewRecorder()
+	handler.ListStudentsByCompanyId(students, studentsReq)
+
+	for want, rec := range map[string]*httptest.ResponseRecorder{"student not found": certs, "company not found": students} {
+		var payload response.ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if rec.Code != http.StatusNotFound || payload.Error.Message != want {
+			t.Fatalf("expected 404 %q, got %d %q", want, rec.Code, payload.Error.Message)
+		}
+	}
+}

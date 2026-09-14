@@ -25,6 +25,7 @@ type fakeQuerier struct {
 	countCertificatesByCompanyIDFunc                       func(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error)
 	getCertificateByIDFunc                                 func(ctx context.Context, id int64) (sqlc.GetCertificateByIDRow, error)
 	getCourseByIDFunc                                      func(ctx context.Context, id int64) (sqlc.Course, error)
+	getCompanyByIDFunc                                     func(ctx context.Context, id int64) (sqlc.Company, error)
 	listCourseCertificateTranslationsByCourseIDFunc        func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
 	getCourseCertificateTranslationByCourseAndLanguageFunc func(ctx context.Context, arg sqlc.GetCourseCertificateTranslationByCourseAndLanguageParams) (sqlc.GetCourseCertificateTranslationByCourseAndLanguageRow, error)
 	updateCertificateFunc                                  func(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
@@ -77,6 +78,13 @@ func (f fakeQuerier) GetCertificateByID(ctx context.Context, id int64) (sqlc.Get
 		return sqlc.GetCertificateByIDRow{}, errors.New("unexpected GetCertificateByID call")
 	}
 	return f.getCertificateByIDFunc(ctx, id)
+}
+
+func (f fakeQuerier) GetCompanyByID(ctx context.Context, id int64) (sqlc.Company, error) {
+	if f.getCompanyByIDFunc == nil {
+		return sqlc.Company{}, errors.New("unexpected GetCompanyByID call")
+	}
+	return f.getCompanyByIDFunc(ctx, id)
 }
 
 func (f fakeQuerier) GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error) {
@@ -1170,7 +1178,7 @@ func TestGetReturnsCertificateDetails(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if responseBody.Data.ID != 21 || responseBody.Data.StudentName != "Jan" || responseBody.Data.StudentLastname != "Nowak" {
+	if responseBody.Data.ID != 21 || responseBody.Data.StudentFirstname != "Jan" || responseBody.Data.StudentLastname != "Nowak" {
 		t.Fatalf("unexpected certificate details payload: %+v", responseBody.Data)
 	}
 	if responseBody.Data.CourseExpiryTime == nil || *responseBody.Data.CourseExpiryTime != 3 {
@@ -1984,5 +1992,154 @@ func assertErrorMessage(t *testing.T, rec *httptest.ResponseRecorder, expected s
 	}
 	if body.Error.Message != expected {
 		t.Fatalf("expected error message %q, got %q", expected, body.Error.Message)
+	}
+}
+
+func TestPatchReturnsAllPrintVariantsLikeGet(t *testing.T) {
+	// Odpowiedź PATCH ma ten sam kształt co GET - wcześniej zawierała wyłącznie
+	// wariant oryginalny, więc klient musiał dociągać szczegóły drugim żądaniem.
+	handler := NewHandler(fakeQuerier{
+		getCourseByIDFunc: func(context.Context, int64) (sqlc.Course, error) {
+			return sqlc.Course{
+				ID:            3,
+				Name:          "Szkolenie BHP (aktualne)",
+				Courseprogram: []byte(`[]`),
+				Certfrontpage: pgtype.Text{String: "<p>PL</p>", Valid: true},
+			}, nil
+		},
+		listCourseCertificateTranslationsByCourseIDFunc: func(context.Context, int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error) {
+			return []sqlc.ListCourseCertificateTranslationsByCourseIDRow{
+				{LanguageCode: "en", CourseName: "OHS training", CourseProgram: `[]`, CertFrontPage: "<p>EN</p>"},
+			}, nil
+		},
+	}, fakeCreator{
+		updateFunc: func(context.Context, int64, UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			return sqlc.UpdateCertificateRow{
+				ID:               21,
+				StudentID:        12,
+				CourseID:         3,
+				StudentFirstname: "Jan",
+				StudentLastname:  "Nowak",
+				CourseName:       "Szkolenie BHP",
+				CourseSymbol:     "BHP",
+				CourseProgram:    `[]`,
+				CertFrontPage:    "<p>Front</p>",
+				LanguageCode:     "pl",
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
+		"studentId": 12,
+		"certificateDate": "2026-03-15",
+		"courseDateStart": "2026-03-10"
+	}`))
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.Patch(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var body CertificateResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	languages := make([]string, 0, len(body.Data.PrintVariants))
+	for _, variant := range body.Data.PrintVariants {
+		languages = append(languages, variant.LanguageCode)
+	}
+	if strings.Join(languages, ",") != "pl,en" {
+		t.Fatalf("expected original pl variant plus en translation, got %v", languages)
+	}
+	if !body.Data.PrintVariants[0].IsOriginal {
+		t.Fatal("expected the first variant to be the original")
+	}
+}
+
+func TestCertificateDetailsUseNullForMissingOptionalValues(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		getCertificateByIDFunc: func(context.Context, int64) (sqlc.GetCertificateByIDRow, error) {
+			return sqlc.GetCertificateByIDRow{
+				ID:               21,
+				StudentFirstname: "Jan",
+				StudentLastname:  "Nowak",
+				CourseProgram:    `[]`,
+				LanguageCode:     "pl",
+				// StudentSecondname, StudentPesel i CompanyName celowo puste (NULL w bazie)
+			}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates/21", nil)
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.Get(rec, req)
+
+	var raw struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	for _, key := range []string{"studentSecondname", "studentPesel", "companyName"} {
+		value, present := raw.Data[key]
+		if !present || value != nil {
+			t.Fatalf("expected %q to be null, got %#v (present: %v)", key, value, present)
+		}
+	}
+	if raw.Data["studentFirstname"] != "Jan" {
+		t.Fatalf("expected studentFirstname to carry the first name, got %#v", raw.Data["studentFirstname"])
+	}
+	if _, legacy := raw.Data["studentName"]; legacy {
+		t.Fatal("details must not expose the ambiguous studentName key")
+	}
+}
+
+func TestPaginatedCertificateListsReturnNotFoundForMissingParent(t *testing.T) {
+	zero := func() (int64, error) { return 0, nil }
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(context.Context, sqlc.CountCertificatesByCourseIDParams) (int64, error) { return zero() },
+		countCertificatesByCompanyIDFunc: func(context.Context, sqlc.CountCertificatesByCompanyIDParams) (int64, error) {
+			return zero()
+		},
+		getCourseByIDFunc:  func(context.Context, int64) (sqlc.Course, error) { return sqlc.Course{}, pgx.ErrNoRows },
+		getCompanyByIDFunc: func(context.Context, int64) (sqlc.Company, error) { return sqlc.Company{}, pgx.ErrNoRows },
+	}, nil)
+
+	courseReq := httptest.NewRequest(http.MethodGet, "/api/v1/courses/999/certificates", nil)
+	courseReq.SetPathValue("id", "999")
+	course := httptest.NewRecorder()
+	handler.ListByCourseID(course, courseReq)
+
+	companyReq := httptest.NewRequest(http.MethodGet, "/api/v1/companies/999/certificates", nil)
+	companyReq.SetPathValue("id", "999")
+	company := httptest.NewRecorder()
+	handler.ListByCompanyID(company, companyReq)
+
+	assertErrorMessage(t, course, "course not found")
+	assertErrorResponse(t, course, http.StatusNotFound, response.CodeNotFound)
+	assertErrorMessage(t, company, "company not found")
+	assertErrorResponse(t, company, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestPaginatedCertificateListsReturnEmptyPageForExistingParent(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		countCertificatesByCourseIDFunc: func(context.Context, sqlc.CountCertificatesByCourseIDParams) (int64, error) { return 0, nil },
+		listCertificatesByCourseIDFunc: func(context.Context, sqlc.ListCertificatesByCourseIDParams) ([]sqlc.ListCertificatesByCourseIDRow, error) {
+			return []sqlc.ListCertificatesByCourseIDRow{}, nil
+		},
+		getCourseByIDFunc: func(_ context.Context, id int64) (sqlc.Course, error) { return sqlc.Course{ID: id}, nil },
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courses/7/certificates", nil)
+	req.SetPathValue("id", "7")
+	rec := httptest.NewRecorder()
+	handler.ListByCourseID(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"data":[]`) {
+		t.Fatalf("expected 200 with an empty page for a course without certificates, got %d %s", rec.Code, rec.Body.String())
 	}
 }

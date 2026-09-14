@@ -196,7 +196,7 @@ const studentFullName = computed(() => {
   }
 
   return [
-    certificate.value.studentName,
+    certificate.value.studentFirstname,
     certificate.value.studentSecondname,
     certificate.value.studentLastname
   ]
@@ -339,7 +339,7 @@ const certificatePreviewHtml = computed(() => {
   }
 
   const values: Record<string, string> = {
-    imie: certificate.value.studentName || '',
+    imie: certificate.value.studentFirstname || '',
     drugie_imie: certificate.value.studentSecondname || '',
     nazwisko: certificate.value.studentLastname || '',
     pesel: certificate.value.studentPesel || '',

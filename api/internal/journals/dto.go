@@ -161,7 +161,7 @@ type JournalSessionDTO struct {
 	SessionDate string  `json:"sessionDate"`
 	StartTime   *string `json:"startTime"`
 	EndTime     *string `json:"endTime"`
-	Hours       string  `json:"hours"`
+	Hours       float64 `json:"hours"`
 	Topic       string  `json:"topic"`
 	TrainerName string  `json:"trainerName"`
 	SortOrder   int32   `json:"sortOrder"`

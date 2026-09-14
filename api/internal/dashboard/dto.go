@@ -21,12 +21,12 @@ type ExpiringSummaryDTO struct {
 }
 
 type ExpiringCertificateDTO struct {
-	CertificateID  int64   `json:"certificateId"`
-	ExpiryDate     string  `json:"expiryDate"`
-	StudentName    string  `json:"studentName"`
-	CompanyName    string  `json:"companyName"`
-	CourseName     string  `json:"courseName"`
-	CourseSymbol   string  `json:"courseSymbol"`
-	RegistryYear   int64   `json:"registryYear"`
-	RegistryNumber float64 `json:"registryNumber"`
+	CertificateID  int64  `json:"certificateId"`
+	ExpiryDate     string `json:"expiryDate"`
+	StudentName    string `json:"studentName"`
+	CompanyName    string `json:"companyName"`
+	CourseName     string `json:"courseName"`
+	CourseSymbol   string `json:"courseSymbol"`
+	RegistryYear   int64  `json:"registryYear"`
+	RegistryNumber int64  `json:"registryNumber"`
 }

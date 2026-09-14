@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
@@ -1068,4 +1069,50 @@ func TestPatchPasswordByAdminReturnsInternalServerErrorWhenServiceFails(t *testi
 	handler.PatchPasswordByAdmin(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestIsEmailConflictRecognizesBothConstraintNames(t *testing.T) {
+	// unique_email pochodzi ze starego schematu, users_email_unique z migracji 0004;
+	// baza może mieć oba i zgłosić dowolne z nich.
+	for _, name := range []string{"users_email_unique", "unique_email"} {
+		if !isEmailConflict(&pgconn.PgError{Code: "23505", ConstraintName: name}) {
+			t.Fatalf("expected %q to be recognized as an email conflict", name)
+		}
+	}
+	if isEmailConflict(&pgconn.PgError{Code: "23505", ConstraintName: "users_pkey"}) {
+		t.Fatal("a different unique constraint must not be reported as an email conflict")
+	}
+}
+
+func TestUserWritesReturnConflictForTakenEmail(t *testing.T) {
+	taken := &pgconn.PgError{Code: "23505", ConstraintName: "unique_email"}
+	handler := NewHandler(nil, fakeCreator{
+		createFunc:        func(context.Context, CreateUserRequest) (UserDTO, error) { return UserDTO{}, taken },
+		updateFunc:        func(context.Context, int64, UpdateUserRequest) (UserDTO, error) { return UserDTO{}, taken },
+		updateProfileFunc: func(context.Context, UpdateProfileRequest) (UserDTO, error) { return UserDTO{}, taken },
+	})
+
+	create := httptest.NewRecorder()
+	handler.CreateUser(create, httptest.NewRequest(http.MethodPost, "/api/v1/admin/users",
+		strings.NewReader(`{"email":"jan@example.com","password":"haslo1234","firstName":"Jan","lastName":"Nowak","role":2}`)))
+
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/5",
+		strings.NewReader(`{"email":"jan@example.com","firstName":"Jan","lastName":"Nowak","role":2}`))
+	patchReq.SetPathValue("id", "5")
+	patch := httptest.NewRecorder()
+	handler.Patch(patch, patchReq)
+
+	profile := httptest.NewRecorder()
+	handler.PatchProfile(profile, httptest.NewRequest(http.MethodPatch, "/api/v1/account/profile",
+		strings.NewReader(`{"email":"jan@example.com","firstName":"Jan","lastName":"Nowak"}`)))
+
+	for name, rec := range map[string]*httptest.ResponseRecorder{"POST /admin/users": create, "PATCH /admin/users/{id}": patch, "PATCH /account/profile": profile} {
+		var payload response.ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: failed to decode response: %v", name, err)
+		}
+		if rec.Code != http.StatusConflict || payload.Error.Message != "user with this email already exists" {
+			t.Fatalf("%s: expected 409 for a taken email, got %d %q", name, rec.Code, payload.Error.Message)
+		}
+	}
 }
