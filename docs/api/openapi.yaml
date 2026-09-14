@@ -1,0 +1,3482 @@
+openapi: 3.1.0
+info:
+  title: CoursesList API
+  version: "1.0.0"
+  summary: API systemu obsługi szkoleń — kursy, kursanci, firmy, zaświadczenia, dzienniki szkoleń.
+  description: |
+    Specyfikacja dla aplikacji integrujących się z API serwer-serwer za pomocą klucza API.
+
+    **Przeczytaj najpierw `INTEGRATION.md`** z tego samego katalogu — opisuje reguły, których
+    nie da się wyrazić w samym schemacie (semantyka PATCH jako pełnego nadpisania, formaty dat
+    bez strefy czasowej, niespójności nazw pól, pułapki przy tworzeniu zaświadczeń).
+
+    Konwencje:
+    - Każda udana odpowiedź JSON ma kopertę `{"data": ...}`; błędy mają `{"error": {"code", "message"}}`.
+    - Każda operacja wymaga zakresu podanego w `x-required-scope` (brak = wystarczy ważny klucz).
+    - Operacje z `x-requires-admin: true` wymagają dodatkowo, by konto serwisowe klucza miało rolę
+      administratora (`role = 1`) — sam zakres nie wystarczy.
+    - Ciała żądań są odrzucane (400), jeśli zawierają pole spoza schematu.
+
+    Wygenerowano z kodu źródłowego (`api/internal/*`) na gałęzi `api_and_webhook`.
+servers:
+  - url: "{baseUrl}/api/v1"
+    variables:
+      baseUrl:
+        default: http://localhost:8081
+        description: >-
+          Adres Go API. Lokalnie `http://localhost:8081`; w `docker-compose.prod.yml` API nasłuchuje na
+          porcie 8082. Integracje powinny wołać Go API bezpośrednio, nie przez proxy Nuxt.
+security:
+  - apiKey: []
+tags:
+  - name: system
+  - name: auth
+  - name: students
+    description: Kursanci
+  - name: companies
+    description: Firmy (pracodawcy kursantów)
+  - name: courses
+    description: Kursy i ich szablony zaświadczeń
+  - name: certificates
+    description: Zaświadczenia ukończenia szkolenia
+  - name: registries
+    description: Numeracja rejestru zaświadczeń
+  - name: journals
+    description: Dzienniki szkoleń (sesje, uczestnicy, obecność, skany)
+  - name: dashboard
+  - name: admin
+    description: Zarządzanie użytkownikami — wymaga konta administratora
+  - name: audit
+    description: Historia zmian — wymaga konta administratora
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      operationId: healthz
+      summary: Sprawdzenie dostępności API
+      security: []
+      responses:
+        "200":
+          description: API działa.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentAccount
+      summary: Konto, w imieniu którego działa klucz
+      description: >-
+        Nie wymaga żadnego zakresu. Użyj do sprawdzenia, czy klucz jest ważny i do jakiego konta
+        serwisowego jest przypisany. Nie zwraca listy zakresów klucza.
+      responses:
+        "200":
+          description: Konto serwisowe klucza.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------- students
+  /students:
+    get:
+      tags: [students]
+      operationId: listStudents
+      summary: Lista kursantów
+      description: >-
+        Sortowanie: nazwisko, imię. `search` dzieli frazę na słowa (po spacjach i przecinkach);
+        kursant pasuje, gdy **każde** słowo występuje w imieniu, nazwisku lub PESEL-u
+        (bez rozróżniania wielkości liter, dopasowanie fragmentu).
+      x-required-scope: students:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+        - name: companyId
+          in: query
+          description: Tylko kursanci przypisani do tej firmy.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Kursanci.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [students]
+      operationId: createStudent
+      summary: Utworzenie kursanta
+      x-required-scope: students:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentWrite"
+      responses:
+        "201":
+          description: Utworzony kursant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: >-
+            Także gdy `companyId` wskazuje nieistniejącą firmę — API nie rozróżnia tego przypadku
+            (`failed to create student`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /students/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [students]
+      operationId: getStudent
+      summary: Szczegóły kursanta
+      x-required-scope: students:read
+      responses:
+        "200":
+          description: Kursant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [students]
+      operationId: replaceStudent
+      summary: Aktualizacja kursanta (pełne nadpisanie)
+      description: >-
+        **Mimo metody PATCH to pełne nadpisanie.** Pominięte pola opcjonalne (`pesel`, `secondName`,
+        adres, `telephone`, `companyId`) zostaną ustawione na `null`. Zawsze wysyłaj komplet danych —
+        najpierw pobierz kursanta przez GET.
+      x-required-scope: students:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentWrite"
+      responses:
+        "200":
+          description: Kursant po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /students/{id}/certificates:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [students, certificates]
+      operationId: listStudentCertificates
+      summary: Zaświadczenia kursanta
+      description: >-
+        Bez paginacji, sortowanie: data wystawienia malejąco. Pomija zaświadczenia usunięte.
+        Nieistniejący kursant daje pustą listę, nie 404. `id` musi mieścić się w int32.
+      x-required-scope: certificates:read
+      responses:
+        "200":
+          description: Zaświadczenia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentCertificatesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /students/{id}/audit-log:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [students, audit]
+      operationId: listStudentAuditLog
+      summary: Historia zmian kursanta
+      x-required-scope: audit-log:read
+      x-requires-admin: true
+      responses:
+        "200":
+          $ref: "#/components/responses/AuditLog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # --------------------------------------------------------------- companies
+  /companies:
+    get:
+      tags: [companies]
+      operationId: listCompanies
+      summary: Lista firm
+      description: >-
+        Sortowanie: nazwa, miasto. `search` dopasowuje fragment (bez rozróżniania wielkości liter)
+        w nazwie, mieście, NIP-ie lub osobie kontaktowej.
+      x-required-scope: companies:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Firmy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [companies]
+      operationId: createCompany
+      summary: Utworzenie firmy
+      x-required-scope: companies:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyWrite"
+      responses:
+        "201":
+          description: Utworzona firma.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "Firma o tym NIP-ie już istnieje (`company with this NIP already exists`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /companies/lookup-by-nip:
+    get:
+      tags: [companies]
+      operationId: lookupCompanyByNip
+      summary: Pobranie danych firmy z rejestru GUS (BIR)
+      description: >-
+        Nie zapisuje niczego w bazie — zwraca dane do wstępnego wypełnienia formularza firmy.
+        Wywołuje zewnętrzną usługę GUS, więc bywa wolne i może zawieść niezależnie od API.
+      x-required-scope: companies:read
+      parameters:
+        - name: nip
+          in: query
+          required: true
+          description: NIP; myślniki i spacje są usuwane przed walidacją sumy kontrolnej.
+          schema:
+            type: string
+            examples: ["123-456-32-18"]
+      responses:
+        "200":
+          description: Dane firmy z GUS.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GusCompanyResponse"
+        "400":
+          description: >-
+            Brak NIP-u (`no nip value in request`) lub błędny NIP
+            (`nip validation error: nip must contain exactly 10 digits`,
+            `nip validation error: invalid nip checksum`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "GUS nie zna firmy o tym NIP-ie (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: >-
+            Integracja z GUS nieskonfigurowana (`gus lookup is not configured`) albo błąd GUS
+            (`unable to login to BIR`, `nip lookup failed`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /companies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [companies]
+      operationId: getCompany
+      summary: Szczegóły firmy
+      x-required-scope: companies:read
+      responses:
+        "200":
+          description: Firma.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [companies]
+      operationId: replaceCompany
+      summary: Aktualizacja firmy (pełne nadpisanie)
+      description: >-
+        **Mimo metody PATCH to pełne nadpisanie.** Pominięte `email`, `contactPerson`, `note`,
+        `expiryNotificationEmail` zostaną wyczyszczone, a pominięte `expiryNotificationsEnabled`
+        ustawi się na `false`. Zawsze wysyłaj komplet danych.
+      x-required-scope: companies:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyWrite"
+      responses:
+        "200":
+          description: Firma po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "Inna firma ma już ten NIP (`company with this NIP already exists`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /companies/{id}/students:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [companies, students]
+      operationId: listCompanyStudents
+      summary: Kursanci firmy
+      description: >-
+        Bez paginacji i limitu, sortowanie: nazwisko, imię. **Uwaga:** klucze pól są tu pisane
+        małymi literami (`firstname`, `lastname`, `birthdate`…), inaczej niż w `GET /students`.
+        Nieistniejąca firma daje pustą listę, nie 404.
+      x-required-scope: students:read
+      responses:
+        "200":
+          description: Kursanci firmy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyStudentsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /companies/{id}/certificates:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [companies, certificates]
+      operationId: listCompanyCertificates
+      summary: Zaświadczenia firmy (z paginacją)
+      description: >-
+        Jedyne obok `GET /courses/{id}/certificates` miejsce z paginacją stronami.
+        Domyślny `limit` to **10**, nie 50.
+      x-required-scope: certificates:read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/DateFrom"
+        - $ref: "#/components/parameters/DateTo"
+      responses:
+        "200":
+          description: Strona zaświadczeń.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatePageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /companies/{id}/audit-log:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [companies, audit]
+      operationId: listCompanyAuditLog
+      summary: Historia zmian firmy
+      x-required-scope: audit-log:read
+      x-requires-admin: true
+      responses:
+        "200":
+          $ref: "#/components/responses/AuditLog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ----------------------------------------------------------------- courses
+  /courses:
+    get:
+      tags: [courses]
+      operationId: listCourses
+      summary: Lista kursów (bez treści)
+      description: >-
+        `search` dopasowuje fragment w nazwie głównej, nazwie lub symbolu. Wyniki są rankingowane:
+        dokładny symbol, symbol zaczynający się od frazy, nazwa zaczynająca się od frazy, nazwa
+        główna zaczynająca się od frazy, symbol zawierający frazę, reszta; w obrębie grupy
+        sortowanie po symbolu i nazwie.
+      x-required-scope: courses:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Kursy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [courses]
+      operationId: createCourse
+      summary: Utworzenie kursu
+      x-required-scope: courses:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseWrite"
+      responses:
+        "201":
+          description: Utworzony kurs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "Kurs o tym symbolu już istnieje (`failed to create course: symbol exist`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "Także gdy `courseProgram` nie jest poprawnym JSON-em (`failed to create course`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /courses/details:
+    get:
+      tags: [courses]
+      operationId: listCoursesWithContent
+      summary: Lista kursów z programem, szablonem i tłumaczeniami
+      description: >-
+        Te same wyniki i ta sama kolejność co `GET /courses` dla tych samych parametrów, ale każdy
+        element zawiera pełną treść kursu. Odpowiedź bywa duża (szablony HTML mają kilka kB na kurs) —
+        używaj tylko, gdy treść jest potrzebna.
+      x-required-scope: courses:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Kursy z treścią.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetailsListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /courses/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [courses]
+      operationId: getCourse
+      summary: Szczegóły kursu z treścią i tłumaczeniami
+      x-required-scope: courses:read
+      responses:
+        "200":
+          description: Kurs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [courses]
+      operationId: replaceCourse
+      summary: Aktualizacja kursu (pełne nadpisanie, łącznie z tłumaczeniami)
+      description: >-
+        **Mimo metody PATCH to pełne nadpisanie.** Lista `certificateTranslations` jest synchronizowana
+        z bazą: tłumaczenia z listy są wstawiane lub nadpisywane, a **każde tłumaczenie, którego nie ma
+        na liście, jest usuwane**. Pominięcie pola usuwa wszystkie tłumaczenia kursu. Zmiana kursu nie
+        wpływa na wystawione już zaświadczenia (przechowują kopię treści).
+      x-required-scope: courses:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CourseWrite"
+      responses:
+        "200":
+          description: Kurs po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /courses/{id}/certificates:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [courses, certificates]
+      operationId: listCourseCertificates
+      summary: Zaświadczenia kursu (z paginacją)
+      description: Domyślny `limit` to **10**, nie 50.
+      x-required-scope: certificates:read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/DateFrom"
+        - $ref: "#/components/parameters/DateTo"
+      responses:
+        "200":
+          description: Strona zaświadczeń.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatePageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /courses/{id}/audit-log:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [courses, audit]
+      operationId: listCourseAuditLog
+      summary: Historia zmian kursu
+      x-required-scope: audit-log:read
+      x-requires-admin: true
+      responses:
+        "200":
+          $ref: "#/components/responses/AuditLog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ------------------------------------------------------------ certificates
+  /certificates:
+    get:
+      tags: [certificates]
+      operationId: listCertificates
+      summary: Lista zaświadczeń
+      description: >-
+        Sortowanie: data wystawienia malejąco, potem id malejąco. Pomija zaświadczenia usunięte.
+        `search` dopasowuje fragment w imieniu, nazwisku, nazwie firmy, nazwie lub symbolu kursu
+        oraz w numerze zaświadczenia w formacie `numer/SYMBOL/rok` (np. `12/BHP/2026`).
+        `dateFrom`/`dateTo` filtrują po dacie wystawienia (włącznie).
+      x-required-scope: certificates:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/DateFrom"
+        - $ref: "#/components/parameters/DateTo"
+      responses:
+        "200":
+          description: Zaświadczenia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [certificates]
+      operationId: createCertificate
+      summary: Wystawienie zaświadczenia
+      description: >-
+        Zaświadczenie zapisuje **kopię** danych kursanta i treści kursu z chwili wystawienia — późniejsze
+        zmiany kursanta lub kursu go nie zmieniają.
+
+        Reguły (patrz też INTEGRATION.md, sekcja o zaświadczeniach):
+        - `certificateDate` nie może być wcześniejsza niż koniec kursu (`courseDateEnd`, a gdy brak — `courseDateStart`).
+        - `courseDateEnd`, jeśli podana, nie może być wcześniejsza niż `courseDateStart`.
+        - Numer rejestru musi być wolny w obrębie (kurs, rok) i zachowywać chronologię: data zaświadczenia
+          musi mieścić się między datami zaświadczeń o sąsiednich numerach w tym samym kursie i roku.
+          Kolejny wolny numer pobierzesz z `GET /registries/next-number`.
+        - `languageCode` inny niż `pl` wymaga istniejącego tłumaczenia kursu w tym języku.
+      x-required-scope: certificates:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateCreate"
+      responses:
+        "201":
+          description: Wystawione zaświadczenie (tylko id — szczegóły pobierz przez GET).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          description: >-
+            `invalid request body`, `invalid certificate data` (brak/niepoprawne pola, zła kolejność
+            dat kursu albo naruszona chronologia rejestru), `certificate date cannot be before course
+            end date`, `certificate translation not found`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "Numer rejestru zajęty (`registry number already taken for the given year`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: >-
+            **Także gdy `studentId` lub `courseId` nie istnieje** — API zwraca wtedy 500
+            `failed to create certificate` zamiast 404. Weryfikuj istnienie kursanta i kursu przed wywołaniem.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /certificates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [certificates]
+      operationId: getCertificate
+      summary: Szczegóły zaświadczenia z wariantami wydruku
+      description: Zaświadczenie usunięte (soft delete) daje 404, tak jak nieistniejące.
+      x-required-scope: certificates:read
+      responses:
+        "200":
+          description: Zaświadczenie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [certificates]
+      operationId: replaceCertificate
+      summary: Korekta zaświadczenia (pełne nadpisanie)
+      description: >-
+        Pozwala zmienić kursanta i daty. Numer rejestru, kurs i język są niezmienne. Pominięte
+        `courseDateEnd` zostanie ustawione na `null`. Zmiana kursanta odświeża kopię jego danych w
+        zaświadczeniu. W odpowiedzi `printVariants` zawiera **tylko** wariant oryginalny — pełną listę
+        wariantów zwraca GET.
+      x-required-scope: certificates:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateUpdate"
+      responses:
+        "200":
+          description: Zaświadczenie po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          description: "`invalid request body` lub `certificate date cannot be before course end date`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [certificates]
+      operationId: deleteCertificate
+      summary: Usunięcie zaświadczenia (soft delete)
+      description: >-
+        **Wymaga ciała JSON** — co najmniej `{}`. Żądanie bez ciała kończy się 400 `invalid request body`.
+        Usunięcie jest nieodwracalne przez API: zaświadczenie znika z list, `GET /certificates/{id}` i wydruk
+        zwracają odtąd 404, a jego numer rejestru można wykorzystać ponownie.
+      x-required-scope: certificates:write
+      x-requires-admin: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateDelete"
+      responses:
+        "200":
+          description: Usunięte zaświadczenie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Nie istnieje lub jest już usunięte (`certificate not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /certificates/{id}/pdf:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [certificates]
+      operationId: getCertificatePdf
+      summary: Wydruk zaświadczenia (PDF)
+      description: >-
+        Renderowane na serwerze (wkhtmltopdf/Chromium) — może trwać kilka sekund; limit czasu żądania
+        to 60 s. Nagłówek `Content-Disposition` zawiera nazwę pliku `zaswiadczenie-<numer>.pdf`.
+      x-required-scope: certificates:read
+      parameters:
+        - name: language
+          in: query
+          description: >-
+            Język wydruku. Domyślnie język, w którym wystawiono zaświadczenie. `pl` bierze aktualną
+            treść kursu; inne kody — aktualne tłumaczenie kursu. Dostępne kody zwraca
+            `GET /certificates/{id}` w `printVariants[].languageCode`.
+          schema:
+            type: string
+            examples: ["en"]
+      responses:
+        "200":
+          description: Plik PDF.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                contentMediaType: application/pdf
+        "400":
+          description: "`invalid certificate id` lub brak tłumaczenia (`certificate translation not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /certificates/{id}/audit-log:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [certificates, audit]
+      operationId: listCertificateAuditLog
+      summary: Historia zmian zaświadczenia
+      x-required-scope: audit-log:read
+      x-requires-admin: true
+      responses:
+        "200":
+          $ref: "#/components/responses/AuditLog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # -------------------------------------------------------------- registries
+  /registries/next-number:
+    get:
+      tags: [registries]
+      operationId: getNextRegistryNumber
+      summary: Kolejny wolny numer rejestru dla kursu i roku
+      description: >-
+        Zwraca `max(numer) + 1` wśród nieusuniętych zaświadczeń kursu w danym roku (1, gdy brak).
+        To tylko podpowiedź — między odczytem a `POST /certificates` numer może zająć ktoś inny (wtedy 409).
+      x-required-scope: registries:read
+      parameters:
+        - name: courseId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            examples: [2026]
+      responses:
+        "200":
+          description: Numer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryNextNumberResponse"
+        "400":
+          description: "`invalid course id` lub `invalid year`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # --------------------------------------------------------------- dashboard
+  /dashboard:
+    get:
+      tags: [dashboard]
+      operationId: getDashboard
+      summary: Statystyki i zaświadczenia wygasające w ciągu 30 dni
+      x-required-scope: dashboard:read
+      responses:
+        "200":
+          description: Dane pulpitu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------- journals
+  /journals:
+    get:
+      tags: [journals]
+      operationId: listJournals
+      summary: Lista dzienników szkoleń
+      description: >-
+        Sortowanie: data utworzenia malejąco. `search` dopasowuje fragment w tytule, symbolu i nazwie
+        kursu, nazwie firmy, miejscu i organizatorze. `dateFrom` filtruje po `dateStart >= dateFrom`,
+        `dateTo` po `dateEnd <= dateTo`.
+      x-required-scope: journals:read
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+        - name: courseId
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/JournalStatus"
+        - $ref: "#/components/parameters/DateFrom"
+        - $ref: "#/components/parameters/DateTo"
+      responses:
+        "200":
+          description: Dzienniki.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [journals]
+      operationId: createJournal
+      summary: Utworzenie dziennika
+      description: >-
+        Tworzy dziennik w statusie `draft` i **od razu generuje sesje z programu kursu** (maks. 8 godzin
+        na dzień, kolejne dni od `dateStart`, prowadzący = `organizerName`). Pole `sessionsCount` w
+        odpowiedzi ma wartość 0 mimo to — rzeczywistą liczbę sesji zwraca `GET /journals/{id}`.
+        `totalHours` jest liczone z programu kursu.
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalCreate"
+      responses:
+        "201":
+          description: Utworzony dziennik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalDetailsResponse"
+        "400":
+          description: "`invalid request body`, `invalid dateStart`, `invalid dateEnd`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Kurs nie istnieje (`course not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /journals/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: getJournal
+      summary: Szczegóły dziennika
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Dziennik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [journals]
+      operationId: replaceJournalHeader
+      summary: Aktualizacja nagłówka dziennika (pełne nadpisanie)
+      description: >-
+        Kursu nie da się zmienić. Pominięte `companyId`, `organizerAddress`, `notes` zostaną wyczyszczone.
+        Nowy zakres dat musi obejmować daty wszystkich istniejących sesji.
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalUpdate"
+      responses:
+        "200":
+          description: Dziennik po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalDetailsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            Dziennik zamknięty (`unable to change header because journal is closed`) albo sesja poza
+            nowym zakresem dat (`session outside range`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [journals]
+      operationId: deleteJournal
+      summary: Usunięcie dziennika
+      description: >-
+        Trwałe usunięcie wraz z sesjami, uczestnikami, obecnością i skanami. Działa także na dziennikach
+        zamkniętych. Wystawione zaświadczenia pozostają.
+      x-required-scope: journals:write
+      responses:
+        "200":
+          description: Usunięty dziennik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /journals/{id}/pdf:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: getJournalPdf
+      summary: Wydruk dziennika (PDF)
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Plik PDF.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                contentMediaType: application/pdf
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /journals/{id}/close:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [journals]
+      operationId: closeJournal
+      summary: Zamknięcie dziennika
+      description: >-
+        Nieodwracalne przez API. Wymaga co najmniej jednego uczestnika i jednej sesji. Zamknięty
+        dziennik blokuje zmiany nagłówka, sesji, obecności i usuwanie uczestników.
+      x-required-scope: journals:write
+      responses:
+        "200":
+          description: Zamknięty dziennik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalDetailsResponse"
+        "400":
+          description: >-
+            `journal must include at least one attendee and one session before closing`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`journal is already closed`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: listJournalSessions
+      summary: Sesje (pozycje programu) dziennika
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Sesje.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalSessionListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /journals/{id}/sessions/generate-from-course:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [journals]
+      operationId: generateJournalSessions
+      summary: Wygenerowanie sesji z programu kursu
+      description: >-
+        Działa tylko, gdy dziennik nie ma jeszcze żadnej sesji. Ponieważ `POST /journals` generuje sesje
+        automatycznie, zwykle zwróci 409 — przydaje się dla dzienników, których kurs miał wtedy pusty program.
+      x-required-scope: journals:write
+      responses:
+        "200":
+          description: Liczba utworzonych sesji.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateSessionsResponse"
+        "400":
+          description: "`course program is empty`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`journal sessions already exist`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    patch:
+      tags: [journals]
+      operationId: updateJournalSession
+      summary: Zmiana daty i prowadzącego sesji
+      description: Temat i godziny sesji są niezmienne. Data musi mieścić się w zakresie dat dziennika.
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalSessionUpdate"
+      responses:
+        "200":
+          description: Sesja po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalSessionResponse"
+        "400":
+          description: >-
+            `invalid request body`, `invalid sessionDate`, `session date must fit within journal dates`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`journal is closed`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendees:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: listJournalAttendees
+      summary: Uczestnicy dziennika
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Uczestnicy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalAttendeeListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [journals]
+      operationId: addJournalAttendee
+      summary: Dodanie kursanta do dziennika
+      description: >-
+        Zapisuje kopię imienia i nazwiska, daty urodzenia i firmy kursanta z chwili dodania.
+        API nie blokuje dodawania do dziennika zamkniętego.
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalAttendeeAdd"
+      responses:
+        "201":
+          description: Dodany uczestnik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalAttendeeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`journal or student not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`student already added to journal`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendees/{attendeeId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/AttendeeId"
+    delete:
+      tags: [journals]
+      operationId: deleteJournalAttendee
+      summary: Usunięcie uczestnika z dziennika
+      x-required-scope: journals:write
+      responses:
+        "200":
+          description: Usunięty uczestnik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`journal not found` lub `journal attendee not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`journal is closed`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendees/{attendeeId}/certificate/generate:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/AttendeeId"
+    post:
+      tags: [journals, certificates]
+      operationId: generateAttendeeCertificate
+      summary: Wystawienie zaświadczenia uczestnikowi na podstawie dziennika
+      description: >-
+        Numer rejestru i data są dobierane automatycznie: rok = rok `dateEnd` dziennika, numer = ostatni
+        numer w tym kursie i roku + 1, data = `dateEnd` dziennika (lub data ostatniego zaświadczenia,
+        jeśli jest późniejsza). Zaświadczenie zostaje od razu powiązane z uczestnikiem.
+      x-required-scope: journals:write
+      responses:
+        "201":
+          description: Id wystawionego zaświadczenia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`journal attendee not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`certificate already linked to journal attendee`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /journals/{id}/attendees/{attendeeId}/certificate:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/AttendeeId"
+    patch:
+      tags: [journals, certificates]
+      operationId: linkAttendeeCertificate
+      summary: Powiązanie istniejącego zaświadczenia z uczestnikiem (lub odpięcie)
+      description: >-
+        `certificateId: null` odpina zaświadczenie. Zaświadczenie musi należeć do tego samego kursanta,
+        dotyczyć kursu dziennika i nie być usunięte; jedno zaświadczenie może być powiązane z najwyżej
+        jednym uczestnikiem.
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalAttendeeCertificateLink"
+      responses:
+        "200":
+          description: Uczestnik po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalAttendeeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: >-
+            `journal attendee or certificate not found` — także gdy zaświadczenie nie spełnia warunków
+            (inny kursant, inny kurs, usunięte).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`certificate already linked to another journal attendee`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendance:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: listJournalAttendance
+      summary: Obecność na sesjach
+      description: >-
+        Zawiera tylko zapisane wpisy. Brak wpisu dla pary (sesja, uczestnik) oznacza, że obecności
+        jeszcze nie zaznaczano.
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Wpisy obecności.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalAttendanceListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [journals]
+      operationId: setJournalAttendance
+      summary: Zaznaczenie obecności jednego uczestnika na jednej sesji
+      description: Upsert — tworzy lub nadpisuje wpis dla pary (sesja, uczestnik).
+      x-required-scope: journals:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalAttendanceUpdate"
+      responses:
+        "200":
+          description: Wpis obecności.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalAttendanceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: >-
+            `journal not found` albo sesja lub uczestnik nie należą do dziennika
+            (`journal attendance not found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`journal is closed`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendance-scan:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: downloadAttendanceScan
+      summary: Pobranie skanu listy obecności
+      x-required-scope: journals:read
+      responses:
+        "200":
+          $ref: "#/components/responses/ScanFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [journals]
+      operationId: uploadAttendanceScan
+      summary: Wgranie (lub zastąpienie) skanu listy obecności
+      description: >-
+        `multipart/form-data` z polem `file`. Maks. 16 MiB. Typ jest wykrywany z zawartości pliku
+        (nie z rozszerzenia ani nagłówka): dozwolone PDF, JPEG, PNG. Działa także na zamkniętym dzienniku.
+      x-required-scope: journals:write
+      requestBody:
+        $ref: "#/components/requestBodies/ScanUpload"
+      responses:
+        "200":
+          description: Metadane wgranego pliku.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalScanResponse"
+        "400":
+          $ref: "#/components/responses/UploadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [journals]
+      operationId: deleteAttendanceScan
+      summary: Usunięcie skanu listy obecności
+      x-required-scope: journals:write
+      responses:
+        "204":
+          description: Usunięto.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/attendance-scan/meta:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: getAttendanceScanMeta
+      summary: Metadane skanu listy obecności
+      description: 404 oznacza, że skanu jeszcze nie wgrano.
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Metadane.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalScanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/signed-scan:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: downloadSignedScan
+      summary: Pobranie skanu podpisanego dziennika
+      x-required-scope: journals:read
+      responses:
+        "200":
+          $ref: "#/components/responses/ScanFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [journals]
+      operationId: uploadSignedScan
+      summary: Wgranie (lub zastąpienie) skanu podpisanego dziennika
+      description: Te same reguły co dla skanu listy obecności.
+      x-required-scope: journals:write
+      requestBody:
+        $ref: "#/components/requestBodies/ScanUpload"
+      responses:
+        "200":
+          description: Metadane wgranego pliku.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalScanResponse"
+        "400":
+          $ref: "#/components/responses/UploadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [journals]
+      operationId: deleteSignedScan
+      summary: Usunięcie skanu podpisanego dziennika
+      x-required-scope: journals:write
+      responses:
+        "204":
+          description: Usunięto.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /journals/{id}/signed-scan/meta:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [journals]
+      operationId: getSignedScanMeta
+      summary: Metadane skanu podpisanego dziennika
+      x-required-scope: journals:read
+      responses:
+        "200":
+          description: Metadane.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalScanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`file not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ------------------------------------------------------------------- admin
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: listUsers
+      summary: Lista użytkowników systemu
+      x-required-scope: users:read
+      x-requires-admin: true
+      responses:
+        "200":
+          description: Użytkownicy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [admin]
+      operationId: createUser
+      summary: Utworzenie użytkownika
+      x-required-scope: users:write
+      x-requires-admin: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserCreate"
+      responses:
+        "201":
+          description: Utworzony użytkownik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserResponse"
+        "400":
+          description: "`invalid request body` lub `invalid email format`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: "Także przy zajętym adresie e-mail (`failed to create user`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [admin]
+      operationId: replaceUser
+      summary: Aktualizacja użytkownika (pełne nadpisanie)
+      x-required-scope: users:write
+      x-requires-admin: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserUpdate"
+      responses:
+        "200":
+          description: Użytkownik po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserResponse"
+        "400":
+          description: "`invalid request body` lub `invalid email format`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            Brak uprawnień albo naruszenie ochrony administratorów:
+            `cannot remove your own last admin access`, `cannot update last admin role`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [admin]
+      operationId: deleteUser
+      summary: Usunięcie użytkownika
+      description: >-
+        Nie można usunąć konta, w imieniu którego działa klucz, ani ostatniego administratora.
+        Usunięcie konta serwisowego unieważnia jego klucze API.
+      x-required-scope: users:write
+      x-requires-admin: true
+      responses:
+        "200":
+          description: Usunięty użytkownik.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: "`cannot delete current user`, `cannot delete last admin`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/users/{id}/password:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [admin]
+      operationId: resetUserPassword
+      summary: Ustawienie nowego hasła użytkownikowi
+      description: Unieważnia wszystkie sesje przeglądarkowe użytkownika.
+      x-required-scope: users:write
+      x-requires-admin: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPasswordReset"
+      responses:
+        "204":
+          description: Hasło zmienione.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: "`cannot reset current user password via admin endpoint`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/users/{id}/audit-log:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [admin, audit]
+      operationId: listUserAuditLog
+      summary: Historia zmian użytkownika
+      x-required-scope: audit-log:read
+      x-requires-admin: true
+      responses:
+        "200":
+          $ref: "#/components/responses/AuditLog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: >-
+        Klucz API w nagłówku `Authorization: Bearer clk_...`. Klucze wystawia administrator w aplikacji
+        webowej (Administracja → Klucze API). Klucz działa w imieniu przypisanego konta serwisowego i
+        tylko w zakresie nadanych uprawnień (`x-required-scope`).
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AttendeeId:
+      name: attendeeId
+      in: path
+      required: true
+      description: Id uczestnika dziennika (`JournalAttendee.id`), **nie** id kursanta.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Search:
+      name: search
+      in: query
+      description: Fraza wyszukiwania; białe znaki na brzegach są obcinane, pusta = brak filtra.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Maksymalna liczba wyników. Poza zakresem 1–100 → 400 `incorrect limit value`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Page:
+      name: page
+      in: query
+      description: Numer strony, od 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageLimit:
+      name: limit
+      in: query
+      description: Rozmiar strony. Poza zakresem 1–100 → 400 `invalid limit value`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+    DateFrom:
+      name: dateFrom
+      in: query
+      description: "Data `YYYY-MM-DD`, włącznie. Nie może być późniejsza niż `dateTo`."
+      schema:
+        $ref: "#/components/schemas/Date"
+    DateTo:
+      name: dateTo
+      in: query
+      description: "Data `YYYY-MM-DD`, włącznie."
+      schema:
+        $ref: "#/components/schemas/Date"
+
+  requestBodies:
+    ScanUpload:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file:
+                type: string
+                contentMediaType: application/octet-stream
+                description: Plik PDF, JPEG lub PNG, maks. 16 MiB. Nazwa pliku z formularza jest zapisywana.
+
+  responses:
+    BadRequest:
+      description: >-
+        Błędne żądanie — np. `invalid request body` (brak wymaganego pola, pole spoza schematu,
+        zła data), błędny identyfikator w ścieżce, `incorrect limit value`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UploadBadRequest:
+      description: >-
+        `invalid request body` (nie multipart), `file is required`, `file is too large`,
+        `unsupported file type`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: >-
+        Brak lub nieważny klucz: `missing credentials`, `invalid or expired api key`.
+        Klucz mógł zostać unieważniony, wygasnąć albo jego konto usunięto.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: >-
+        Klucz jest ważny, ale nie ma uprawnień: `api key is missing the <zakres> scope`
+        albo `admin access required` (konto serwisowe nie jest administratorem).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: "Zasób nie istnieje — `<zasób> not found`."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Błąd serwera (`internal_error`). Treść komunikatu nie jest stabilna.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ScanFile:
+      description: Plik skanu w oryginalnym typie; `Content-Disposition` zawiera oryginalną nazwę pliku.
+      content:
+        application/pdf:
+          schema:
+            type: string
+            contentMediaType: application/pdf
+        image/jpeg:
+          schema:
+            type: string
+            contentMediaType: image/jpeg
+        image/png:
+          schema:
+            type: string
+            contentMediaType: image/png
+    AuditLog:
+      description: Wpisy historii zmian, od najnowszych. Nieistniejący obiekt daje pustą listę.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AuditLogResponse"
+
+  schemas:
+    # ------------------------------------------------------------ primitives
+    Date:
+      type: string
+      format: date
+      pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+      examples: ["2026-09-14"]
+    LocalTimestamp:
+      type: string
+      pattern: "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+      description: >-
+        Znacznik czasu `YYYY-MM-DD HH:MM:SS` w **lokalnym czasie serwera, bez strefy czasowej**.
+        Nie jest to ISO 8601 (spacja zamiast `T`, brak przesunięcia).
+      examples: ["2026-09-14 10:30:00"]
+    NullableLocalTimestamp:
+      oneOf:
+        - $ref: "#/components/schemas/LocalTimestamp"
+        - type: "null"
+    NullableDate:
+      oneOf:
+        - $ref: "#/components/schemas/Date"
+        - type: "null"
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [bad_request, unauthorized, invalid_credentials, forbidden, not_found, conflict, internal_error]
+            message:
+              type: string
+              description: >-
+                Komunikat po angielsku. Komunikaty wymienione w opisach operacji są stabilne i można na nich
+                opierać logikę; pozostałe traktuj jako informacyjne.
+    IdResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id]
+          properties:
+            id:
+              type: integer
+              format: int64
+    Pagination:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+          format: int64
+          description: Liczba wszystkich pasujących zaświadczeń.
+        totalPages:
+          type: integer
+
+    # ------------------------------------------------------------------ auth
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, role]
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+    AuthUserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthUser"
+    Role:
+      type: integer
+      description: >-
+        `1` = administrator. **Każda inna wartość** (w danych występują `0` i `2`) to zwykły użytkownik —
+        sprawdzaj `role === 1`, nie zakładaj konkretnej wartości dla zwykłego konta.
+      examples: [1, 2, 0]
+    RoleInput:
+      type: integer
+      minimum: 1
+      description: "`1` = administrator. Przy zapisie wymagana wartość dodatnia; aplikacja webowa dla zwykłego użytkownika używa `2`."
+      examples: [1, 2]
+
+    # -------------------------------------------------------------- students
+    CompanyRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    StudentListItem:
+      type: object
+      required: [id, firstName, lastName, pesel, birthDate, company]
+      properties:
+        id:
+          type: integer
+          format: int64
+        firstName:
+          type: string
+        lastName:
+          type: string
+        pesel:
+          type: [string, "null"]
+        birthDate:
+          $ref: "#/components/schemas/Date"
+        company:
+          oneOf:
+            - $ref: "#/components/schemas/CompanyRef"
+            - type: "null"
+    StudentListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudentListItem"
+    StudentDetails:
+      type: object
+      required: [id, firstName, lastName, secondName, birthDate, birthPlace, pesel, addressStreet, addressCity, addressZip, telephone, company]
+      properties:
+        id:
+          type: integer
+          format: int64
+        firstName:
+          type: string
+        lastName:
+          type: string
+        secondName:
+          type: [string, "null"]
+        birthDate:
+          $ref: "#/components/schemas/Date"
+        birthPlace:
+          type: string
+        pesel:
+          type: [string, "null"]
+        addressStreet:
+          type: [string, "null"]
+        addressCity:
+          type: [string, "null"]
+        addressZip:
+          type: [string, "null"]
+        telephone:
+          type: [string, "null"]
+        company:
+          oneOf:
+            - $ref: "#/components/schemas/CompanyRef"
+            - type: "null"
+    StudentDetailsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/StudentDetails"
+    StudentWrite:
+      type: object
+      additionalProperties: false
+      description: >-
+        Wymagane pola nie mogą być puste po obcięciu białych znaków. Puste stringi w polach opcjonalnych
+        są zapisywane jako `null`. PESEL nie jest walidowany.
+      required: [firstName, lastName, birthDate, birthPlace]
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        secondName:
+          type: [string, "null"]
+        birthDate:
+          $ref: "#/components/schemas/Date"
+        birthPlace:
+          type: string
+          minLength: 1
+        pesel:
+          type: [string, "null"]
+        addressStreet:
+          type: [string, "null"]
+        addressCity:
+          type: [string, "null"]
+        addressZip:
+          type: [string, "null"]
+        telephone:
+          type: [string, "null"]
+        companyId:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+          description: "`null` = kursant bez firmy."
+    StudentCertificate:
+      type: object
+      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate]
+      properties:
+        id:
+          type: integer
+          format: int64
+        date:
+          $ref: "#/components/schemas/Date"
+        courseName:
+          type: string
+        courseSymbol:
+          type: string
+        registryYear:
+          type: integer
+        registryNumber:
+          type: integer
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        expiryDate:
+          $ref: "#/components/schemas/ExpiryDate"
+    StudentCertificatesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudentCertificate"
+    CompanyStudent:
+      type: object
+      description: "Uwaga: klucze małymi literami, inaczej niż w `StudentListItem`."
+      required: [id, firstname, lastname, secondname, birthdate, birthplace, pesel]
+      properties:
+        id:
+          type: integer
+          format: int64
+        firstname:
+          type: string
+        lastname:
+          type: string
+        secondname:
+          type: [string, "null"]
+        birthdate:
+          $ref: "#/components/schemas/Date"
+        birthplace:
+          type: string
+        pesel:
+          type: [string, "null"]
+    CompanyStudentsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanyStudent"
+
+    # ------------------------------------------------------------- companies
+    CompanyListItem:
+      type: object
+      required: [id, name, city, nip]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        city:
+          type: string
+        nip:
+          type: string
+        contactPerson:
+          type: string
+          description: "**Pole pomijane** w JSON, gdy puste (a nie `null`)."
+        telephone:
+          type: string
+          description: "**Pole pomijane** w JSON, gdy puste (a nie `null`)."
+    CompanyListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanyListItem"
+    CompanyDetails:
+      type: object
+      required: [id, name, street, city, zipcode, nip, email, contactPerson, telephone, note, expiryNotificationsEnabled, expiryNotificationEmail]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        street:
+          type: string
+        city:
+          type: string
+        zipcode:
+          type: string
+        nip:
+          type: string
+        email:
+          type: [string, "null"]
+        contactPerson:
+          type: [string, "null"]
+        telephone:
+          type: string
+        note:
+          type: [string, "null"]
+        expiryNotificationsEnabled:
+          type: boolean
+          description: Czy firma dostaje e-mailowe przypomnienia o wygasających zaświadczeniach.
+        expiryNotificationEmail:
+          type: [string, "null"]
+          description: Adresy odbiorców przypomnień rozdzielone przecinkami (bez spacji).
+    CompanyDetailsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CompanyDetails"
+    CompanyWrite:
+      type: object
+      additionalProperties: false
+      description: >-
+        Wymagane pola nie mogą być puste po obcięciu białych znaków. NIP **nie** jest tu walidowany
+        (tylko unikalność) — do walidacji i pobrania danych użyj `GET /companies/lookup-by-nip`.
+      required: [name, street, city, zipcode, nip, telephone]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        street:
+          type: string
+          minLength: 1
+        city:
+          type: string
+          minLength: 1
+        zipcode:
+          type: string
+          minLength: 1
+        nip:
+          type: string
+          minLength: 1
+        email:
+          type: [string, "null"]
+        contactPerson:
+          type: [string, "null"]
+        telephone:
+          type: string
+          minLength: 1
+        note:
+          type: [string, "null"]
+        expiryNotificationsEnabled:
+          type: boolean
+          default: false
+        expiryNotificationEmail:
+          type: [string, "null"]
+          description: >-
+            Lista maks. 10 adresów e-mail rozdzielonych przecinkami (format RFC 5322, np.
+            `a@x.pl, Jan <b@x.pl>`). Duplikaty są usuwane. Niepoprawny adres lub więcej niż 10 → 400.
+    GusCompany:
+      type: object
+      required: [nip, regon, name, voivodeship, county, commune, city, postalCode, street, houseNumber, apartment, status]
+      properties:
+        nip:
+          type: string
+        regon:
+          type: string
+        name:
+          type: string
+        voivodeship:
+          type: string
+        county:
+          type: string
+        commune:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        street:
+          type: string
+        houseNumber:
+          type: string
+        apartment:
+          type: string
+          description: Pusty string, gdy brak numeru lokalu.
+        status:
+          type: string
+    GusCompanyResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/GusCompany"
+
+    # --------------------------------------------------------------- courses
+    CourseListItem:
+      type: object
+      required: [id, mainName, name, symbol, expiryTime]
+      properties:
+        id:
+          type: integer
+          format: int64
+        mainName:
+          type: string
+        name:
+          type: string
+        symbol:
+          type: string
+          description: Unikalny symbol kursu, używany w numerze zaświadczenia.
+        expiryTime:
+          $ref: "#/components/schemas/ExpiryTime"
+    CourseListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourseListItem"
+    ExpiryTime:
+      type: [string, "null"]
+      pattern: "^\\d+$"
+      description: >-
+        Okres ważności zaświadczenia w **latach**, zapisany jako string z liczbą całkowitą (np. `"5"`).
+        Data wygaśnięcia = `courseDateEnd` + `expiryTime` × 365 dni.
+      examples: ["5"]
+    CourseProgram:
+      type: string
+      contentMediaType: application/json
+      description: >-
+        **String zawierający JSON** (nie zagnieżdżony obiekt) — tablicę pozycji programu:
+        `[{"Subject": "Temat", "TheoryTime": "4", "PracticeTime": "0"}]`. Klucze wielką literą,
+        godziny jako stringi z liczbą. Program jest źródłem sesji dziennika i tabeli na wydruku.
+      examples:
+        - '[{"Subject":"Przepisy BHP","TheoryTime":"4","PracticeTime":"0"}]'
+    CertFrontPage:
+      type: string
+      description: >-
+        Szablon HTML pierwszej strony zaświadczenia. Placeholdery w podwójnych nawiasach klamrowych
+        (spacje wewnątrz dowolne): `{{ imie }}`, `{{ drugie_imie }}`, `{{ nazwisko }}`, `{{ pesel }}`,
+        `{{ data_urodzenia }}`, `{{ miejsce_urodzenia }}`, `{{ nazwa_kursu }}`, `{{ data_rozpoczecia }}`,
+        `{{ data_zakonczenia }}`, `{{ data_wystawienia }}`, `{{ numer_zaswiadczenia }}`.
+        Wartości są wstawiane z escapowaniem HTML, daty w formacie polskim.
+    CourseCertificateTranslation:
+      type: object
+      required: [languageCode, courseName, courseProgram, certFrontPage]
+      properties:
+        languageCode:
+          $ref: "#/components/schemas/TranslationLanguageCode"
+        courseName:
+          type: string
+          minLength: 1
+        courseProgram:
+          $ref: "#/components/schemas/CourseProgram"
+        certFrontPage:
+          $ref: "#/components/schemas/CertFrontPage"
+    TranslationLanguageCode:
+      type: string
+      enum: [en, de, uk, cs, sk, lt]
+      description: "Języki tłumaczeń. `pl` to język bazowy kursu i nie może być tłumaczeniem."
+    CourseDetails:
+      type: object
+      required: [id, mainName, name, symbol, expiryTime, courseProgram, certFrontPage, certificateTranslations]
+      properties:
+        id:
+          type: integer
+          format: int64
+        mainName:
+          type: string
+        name:
+          type: string
+        symbol:
+          type: string
+        expiryTime:
+          $ref: "#/components/schemas/ExpiryTime"
+        courseProgram:
+          $ref: "#/components/schemas/CourseProgram"
+        certFrontPage:
+          $ref: "#/components/schemas/CertFrontPage"
+        certificateTranslations:
+          type: array
+          description: Posortowane po kodzie języka; pusta tablica, gdy brak tłumaczeń.
+          items:
+            $ref: "#/components/schemas/CourseCertificateTranslation"
+    CourseDetailsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CourseDetails"
+    CourseDetailsListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourseDetails"
+    CourseWrite:
+      type: object
+      additionalProperties: false
+      required: [mainName, name, symbol, expiryTime, courseProgram, certFrontPage]
+      properties:
+        mainName:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        symbol:
+          type: string
+          minLength: 1
+        expiryTime:
+          type: string
+          pattern: "^\\d+$"
+          description: Wymagane (nie może być `null`). Nieujemna liczba całkowita lat jako string.
+        courseProgram:
+          $ref: "#/components/schemas/CourseProgram"
+        certFrontPage:
+          $ref: "#/components/schemas/CertFrontPage"
+        certificateTranslations:
+          type: array
+          description: >-
+            **Pełna lista** tłumaczeń — przy PATCH tłumaczenia spoza listy są usuwane. Kody języków nie mogą się
+            powtarzać; wszystkie pola każdego tłumaczenia są wymagane.
+          items:
+            $ref: "#/components/schemas/CourseCertificateTranslation"
+
+    # ---------------------------------------------------------- certificates
+    ExpiryDate:
+      type: [string, "null"]
+      format: date
+      description: >-
+        Wyliczona data wygaśnięcia (`courseDateEnd` + ważność kursu × 365 dni). `null`, gdy kurs nie ma końca
+        lub okresu ważności.
+    CertificateListItem:
+      type: object
+      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode]
+      properties:
+        id:
+          type: integer
+          format: int64
+        date:
+          $ref: "#/components/schemas/Date"
+        studentName:
+          type: string
+          description: Imię i nazwisko połączone spacją.
+        companyName:
+          type: string
+          description: Nazwa firmy z chwili wystawienia; pusty string, gdy kursant nie miał firmy.
+        courseName:
+          type: string
+        courseSymbol:
+          type: string
+        registryYear:
+          type: integer
+        registryNumber:
+          type: integer
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        expiryDate:
+          $ref: "#/components/schemas/ExpiryDate"
+        languageCode:
+          type: string
+          description: Język, w którym wystawiono zaświadczenie (`pl` lub kod tłumaczenia).
+    CertificateListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateListItem"
+    CertificatePageResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateListItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+    CertificateJournalRef:
+      type: object
+      required: [id, title, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/JournalStatus"
+    CertificatePrintVariant:
+      type: object
+      required: [languageCode, courseName, courseProgram, certFrontPage, isOriginal]
+      properties:
+        languageCode:
+          type: string
+        courseName:
+          type: string
+        courseProgram:
+          $ref: "#/components/schemas/CourseProgram"
+        certFrontPage:
+          $ref: "#/components/schemas/CertFrontPage"
+        isOriginal:
+          type: boolean
+          description: >-
+            `true` dla treści zapisanej w chwili wystawienia (zawsze pierwszy element). Pozostałe warianty
+            to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
+    CertificateDetails:
+      type: object
+      required: [id, date, studentId, courseId, studentName, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants]
+      properties:
+        id:
+          type: integer
+          format: int64
+        date:
+          $ref: "#/components/schemas/Date"
+        studentId:
+          type: integer
+          format: int64
+        courseId:
+          type: integer
+          format: int64
+        studentName:
+          type: string
+          description: "**Samo imię** (inaczej niż `studentName` na liście, gdzie to imię i nazwisko)."
+        studentSecondname:
+          type: string
+          description: Pusty string, gdy brak.
+        studentLastname:
+          type: string
+        studentBirthdate:
+          $ref: "#/components/schemas/Date"
+        studentBirthplace:
+          type: string
+        studentPesel:
+          type: string
+          description: Pusty string, gdy brak.
+        companyName:
+          type: string
+          description: Pusty string, gdy brak.
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        registryYear:
+          type: integer
+        registryNumber:
+          type: integer
+        courseName:
+          type: string
+        courseSymbol:
+          type: string
+        courseExpiryTime:
+          type: [integer, "null"]
+          description: Ważność w latach z chwili wystawienia — tu jako **liczba**, w kursie jako string.
+        courseProgram:
+          $ref: "#/components/schemas/CourseProgram"
+        certFrontPage:
+          $ref: "#/components/schemas/CertFrontPage"
+        expiryDate:
+          $ref: "#/components/schemas/ExpiryDate"
+        journal:
+          oneOf:
+            - $ref: "#/components/schemas/CertificateJournalRef"
+            - type: "null"
+          description: Dziennik, z którego uczestnikiem powiązano zaświadczenie.
+        languageCode:
+          type: string
+        printVariants:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificatePrintVariant"
+    CertificateDetailsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CertificateDetails"
+    CertificateCreate:
+      type: object
+      additionalProperties: false
+      required: [studentId, courseId, certificateDate, courseDateStart, registryYear, registryNumber]
+      properties:
+        studentId:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        courseId:
+          type: integer
+          format: int64
+          minimum: 1
+        certificateDate:
+          $ref: "#/components/schemas/Date"
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        registryYear:
+          type: integer
+          minimum: 1
+          examples: [2026]
+        registryNumber:
+          type: integer
+          format: int32
+          minimum: 1
+        languageCode:
+          type: string
+          default: pl
+          description: "`pl` (domyślnie) albo kod istniejącego tłumaczenia kursu."
+    CertificateUpdate:
+      type: object
+      additionalProperties: false
+      required: [studentId, certificateDate, courseDateStart]
+      properties:
+        studentId:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        certificateDate:
+          $ref: "#/components/schemas/Date"
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+    CertificateDelete:
+      type: object
+      additionalProperties: false
+      properties:
+        deleteReason:
+          type: [string, "null"]
+          description: Powód usunięcia zapisywany przy zaświadczeniu.
+    RegistryNextNumberResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [courseId, year, nextNumber]
+          properties:
+            courseId:
+              type: integer
+              format: int64
+            year:
+              type: integer
+            nextNumber:
+              type: integer
+
+    # ------------------------------------------------------------- dashboard
+    DashboardResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [stats, expiring, expiringCertificates]
+          properties:
+            stats:
+              type: object
+              required: [students, companies, certificates]
+              properties:
+                students:
+                  type: integer
+                companies:
+                  type: integer
+                certificates:
+                  type: integer
+            expiring:
+              type: object
+              required: [in30Days]
+              properties:
+                in30Days:
+                  type: integer
+                  description: Liczba wszystkich zaświadczeń wygasających w ciągu 30 dni.
+            expiringCertificates:
+              type: array
+              description: >-
+                Maks. 50 zaświadczeń wygasających w ciągu 30 dni, od najbliższego. Ważność liczona z **aktualnego**
+                okresu ważności kursu. Obejmuje tylko kursantów przypisanych do firmy.
+              items:
+                type: object
+                required: [certificateId, expiryDate, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber]
+                properties:
+                  certificateId:
+                    type: integer
+                    format: int64
+                  expiryDate:
+                    $ref: "#/components/schemas/Date"
+                  studentName:
+                    type: string
+                  companyName:
+                    type: string
+                  courseName:
+                    type: string
+                  courseSymbol:
+                    type: string
+                  registryYear:
+                    type: integer
+                  registryNumber:
+                    type: number
+                    description: Liczba całkowita serializowana jako number.
+
+    # -------------------------------------------------------------- journals
+    JournalStatus:
+      type: string
+      enum: [draft, closed]
+    JournalListItem:
+      type: object
+      required: [id, title, courseSymbol, organizerName, location, formOfTraining, dateStart, dateEnd, totalHours, status, course, company, attendeesCount, sessionsCount, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        courseSymbol:
+          type: string
+        organizerName:
+          type: string
+        location:
+          type: string
+        formOfTraining:
+          type: string
+        dateStart:
+          $ref: "#/components/schemas/Date"
+        dateEnd:
+          $ref: "#/components/schemas/Date"
+        totalHours:
+          type: string
+          description: "Liczba godzin jako **string** (np. `\"16\"`), inaczej niż w `JournalDetails`, gdzie to number."
+        status:
+          $ref: "#/components/schemas/JournalStatus"
+        course:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+              format: int64
+            name:
+              type: string
+        company:
+          oneOf:
+            - $ref: "#/components/schemas/CompanyRef"
+            - type: "null"
+        attendeesCount:
+          type: integer
+        sessionsCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          description: "**RFC 3339 ze strefą** (np. `2026-09-14T10:30:00+02:00`) — inaczej niż w `JournalDetails`."
+    JournalListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalListItem"
+    JournalDetails:
+      type: object
+      required: [id, courseId, courseName, companyId, companyName, title, courseSymbol, organizerName, organizerAddress, location, formOfTraining, legalBasis, dateStart, dateEnd, totalHours, notes, status, createdByUserId, createdAt, updatedAt, closedAt, attendeesCount, sessionsCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        courseId:
+          type: integer
+          format: int64
+        courseName:
+          type: string
+        companyId:
+          type: [integer, "null"]
+          format: int64
+        companyName:
+          type: [string, "null"]
+        title:
+          type: string
+        courseSymbol:
+          type: string
+        organizerName:
+          type: string
+        organizerAddress:
+          type: [string, "null"]
+        location:
+          type: string
+        formOfTraining:
+          type: string
+        legalBasis:
+          type: string
+        dateStart:
+          $ref: "#/components/schemas/Date"
+        dateEnd:
+          $ref: "#/components/schemas/Date"
+        totalHours:
+          type: number
+        notes:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/JournalStatus"
+        createdByUserId:
+          type: integer
+          format: int64
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+        updatedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        closedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        attendeesCount:
+          type: integer
+        sessionsCount:
+          type: integer
+    JournalDetailsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/JournalDetails"
+    JournalCreate:
+      type: object
+      additionalProperties: false
+      required: [courseId, title, organizerName, location, formOfTraining, legalBasis, dateStart, dateEnd]
+      properties:
+        courseId:
+          type: integer
+          format: int64
+          minimum: 1
+        companyId:
+          type: [integer, "null"]
+          format: int64
+        title:
+          type: string
+          minLength: 1
+        organizerName:
+          type: string
+          minLength: 1
+          description: Staje się też domyślnym prowadzącym wygenerowanych sesji.
+        organizerAddress:
+          type: [string, "null"]
+        location:
+          type: string
+          minLength: 1
+        formOfTraining:
+          type: string
+          minLength: 1
+          examples: ["stacjonarna"]
+        legalBasis:
+          type: string
+          minLength: 1
+        dateStart:
+          $ref: "#/components/schemas/Date"
+        dateEnd:
+          allOf:
+            - $ref: "#/components/schemas/Date"
+          description: Nie wcześniejsza niż `dateStart`.
+        notes:
+          type: [string, "null"]
+    JournalUpdate:
+      type: object
+      additionalProperties: false
+      required: [title, organizerName, location, formOfTraining, legalBasis, dateStart, dateEnd]
+      properties:
+        companyId:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        organizerName:
+          type: string
+          minLength: 1
+        organizerAddress:
+          type: [string, "null"]
+        location:
+          type: string
+          minLength: 1
+        formOfTraining:
+          type: string
+          minLength: 1
+        legalBasis:
+          type: string
+          minLength: 1
+        dateStart:
+          $ref: "#/components/schemas/Date"
+        dateEnd:
+          $ref: "#/components/schemas/Date"
+        notes:
+          type: [string, "null"]
+    JournalSession:
+      type: object
+      required: [id, journalId, sessionDate, startTime, endTime, hours, topic, trainerName, sortOrder, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        journalId:
+          type: integer
+          format: int64
+        sessionDate:
+          $ref: "#/components/schemas/Date"
+        startTime:
+          type: [string, "null"]
+          pattern: "^\\d{2}:\\d{2}:\\d{2}$"
+          description: "`HH:MM:SS`. Obecnie API nie pozwala go ustawić — w praktyce `null`."
+        endTime:
+          type: [string, "null"]
+          pattern: "^\\d{2}:\\d{2}:\\d{2}$"
+        hours:
+          type: string
+          description: Liczba godzin jako **string** z liczbą.
+        topic:
+          type: string
+        trainerName:
+          type: string
+        sortOrder:
+          type: integer
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    JournalSessionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalSession"
+    JournalSessionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/JournalSession"
+    JournalSessionUpdate:
+      type: object
+      additionalProperties: false
+      required: [sessionDate, trainerName]
+      properties:
+        sessionDate:
+          $ref: "#/components/schemas/Date"
+        trainerName:
+          type: string
+          minLength: 1
+    GenerateSessionsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [generatedCount]
+          properties:
+            generatedCount:
+              type: integer
+    JournalAttendee:
+      type: object
+      required: [id, journalId, studentId, fullNameSnapshot, birthdateSnapshot, companyNameSnapshot, certificate, sortOrder, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Id uczestnika — tego używaj w ścieżkach `/attendees/{attendeeId}` i w obecności.
+        journalId:
+          type: integer
+          format: int64
+        studentId:
+          type: integer
+          format: int64
+        fullNameSnapshot:
+          type: string
+        birthdateSnapshot:
+          $ref: "#/components/schemas/Date"
+        companyNameSnapshot:
+          type: [string, "null"]
+        certificate:
+          oneOf:
+            - type: object
+              required: [id, date, registryYear, registryNumber, courseSymbol]
+              properties:
+                id:
+                  type: integer
+                  format: int64
+                date:
+                  $ref: "#/components/schemas/Date"
+                registryYear:
+                  type: integer
+                registryNumber:
+                  type: integer
+                courseSymbol:
+                  type: string
+            - type: "null"
+        sortOrder:
+          type: integer
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    JournalAttendeeListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalAttendee"
+    JournalAttendeeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/JournalAttendee"
+    JournalAttendeeAdd:
+      type: object
+      additionalProperties: false
+      required: [studentId]
+      properties:
+        studentId:
+          type: integer
+          format: int64
+          minimum: 1
+    JournalAttendeeCertificateLink:
+      type: object
+      additionalProperties: false
+      required: [certificateId]
+      properties:
+        certificateId:
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+    JournalAttendance:
+      type: object
+      required: [id, journalSessionId, journalAttendeeId, present, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        journalSessionId:
+          type: integer
+          format: int64
+        journalAttendeeId:
+          type: integer
+          format: int64
+        present:
+          type: boolean
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+        updatedAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    JournalAttendanceListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalAttendance"
+    JournalAttendanceResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/JournalAttendance"
+    JournalAttendanceUpdate:
+      type: object
+      additionalProperties: false
+      required: [journalSessionId, journalAttendeeId, present]
+      properties:
+        journalSessionId:
+          type: integer
+          format: int64
+          minimum: 1
+        journalAttendeeId:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Id uczestnika dziennika, nie kursanta.
+        present:
+          type: boolean
+    JournalScan:
+      type: object
+      required: [id, fileName, contentType, fileSize, uploadedByUserId, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        fileName:
+          type: string
+        contentType:
+          type: string
+          enum: [application/pdf, image/jpeg, image/png]
+        fileSize:
+          type: integer
+          format: int64
+          description: Rozmiar w bajtach.
+        uploadedByUserId:
+          type: integer
+          format: int64
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+        updatedAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    JournalScanResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/JournalScan"
+
+    # ----------------------------------------------------------------- admin
+    AdminUserListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthUser"
+    AdminUserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthUser"
+    AdminUserCreate:
+      type: object
+      additionalProperties: false
+      required: [email, password, firstName, lastName, role]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          description: Białe znaki na brzegach są obcinane. Brak wymogu minimalnej długości przy tworzeniu.
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        role:
+          $ref: "#/components/schemas/RoleInput"
+    AdminUserUpdate:
+      type: object
+      additionalProperties: false
+      required: [email, firstName, lastName, role]
+      properties:
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        role:
+          $ref: "#/components/schemas/RoleInput"
+    AdminPasswordReset:
+      type: object
+      additionalProperties: false
+      required: [newPassword]
+      properties:
+        newPassword:
+          type: string
+          minLength: 8
+
+    # ----------------------------------------------------------------- audit
+    AuditLogEntry:
+      type: object
+      required: [id, entityType, entityId, action, actorUserId, actorUserEmail, actorUserName, requestId, before, after, metadata, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        entityType:
+          type: string
+          enum: [course, certificate, company, student, user]
+        entityId:
+          type: integer
+          format: int64
+        action:
+          type: string
+          enum: [create, update, delete]
+        actorUserId:
+          type: [integer, "null"]
+          format: int64
+          description: Konto, które wykonało zmianę — dla zmian z klucza API to jego konto serwisowe.
+        actorUserEmail:
+          type: [string, "null"]
+        actorUserName:
+          type: [string, "null"]
+        requestId:
+          type: [string, "null"]
+        before:
+          description: Stan przed zmianą (dowolny JSON) lub `null`.
+        after:
+          description: Stan po zmianie (dowolny JSON) lub `null`.
+        metadata:
+          description: Dodatkowe informacje (dowolny JSON) lub `null`.
+        createdAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    AuditLogResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
