@@ -150,8 +150,8 @@ func TestListCourses(t *testing.T) {
 		}
 	}
 
-	if responseBody.Data[0].ExpiryTime == nil || *responseBody.Data[0].ExpiryTime != "5" {
-		t.Fatalf("expected first course expiryTime to be %q, got %+v", "5", responseBody.Data[0].ExpiryTime)
+	if responseBody.Data[0].ExpiryTime == nil || *responseBody.Data[0].ExpiryTime != 5 {
+		t.Fatalf("expected first course expiryTime to be %d, got %+v", 5, responseBody.Data[0].ExpiryTime)
 	}
 
 	if responseBody.Data[1].ExpiryTime != nil {
@@ -253,8 +253,8 @@ func TestGetCourseReturnsCourseDetail(t *testing.T) {
 		t.Fatalf("unexpected course detail payload: %+v", responseBody.Data)
 	}
 
-	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != "3" {
-		t.Fatalf("expected expiryTime to be %q, got %+v", "3", responseBody.Data.ExpiryTime)
+	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != 3 {
+		t.Fatalf("expected expiryTime to be %d, got %+v", 3, responseBody.Data.ExpiryTime)
 	}
 
 	if responseBody.Data.CourseProgram != `{"sections":["intro"]}` {
@@ -436,7 +436,7 @@ func TestListCoursesDetailsUnpacksAggregatedTranslations(t *testing.T) {
 	if first.CertFrontPage != "<h1>ZAŚWIADCZENIE</h1>" {
 		t.Fatalf("unexpected front page: %q", first.CertFrontPage)
 	}
-	if first.ExpiryTime == nil || *first.ExpiryTime != "5" {
+	if first.ExpiryTime == nil || *first.ExpiryTime != 5 {
 		t.Fatalf("unexpected expiry time: %+v", first.ExpiryTime)
 	}
 
@@ -531,7 +531,7 @@ func TestListCoursesDetailsReturnsInternalErrorForMalformedTranslations(t *testi
 }
 
 func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
-	expiryTime := "5"
+	expiryTime := 5
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		UpdateFunc: func(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
 			if courseID != 12 {
@@ -540,8 +540,8 @@ func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
 			if input.MainName != "BHP" || input.Name != "Szkolenie okresowe" || input.Symbol != "BHP-OKR" {
 				t.Fatalf("unexpected update input: %+v", input)
 			}
-			if input.ExpiryTime != "5" {
-				t.Fatalf("unexpected expirytime: %q", input.ExpiryTime)
+			if input.ExpiryTime != 5 {
+				t.Fatalf("unexpected expirytime: %d", input.ExpiryTime)
 			}
 			if input.CourseProgram != `[{"Subject":"Intro"}]` {
 				t.Fatalf("unexpected courseprogram: %q", input.CourseProgram)
@@ -566,7 +566,7 @@ func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[{\"Subject\":\"Intro\"}]",
 		"certFrontPage":"<p>Front</p>"
 	}`
@@ -593,13 +593,13 @@ func TestPatchCourseReturnsUpdatedCourse(t *testing.T) {
 	if responseBody.Data.ID != 12 || responseBody.Data.MainName != "BHP" || responseBody.Data.Symbol != "BHP-OKR" {
 		t.Fatalf("unexpected patch response payload: %+v", responseBody.Data)
 	}
-	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != "5" {
-		t.Fatalf("expected expiryTime to be %q, got %+v", "5", responseBody.Data.ExpiryTime)
+	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != 5 {
+		t.Fatalf("expected expiryTime to be %d, got %+v", 5, responseBody.Data.ExpiryTime)
 	}
 }
 
 func TestPatchCoursePassesCertificateTranslationsToService(t *testing.T) {
-	expiryTime := "5"
+	expiryTime := 5
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		UpdateFunc: func(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
 			if courseID != 12 {
@@ -645,7 +645,7 @@ func TestPatchCoursePassesCertificateTranslationsToService(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[ {\"Subject\":\"Intro\"} ]",
 		"certFrontPage":"<p>Front</p>",
 		"certificateTranslations":[
@@ -758,7 +758,7 @@ func TestPatchCourseReturnsBadRequestForUnknownField(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>",
 		"extra":"x"
@@ -774,7 +774,6 @@ func TestPatchCourseReturnsBadRequestForUnknownField(t *testing.T) {
 }
 
 func TestPatchCourseReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
-	expiryTime := "5"
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		UpdateFunc: func(context.Context, int64, UpdateCourseInput) (CourseDetailDTO, error) {
 			return CourseDetailDTO{}, pgx.ErrNoRows
@@ -785,7 +784,7 @@ func TestPatchCourseReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"` + expiryTime + `",
+		"expiryTime":5,
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>"
 	}`
@@ -810,7 +809,7 @@ func TestPatchCourseReturnsInternalError(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>"
 	}`
@@ -825,14 +824,14 @@ func TestPatchCourseReturnsInternalError(t *testing.T) {
 }
 
 func TestCreateCourseReturnsCreatedCourse(t *testing.T) {
-	expiryTime := "5"
+	expiryTime := 5
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		CreateFunc: func(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error) {
 			if input.MainName != "BHP" || input.Name != "Szkolenie okresowe" || input.Symbol != "BHP-OKR" {
 				t.Fatalf("unexpected create input: %+v", input)
 			}
-			if input.ExpiryTime != "5" {
-				t.Fatalf("unexpected expirytime: %q", input.ExpiryTime)
+			if input.ExpiryTime != 5 {
+				t.Fatalf("unexpected expirytime: %d", input.ExpiryTime)
 			}
 			if input.CourseProgram != `[{"Subject":"Intro"}]` {
 				t.Fatalf("unexpected courseprogram: %q", input.CourseProgram)
@@ -857,7 +856,7 @@ func TestCreateCourseReturnsCreatedCourse(t *testing.T) {
 		"mainName":"  BHP ",
 		"name":" Szkolenie okresowe ",
 		"symbol":" BHP-OKR ",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":" [{\"Subject\":\"Intro\"}] ",
 		"certFrontPage":" <p>Front</p> "
 	}`
@@ -883,13 +882,13 @@ func TestCreateCourseReturnsCreatedCourse(t *testing.T) {
 	if responseBody.Data.ID != 13 || responseBody.Data.MainName != "BHP" || responseBody.Data.Symbol != "BHP-OKR" {
 		t.Fatalf("unexpected create response payload: %+v", responseBody.Data)
 	}
-	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != "5" {
-		t.Fatalf("expected expiryTime to be %q, got %+v", "5", responseBody.Data.ExpiryTime)
+	if responseBody.Data.ExpiryTime == nil || *responseBody.Data.ExpiryTime != 5 {
+		t.Fatalf("expected expiryTime to be %d, got %+v", 5, responseBody.Data.ExpiryTime)
 	}
 }
 
 func TestCreateCoursePassesCertificateTranslationsToService(t *testing.T) {
-	expiryTime := "5"
+	expiryTime := 5
 	handler := NewHandler(fakeQuerier{}, fakeCreator{
 		CreateFunc: func(ctx context.Context, input CreateCourseInput) (CourseDetailDTO, error) {
 			if len(input.CertificateTranslations) != 2 {
@@ -932,7 +931,7 @@ func TestCreateCoursePassesCertificateTranslationsToService(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[ {\"Subject\":\"Intro\"} ]",
 		"certFrontPage":"<p>Front</p>",
 		"certificateTranslations":[
@@ -1003,7 +1002,7 @@ func TestCreateCourseReturnsBadRequestForMissingRequiredField(t *testing.T) {
 		"symbol":"BHP-OKR",
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>",
-		"expiryTime":"5"
+		"expiryTime":5
 	}`
 
 	rec := httptest.NewRecorder()
@@ -1026,7 +1025,7 @@ func TestCreateCourseReturnsBadRequestForUnknownField(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>",
 		"extra":"x"
@@ -1051,7 +1050,7 @@ func TestCreateCourseReturnsInternalError(t *testing.T) {
 		"mainName":"BHP",
 		"name":"Szkolenie okresowe",
 		"symbol":"BHP-OKR",
-		"expiryTime":"5",
+		"expiryTime":5,
 		"courseProgram":"[]",
 		"certFrontPage":"<p>Front</p>"
 	}`
@@ -1062,4 +1061,84 @@ func TestCreateCourseReturnsInternalError(t *testing.T) {
 	handler.CreateCourse(rec, req)
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
+}
+
+func TestCreateCourseRejectsExpiryTimeSentAsString(t *testing.T) {
+	// expiryTime jest liczbą - dawny format tekstowy ("5") ma być odrzucony,
+	// a nie po cichu zinterpretowany.
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		CreateFunc: func(context.Context, CreateCourseInput) (CourseDetailDTO, error) {
+			t.Fatal("Create should not be called for a string expiryTime")
+			return CourseDetailDTO{}, nil
+		},
+	})
+
+	body := `{
+		"mainName":"BHP",
+		"name":"Szkolenie okresowe",
+		"symbol":"BHP-OKR",
+		"expiryTime":"5",
+		"courseProgram":"[]",
+		"certFrontPage":"<p>Front</p>"
+	}`
+
+	rec := httptest.NewRecorder()
+	handler.CreateCourse(rec, httptest.NewRequest(http.MethodPost, "/courses", strings.NewReader(body)))
+
+	assertErrorResponse(t, rec, http.StatusBadRequest, response.CodeBadRequest)
+}
+
+func TestCourseResponsesSerializeExpiryTimeAsNumber(t *testing.T) {
+	course := sqlc.Course{
+		ID:            7,
+		Mainname:      pgtype.Text{String: "BHP", Valid: true},
+		Name:          "Szkolenie okresowe",
+		Symbol:        "BHP",
+		Expirytime:    pgtype.Text{String: "5", Valid: true},
+		Courseprogram: []byte(`[]`),
+		Certfrontpage: pgtype.Text{String: "<p>Front</p>", Valid: true},
+	}
+	handler := NewHandler(fakeQuerier{
+		GetCourseByIDFunc: func(context.Context, int64) (sqlc.Course, error) { return course, nil },
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/courses/7", nil)
+	req.SetPathValue("id", "7")
+	rec := httptest.NewRecorder()
+	handler.Get(rec, req)
+
+	if !strings.Contains(rec.Body.String(), `"expiryTime":5`) {
+		t.Fatalf("expected numeric expiryTime in JSON, got %s", rec.Body.String())
+	}
+}
+
+func TestParseExpiryTime(t *testing.T) {
+	tests := []struct {
+		name  string
+		value pgtype.Text
+		want  *int
+	}{
+		{name: "NULL w bazie", value: pgtype.Text{}, want: nil},
+		{name: "liczba", value: pgtype.Text{String: "5", Valid: true}, want: intPtr(5)},
+		{name: "zero lat", value: pgtype.Text{String: "0", Valid: true}, want: intPtr(0)},
+		{name: "białe znaki", value: pgtype.Text{String: " 3 ", Valid: true}, want: intPtr(3)},
+		{name: "nieliczbowa wartość", value: pgtype.Text{String: "bezterminowo", Valid: true}, want: nil},
+		{name: "wartość ujemna", value: pgtype.Text{String: "-1", Valid: true}, want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseExpiryTime(tc.value)
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("expected nil, got %d", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("expected %d, got %v", *tc.want, got)
+			}
+		})
+	}
+}
+
+func intPtr(value int) *int {
+	return &value
 }

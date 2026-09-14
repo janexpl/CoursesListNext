@@ -153,8 +153,7 @@ Wyjątki od koperty: `GET .../pdf` i pobieranie skanów zwracają plik binarny; 
 | Identyfikator | liczba całkowita dodatnia | `128` |
 | Numer zaświadczenia | `numer/SYMBOL/rok` (wyliczany, nie ma pola) | `12/BHP/2026` |
 
-Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem. Jedyny wyjątek to `createdAt` na liście
-dzienników (RFC 3339, patrz sekcja 5).
+Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem.
 
 ### Pola opcjonalne
 
@@ -229,59 +228,52 @@ do obejścia sprytem — zakoduj je jawnie.
 
 ### Zaświadczenia
 
-1. **`POST /certificates` z nieistniejącym `studentId` lub `courseId` zwraca 500**, nie 404.
-   Sprawdź kursanta (`GET /students/{id}`) i kurs (`GET /courses/{id}`) przed wystawieniem.
-2. **`DELETE /certificates/{id}` wymaga ciała JSON** — co najmniej `{}`. Bez ciała: 400.
-   Wymaga też konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF.
-3. **`studentName` znaczy co innego** na liście (imię i nazwisko) i w szczegółach (samo imię; nazwisko w `studentLastname`).
-4. W szczegółach zaświadczenia brakujące `studentSecondname`, `studentPesel`, `companyName` to **pusty string**, nie `null`.
-5. Ważność kursu: w kursie `expiryTime` to **string** (`"5"`), w zaświadczeniu `courseExpiryTime` to **liczba** (`5`).
-6. Odpowiedź `PATCH /certificates/{id}` zawiera w `printVariants` tylko wariant oryginalny. Pełną listę zwraca GET.
+1. **`studentName` znaczy co innego** na liście (imię i nazwisko) i w szczegółach (samo imię; nazwisko w `studentLastname`).
+2. W szczegółach zaświadczenia brakujące `studentSecondname`, `studentPesel`, `companyName` to **pusty string**, nie `null`.
+3. Odpowiedź `PATCH /certificates/{id}` zawiera w `printVariants` tylko wariant oryginalny. Pełną listę zwraca GET.
+4. `DELETE /certificates/{id}` wymaga konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF.
 
 ### Kursy
 
-7. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
+5. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
    `"[{\"Subject\":\"Przepisy BHP\",\"TheoryTime\":\"4\",\"PracticeTime\":\"0\"}]"`.
    Klucze wielką literą, godziny jako stringi. Niepoprawny JSON przy zapisie → 500.
-8. `PATCH /courses/{id}` bez `certificateTranslations` usuwa wszystkie tłumaczenia (sekcja 4).
-9. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy. Nieobsługiwany kod,
+6. `PATCH /courses/{id}` bez `certificateTranslations` usuwa wszystkie tłumaczenia (sekcja 4).
+7. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy. Nieobsługiwany kod,
    duplikat kodu albo puste pole tłumaczenia → 400 `invalid request body` (bez wskazania, które pole).
+8. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
+   nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
 
 ### Kursanci i firmy
 
-10. **`GET /companies/{id}/students` używa kluczy małymi literami** (`firstname`, `lastname`, `birthdate`,
-    `birthplace`, `secondname`), a `GET /students` — camelCase (`firstName`, `lastName`, `birthDate`).
-    Jeśli potrzebujesz jednolitego modelu, używaj `GET /students?companyId={id}` (uwaga: limit 100).
-11. Na liście firm `contactPerson` i `telephone` są **pomijane w JSON**, gdy puste (nie `null`) — traktuj brak klucza jako brak wartości.
-12. `POST /students` / `PATCH /students/{id}` z nieistniejącym `companyId` → 500, nie 400/404.
-13. NIP przy zapisie firmy **nie jest walidowany** (tylko unikalność → 409). Waliduj go przez
+9. Na liście firm `contactPerson` i `telephone` są **pomijane w JSON**, gdy puste (nie `null`) — traktuj brak klucza jako brak wartości.
+10. `POST /students` / `PATCH /students/{id}` z nieistniejącym `companyId` → 500, nie 400/404.
+11. NIP przy zapisie firmy **nie jest walidowany** (tylko unikalność → 409). Waliduj go przez
     `GET /companies/lookup-by-nip` albo po swojej stronie. PESEL nie jest walidowany nigdzie.
-14. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-15. Brak operacji usuwania kursantów, firm i kursów.
+12. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+13. Brak operacji usuwania kursantów, firm i kursów.
 
 ### Dzienniki
 
-16. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`),
-    ale w odpowiedzi `sessionsCount` wynosi `0`. Po utworzeniu pobierz `GET /journals/{id}` lub `.../sessions`.
-    `POST .../sessions/generate-from-course` zwykle zwróci wtedy 409.
-17. Wygenerowane sesje mogą wypaść **po** `dateEnd`, jeśli program jest dłuższy niż zakres dat — API tego nie sprawdza
+14. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+    ich liczbę podaje `sessionsCount` w odpowiedzi. `POST .../sessions/generate-from-course` zwykle zwróci wtedy 409.
+15. Wygenerowane sesje mogą wypaść **po** `dateEnd`, jeśli program jest dłuższy niż zakres dat — API tego nie sprawdza
     przy tworzeniu, ale `PATCH /journals/{id}` odrzuci później zakres, który nie obejmuje wszystkich sesji (409 `session outside range`).
-18. `totalHours` jest **stringiem** na liście dzienników, a **liczbą** w szczegółach. `JournalSession.hours` to string.
-19. `createdAt` na liście dzienników ma format **RFC 3339 ze strefą** (`2026-09-14T10:30:00+02:00`), wszędzie indziej — `YYYY-MM-DD HH:MM:SS` bez strefy.
-20. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-21. Zamknięty dziennik blokuje (409): zmianę nagłówka, zmianę sesji, obecność, usuwanie uczestników.
+16. `JournalSession.hours` to **string** z liczbą, podczas gdy `totalHours` dziennika to liczba.
+17. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+18. Zamknięty dziennik blokuje (409): zmianę nagłówka, zmianę sesji, obecność, usuwanie uczestników.
     **Nie blokuje**: dodawania uczestników, wgrywania skanów, powiązywania zaświadczeń, usunięcia całego dziennika.
-22. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+19. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-23. Listy „podrzędne" (`/students/{id}/certificates`, `/companies/{id}/students`, `/companies|courses/{id}/certificates`,
+20. Listy „podrzędne" (`/students/{id}/certificates`, `/companies/{id}/students`, `/companies|courses/{id}/certificates`,
     historia zmian) dla nieistniejącego rodzica zwracają **pustą listę, nie 404**.
-24. `dashboard.expiringCertificates[].registryNumber` to `number`, nie `integer` (wartość zawsze całkowita).
+21. `dashboard.expiringCertificates[].registryNumber` to `number`, nie `integer` (wartość zawsze całkowita).
     Lista obejmuje tylko kursantów z firmą i liczy ważność z **aktualnego** okresu ważności kursu,
     a `/certificates.expiryDate` — z okresu zapisanego w zaświadczeniu. Daty mogą się różnić.
-25. `POST /admin/users` z zajętym e-mailem → 500, nie 409.
+22. `POST /admin/users` z zajętym e-mailem → 500, nie 409.
 
 ---
 
@@ -307,8 +299,7 @@ POST /api/v1/companies                                         # companies:write
 ### 6.2. Wystawienie zaświadczenia ręcznie
 
 ```http
-GET  /api/v1/students/{studentId}                              # students:read   — kursant istnieje?
-GET  /api/v1/courses/{courseId}                                # courses:read    — kurs istnieje? tłumaczenia?
+GET  /api/v1/courses/{courseId}                                # courses:read    — dostępne tłumaczenia
 GET  /api/v1/registries/next-number?courseId={courseId}&year=2026   # registries:read
 POST /api/v1/certificates                                      # certificates:write
 {
@@ -337,6 +328,7 @@ Reguły walidacji:
 - Numer zajęty → 409. `next-number` to podpowiedź, nie rezerwacja — przy 409 pobierz numer ponownie i powtórz,
   z ograniczoną liczbą prób.
 - `languageCode` ≠ `pl` wymaga tłumaczenia kursu w tym języku, inaczej 400 `certificate translation not found`.
+- Nieistniejący kursant lub kurs → 404 `student not found` / `course not found`.
 
 ### 6.3. Dziennik szkolenia od utworzenia do zaświadczeń
 
@@ -382,7 +374,7 @@ Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) 
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
 | 409 | Zależy | Konflikt stanu. Dla numeru rejestru: pobierz nowy numer i ponów. |
-| 500 | Ostrożnie | Część 500 to w rzeczywistości błędy danych wejściowych (sekcja 5: pkt 1, 7, 12, 25). Ponów najwyżej raz, z opóźnieniem; operacje `POST` nie są idempotentne. |
+| 500 | Ostrożnie | Część 500 to w rzeczywistości błędy danych wejściowych (sekcja 5: pkt 5, 10, 22). Ponów najwyżej raz, z opóźnieniem; operacje `POST` nie są idempotentne. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany — przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
 API nie obsługuje kluczy idempotencji.
@@ -396,6 +388,6 @@ API nie obsługuje kluczy idempotencji.
 - operacji zbiorczych (np. obecność wielu osób jednym żądaniem);
 - usuwania kursantów, firm i kursów;
 - wersjonowania poza prefiksem `/api/v1` — specyfikacja opisuje stan kodu z gałęzi `api_and_webhook`
-  (commit `eb78749`) i nie jest gwarancją zgodności na przyszłość.
+  i nie jest gwarancją zgodności na przyszłość.
 
 Jeśli integracja potrzebuje którejś z tych rzeczy, zgłoś to właścicielowi API zamiast obchodzić ograniczenie.

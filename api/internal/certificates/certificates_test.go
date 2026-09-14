@@ -1891,3 +1891,98 @@ func TestSoftDeleteCertificateReturnsInternalServerErrorWhenQueryFails(t *testin
 
 	assertErrorResponse(t, rec, http.StatusInternalServerError, response.CodeInternalError)
 }
+
+func TestCreateReturnsNotFoundForMissingStudentOrCourse(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceErr  error
+		wantMessage string
+	}{
+		{name: "brak kursanta", serviceErr: ErrStudentNotFound, wantMessage: "student not found"},
+		{name: "brak kursu", serviceErr: ErrCourseNotFound, wantMessage: "course not found"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := NewHandler(fakeQuerier{}, fakeCreator{
+				createFunc: func(context.Context, CreateCertificateInput) (CreateCertificateResult, error) {
+					return CreateCertificateResult{}, tc.serviceErr
+				},
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/certificates", strings.NewReader(`{
+				"studentId": 12,
+				"courseId": 3,
+				"certificateDate": "2026-03-15",
+				"courseDateStart": "2026-03-10",
+				"registryYear": 2026,
+				"registryNumber": 18
+			}`))
+			rec := httptest.NewRecorder()
+
+			handler.Create(rec, req)
+
+			assertErrorMessage(t, rec, tc.wantMessage)
+			assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+		})
+	}
+}
+
+func TestPatchReturnsStudentNotFoundInsteadOfCertificateNotFound(t *testing.T) {
+	// Wcześniej brak kursanta wskazanego w ciele kończył się komunikatem
+	// "certificate not found", choć zaświadczenie istniało.
+	handler := NewHandler(fakeQuerier{}, fakeCreator{
+		updateFunc: func(context.Context, int64, UpdateCertificateInput) (sqlc.UpdateCertificateRow, error) {
+			return sqlc.UpdateCertificateRow{}, ErrStudentNotFound
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/certificates/21", strings.NewReader(`{
+		"studentId": 999,
+		"certificateDate": "2026-03-15",
+		"courseDateStart": "2026-03-10"
+	}`))
+	req.SetPathValue("id", "21")
+	rec := httptest.NewRecorder()
+
+	handler.Patch(rec, req)
+
+	assertErrorMessage(t, rec, "student not found")
+	assertErrorResponse(t, rec, http.StatusNotFound, response.CodeNotFound)
+}
+
+func TestSoftDeleteCertificateAcceptsEmptyBody(t *testing.T) {
+	handler := NewHandler(fakeQuerier{
+		softDeleteFunc: func(_ context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error) {
+			if arg.DeleteReason.Valid {
+				t.Fatalf("expected no delete reason for an empty body, got %+v", arg.DeleteReason)
+			}
+			return 21, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/certificates/21", nil)
+	req.SetPathValue("id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 7, Role: 1}))
+	rec := httptest.NewRecorder()
+
+	handler.SoftDeleteCertificate(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for an empty body, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+}
+
+// assertErrorMessage czyta ciało bez opróżniania bufora, więc musi być wołane
+// przed assertErrorResponse, które dekoduje (i konsumuje) odpowiedź.
+func assertErrorMessage(t *testing.T, rec *httptest.ResponseRecorder, expected string) {
+	t.Helper()
+
+	var body response.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if body.Error.Message != expected {
+		t.Fatalf("expected error message %q, got %q", expected, body.Error.Message)
+	}
+}

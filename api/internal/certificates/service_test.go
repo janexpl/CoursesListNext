@@ -1003,3 +1003,104 @@ func TestValidateRegistryChronologyRejectsDateOutsideBounds(t *testing.T) {
 		t.Fatalf("expected ErrInvalidRegistryDate, got %v", err)
 	}
 }
+
+// queriesWithMissingRows zwraca pgx.ErrNoRows dla zapytań, których SQL zawiera
+// podany fragment, a dla pozostałych zachowuje się jak baseStudentCourseQuerier.
+func queriesWithMissingRows(t *testing.T, missingFragment string) *dbsqlc.Queries {
+	t.Helper()
+	return dbsqlc.New(fakeServiceDB{
+		queryRow: func(_ context.Context, sql string, _ ...interface{}) pgx.Row {
+			switch {
+			case strings.Contains(sql, missingFragment):
+				return fakeServiceRow{err: pgx.ErrNoRows}
+			case strings.Contains(sql, "FROM students s"):
+				return fakeServiceRow{scan: scanStudentRow(1)}
+			case strings.Contains(sql, "FROM courses"):
+				return fakeServiceRow{scan: scanCourseRow}
+			default:
+				return fakeServiceRow{err: errors.New("unexpected query row call")}
+			}
+		},
+	})
+}
+
+func validCreateInput() CreateCertificateInput {
+	courseDateEnd := "2026-03-15"
+	return CreateCertificateInput{
+		StudentID:       12,
+		CourseID:        3,
+		CertificateDate: "2026-03-15",
+		CourseDateStart: "2026-03-10",
+		CourseDateEnd:   &courseDateEnd,
+		RegistryYear:    2026,
+		RegistryNumber:  18,
+	}
+}
+
+func TestCreateReturnsStudentNotFoundForMissingStudent(t *testing.T) {
+	service := &Service{
+		queries: queriesWithMissingRows(t, "FROM students s"),
+		beginTx: func(context.Context) (txScope, error) {
+			t.Fatal("transaction must not start when the student does not exist")
+			return txScope{}, nil
+		},
+	}
+
+	_, err := service.Create(context.Background(), validCreateInput())
+	if !errors.Is(err, ErrStudentNotFound) {
+		t.Fatalf("expected ErrStudentNotFound, got %v", err)
+	}
+}
+
+func TestCreateReturnsCourseNotFoundForMissingCourse(t *testing.T) {
+	service := &Service{
+		queries: queriesWithMissingRows(t, "FROM courses"),
+		beginTx: func(context.Context) (txScope, error) {
+			t.Fatal("transaction must not start when the course does not exist")
+			return txScope{}, nil
+		},
+	}
+
+	_, err := service.Create(context.Background(), validCreateInput())
+	if !errors.Is(err, ErrCourseNotFound) {
+		t.Fatalf("expected ErrCourseNotFound, got %v", err)
+	}
+}
+
+func TestCreatePassesThroughNonNotFoundStudentLookupErrors(t *testing.T) {
+	// Awaria bazy nie może udawać braku kursanta - to nadal ma być 500.
+	dbErr := errors.New("connection reset")
+	service := &Service{
+		queries: dbsqlc.New(fakeServiceDB{
+			queryRow: func(context.Context, string, ...interface{}) pgx.Row {
+				return fakeServiceRow{err: dbErr}
+			},
+		}),
+	}
+
+	_, err := service.Create(context.Background(), validCreateInput())
+	if errors.Is(err, ErrStudentNotFound) || !errors.Is(err, dbErr) {
+		t.Fatalf("expected the original database error, got %v", err)
+	}
+}
+
+func TestUpdateReturnsStudentNotFoundForMissingStudent(t *testing.T) {
+	courseDateEnd := "2026-03-15"
+	service := &Service{
+		queries: queriesWithMissingRows(t, "FROM students s"),
+		beginTx: func(context.Context) (txScope, error) {
+			t.Fatal("transaction must not start when the student does not exist")
+			return txScope{}, nil
+		},
+	}
+
+	_, err := service.Update(context.Background(), 21, UpdateCertificateInput{
+		StudentID:       999,
+		CertificateDate: "2026-03-15",
+		CourseDateStart: "2026-03-10",
+		CourseDateEnd:   &courseDateEnd,
+	})
+	if !errors.Is(err, ErrStudentNotFound) {
+		t.Fatalf("expected ErrStudentNotFound, got %v", err)
+	}
+}

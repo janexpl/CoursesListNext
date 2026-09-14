@@ -383,8 +383,15 @@ func TestListReturnsJournals(t *testing.T) {
 	}
 
 	first := responseBody.Data[0]
-	if first.ID != 11 || first.TotalHours != "6.5" {
+	// totalHours jest liczbą, jak w szczegółach dziennika - dekodowanie do float64
+	// samo w sobie odrzuciłoby stringa.
+	if first.ID != 11 || first.TotalHours != 6.5 {
 		t.Fatalf("unexpected first journal: %+v", first)
+	}
+	// createdAt w tym samym formacie co w pozostałych odpowiedziach API,
+	// a nie RFC 3339 jak wcześniej wyłącznie na tej liście.
+	if first.CreatedAt != "2026-03-01 08:30:00" {
+		t.Fatalf("expected createdAt in TimestampzFormat, got %q", first.CreatedAt)
 	}
 	if first.Company == nil || first.Company.ID != 12 || first.Company.Name != "ACME" {
 		t.Fatalf("unexpected company mapping: %+v", first.Company)
@@ -394,8 +401,8 @@ func TestListReturnsJournals(t *testing.T) {
 	if second.Company != nil {
 		t.Fatalf("expected nil company, got %+v", second.Company)
 	}
-	if second.TotalHours != "8" {
-		t.Fatalf("unexpected total hours: %q", second.TotalHours)
+	if second.TotalHours != 8 {
+		t.Fatalf("unexpected total hours: %v", second.TotalHours)
 	}
 }
 

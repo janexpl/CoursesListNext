@@ -435,9 +435,7 @@ paths:
       operationId: listCompanyStudents
       summary: Kursanci firmy
       description: >-
-        Bez paginacji i limitu, sortowanie: nazwisko, imię. **Uwaga:** klucze pól są tu pisane
-        małymi literami (`firstname`, `lastname`, `birthdate`…), inaczej niż w `GET /students`.
-        Nieistniejąca firma daje pustą listę, nie 404.
+        Bez paginacji i limitu, sortowanie: nazwisko, imię. Nieistniejąca firma daje pustą listę, nie 404.
       x-required-scope: students:read
       responses:
         "200":
@@ -772,6 +770,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Kursant lub kurs z ciała żądania nie istnieje (`student not found`, `course not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: "Numer rejestru zajęty (`registry number already taken for the given year`)."
           content:
@@ -779,13 +783,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: >-
-            **Także gdy `studentId` lub `courseId` nie istnieje** — API zwraca wtedy 500
-            `failed to create certificate` zamiast 404. Weryfikuj istnienie kursanta i kursu przed wywołaniem.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+          $ref: "#/components/responses/InternalError"
 
   /certificates/{id}:
     parameters:
@@ -845,7 +843,11 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: "Zaświadczenie nie istnieje (`certificate not found`) albo nie istnieje wskazany kursant (`student not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
     delete:
@@ -853,13 +855,13 @@ paths:
       operationId: deleteCertificate
       summary: Usunięcie zaświadczenia (soft delete)
       description: >-
-        **Wymaga ciała JSON** — co najmniej `{}`. Żądanie bez ciała kończy się 400 `invalid request body`.
+        Ciało jest opcjonalne — służy tylko do podania powodu usunięcia.
         Usunięcie jest nieodwracalne przez API: zaświadczenie znika z list, `GET /certificates/{id}` i wydruk
         zwracają odtąd 404, a jego numer rejestru można wykorzystać ponownie.
       x-required-scope: certificates:write
       x-requires-admin: true
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -1062,9 +1064,8 @@ paths:
       summary: Utworzenie dziennika
       description: >-
         Tworzy dziennik w statusie `draft` i **od razu generuje sesje z programu kursu** (maks. 8 godzin
-        na dzień, kolejne dni od `dateStart`, prowadzący = `organizerName`). Pole `sessionsCount` w
-        odpowiedzi ma wartość 0 mimo to — rzeczywistą liczbę sesji zwraca `GET /journals/{id}`.
-        `totalHours` jest liczone z programu kursu.
+        na dzień, kolejne dni od `dateStart`, prowadzący = `organizerName`); `sessionsCount` w odpowiedzi
+        podaje ich liczbę. `totalHours` jest liczone z programu kursu.
       x-required-scope: journals:write
       requestBody:
         required: true
@@ -2388,21 +2389,20 @@ components:
             $ref: "#/components/schemas/StudentCertificate"
     CompanyStudent:
       type: object
-      description: "Uwaga: klucze małymi literami, inaczej niż w `StudentListItem`."
-      required: [id, firstname, lastname, secondname, birthdate, birthplace, pesel]
+      required: [id, firstName, lastName, secondName, birthDate, birthPlace, pesel]
       properties:
         id:
           type: integer
           format: int64
-        firstname:
+        firstName:
           type: string
-        lastname:
+        lastName:
           type: string
-        secondname:
+        secondName:
           type: [string, "null"]
-        birthdate:
+        birthDate:
           $ref: "#/components/schemas/Date"
-        birthplace:
+        birthPlace:
           type: string
         pesel:
           type: [string, "null"]
@@ -2582,12 +2582,12 @@ components:
           items:
             $ref: "#/components/schemas/CourseListItem"
     ExpiryTime:
-      type: [string, "null"]
-      pattern: "^\\d+$"
+      type: [integer, "null"]
+      minimum: 0
       description: >-
-        Okres ważności zaświadczenia w **latach**, zapisany jako string z liczbą całkowitą (np. `"5"`).
-        Data wygaśnięcia = `courseDateEnd` + `expiryTime` × 365 dni.
-      examples: ["5"]
+        Okres ważności zaświadczenia w **latach**. `null` = kurs bez terminu ważności; `0` to poprawna wartość
+        (ważność kończy się z końcem kursu). Data wygaśnięcia = `courseDateEnd` + `expiryTime` × 365 dni.
+      examples: [5]
     CourseProgram:
       type: string
       contentMediaType: application/json
@@ -2675,9 +2675,10 @@ components:
           type: string
           minLength: 1
         expiryTime:
-          type: string
-          pattern: "^\\d+$"
-          description: Wymagane (nie może być `null`). Nieujemna liczba całkowita lat jako string.
+          type: integer
+          minimum: 0
+          description: Wymagane (nie może być `null`). Nieujemna liczba całkowita lat.
+          examples: [5]
         courseProgram:
           $ref: "#/components/schemas/CourseProgram"
         certFrontPage:
@@ -2822,7 +2823,7 @@ components:
           type: string
         courseExpiryTime:
           type: [integer, "null"]
-          description: Ważność w latach z chwili wystawienia — tu jako **liczba**, w kursie jako string.
+          description: Okres ważności kursu w latach, zapisany w chwili wystawienia.
         courseProgram:
           $ref: "#/components/schemas/CourseProgram"
         certFrontPage:
@@ -2997,8 +2998,7 @@ components:
         dateEnd:
           $ref: "#/components/schemas/Date"
         totalHours:
-          type: string
-          description: "Liczba godzin jako **string** (np. `\"16\"`), inaczej niż w `JournalDetails`, gdzie to number."
+          type: number
         status:
           $ref: "#/components/schemas/JournalStatus"
         course:
@@ -3019,9 +3019,7 @@ components:
         sessionsCount:
           type: integer
         createdAt:
-          type: string
-          format: date-time
-          description: "**RFC 3339 ze strefą** (np. `2026-09-14T10:30:00+02:00`) — inaczej niż w `JournalDetails`."
+          $ref: "#/components/schemas/LocalTimestamp"
     JournalListResponse:
       type: object
       required: [data]

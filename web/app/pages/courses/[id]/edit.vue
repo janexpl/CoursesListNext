@@ -403,7 +403,7 @@ function applyCourseToForm() {
   form.mainName = course.value.mainName || ''
   form.name = course.value.name || ''
   form.symbol = course.value.symbol || ''
-  form.expiryTime = course.value.expiryTime || ''
+  form.expiryTime = course.value.expiryTime?.toString() ?? ''
   form.certFrontPage = course.value.certFrontPage || ''
   const parsedProgram = parseProgramRows(course.value.courseProgram || '')
   hasInvalidStoredProgram.value = parsedProgram.invalid
@@ -639,7 +639,8 @@ async function onSubmit() {
       mainName: trimmedMainName.value,
       name: trimmedName.value,
       symbol: trimmedSymbol.value,
-      expiryTime: trimmedExpiryTime.value,
+      // Pole formularza jest tekstowe; wartość przeszła już walidację /^\d+$/.
+      expiryTime: Number.parseInt(trimmedExpiryTime.value, 10),
       courseProgram: serializedCourseProgram.value,
       certFrontPage: form.certFrontPage,
       certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)

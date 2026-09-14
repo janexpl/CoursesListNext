@@ -480,7 +480,7 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
                         {{ courseLabel(course) }}
                       </p>
                       <p class="text-xs text-slate-500">
-                        {{ course.expiryTime ? `Ważność: ${course.expiryTime} lat` : 'Brak okresu ważności' }}
+                        {{ course.expiryTime !== null ? `Ważność: ${course.expiryTime} lat` : 'Brak okresu ważności' }}
                       </p>
                     </div>
 

@@ -84,9 +84,9 @@ const filteredStudents = computed(() => {
 
   return students.value.filter((student) => {
     const haystack = [
-      student.lastname,
-      student.firstname,
-      student.secondname,
+      student.lastName,
+      student.firstName,
+      student.secondName,
       student.pesel
     ]
       .filter(Boolean)
@@ -126,10 +126,10 @@ const refreshAll = async () => {
 }
 
 const studentFullName = (student: {
-  lastname: string
-  firstname: string
-  secondname: string | null
-}) => [student.lastname, student.firstname, student.secondname].filter(Boolean).join(' ')
+  lastName: string
+  firstName: string
+  secondName: string | null
+}) => [student.lastName, student.firstName, student.secondName].filter(Boolean).join(' ')
 
 useSeoMeta({
   title: () => company.value?.name || 'Szczegół firmy'
@@ -417,7 +417,7 @@ useSeoMeta({
                   <div class="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-slate-400">
                     <span>ID {{ student.id }}</span>
                     <span>•</span>
-                    <span>{{ formatDate(student.birthdate) }}</span>
+                    <span>{{ formatDate(student.birthDate) }}</span>
                   </div>
 
                   <NuxtLink
@@ -434,7 +434,7 @@ useSeoMeta({
                     </p>
                     <p>
                       <span class="font-medium text-slate-700">Miejsce urodzenia:</span>
-                      {{ student.birthplace }}
+                      {{ student.birthPlace }}
                     </p>
                   </div>
                 </div>
@@ -452,8 +452,8 @@ useSeoMeta({
                       path: '/certificates/new',
                       query: {
                         studentId: student.id,
-                        firstName: student.firstname,
-                        lastName: student.lastname,
+                        firstName: student.firstName,
+                        lastName: student.lastName,
                         companyName: company.name
                       }
                     }"

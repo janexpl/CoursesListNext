@@ -1184,7 +1184,7 @@ func mapJournalListRow(row sqlc.ListJournalsRow) JournalListItemDTO {
 		FormOfTraining: row.FormOfTraining,
 		DateStart:      row.DateStart.Time.Format(response.DateFormat),
 		DateEnd:        row.DateEnd.Time.Format(response.DateFormat),
-		TotalHours:     formatNumeric(row.TotalHours),
+		TotalHours:     numericToFloat64(row.TotalHours),
 		Status:         row.Status,
 		Course: CourseRefDTO{
 			ID:   row.CourseID,
@@ -1193,7 +1193,7 @@ func mapJournalListRow(row sqlc.ListJournalsRow) JournalListItemDTO {
 		Company:        company,
 		AttendeesCount: row.AttendeesCount,
 		SessionsCount:  row.SessionsCount,
-		CreatedAt:      row.CreatedAt.Time.Format(time.RFC3339),
+		CreatedAt:      row.CreatedAt.Time.Format(response.TimestampzFormat),
 	}
 }
 

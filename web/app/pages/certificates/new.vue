@@ -257,7 +257,8 @@ const preselectedCourseId = Number.parseInt(readQueryValue(route.query.courseId)
 const preselectedCourseName = readQueryValue(route.query.courseName)
 const preselectedCourseSymbol = readQueryValue(route.query.courseSymbol)
 const preselectedCourseMainName = readQueryValue(route.query.courseMainName)
-const preselectedCourseExpiryTime = readQueryValue(route.query.courseExpiryTime)
+const preselectedCourseExpiryYears = Number.parseInt(readQueryValue(route.query.courseExpiryTime), 10)
+const preselectedCourseExpiryTime = Number.isFinite(preselectedCourseExpiryYears) ? preselectedCourseExpiryYears : null
 
 if (Number.isFinite(preselectedStudentId) && preselectedStudentId > 0 && preselectedLastName && preselectedFirstName) {
   initializeStudentSelection({
@@ -283,7 +284,7 @@ if (Number.isFinite(preselectedCourseId) && preselectedCourseId > 0 && preselect
     name: preselectedCourseName,
     symbol: preselectedCourseSymbol,
     mainName: preselectedCourseMainName,
-    expiryTime: preselectedCourseExpiryTime || null
+    expiryTime: preselectedCourseExpiryTime
   }
 
   form.courseId = preselectedCourseId
@@ -352,7 +353,7 @@ const selectedCourseDescription = computed(() => {
     return 'Nie wybrano kursu'
   }
 
-  if (!selectedCourse.value.expiryTime) {
+  if (selectedCourse.value.expiryTime === null) {
     return 'Brak ustawionego okresu ważności'
   }
 
@@ -1022,7 +1023,7 @@ async function onSubmit() {
               </div>
 
               <p class="text-sm text-slate-400">
-                {{ course.expiryTime ? `${course.expiryTime} lat` : 'bez terminu' }}
+                {{ course.expiryTime !== null ? `${course.expiryTime} lat` : 'bez terminu' }}
               </p>
             </button>
           </div>

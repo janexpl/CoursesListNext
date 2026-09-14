@@ -12,21 +12,18 @@ const search = ref('')
 
 const normalizedSearch = computed(() => search.value.trim())
 
-function formatExpiryLabel(value: string | null) {
-  if (!value) {
+function formatExpiryLabel(value: number | null) {
+  // Zero lat to poprawny okres (ważność kończy się z końcem kursu), więc
+  // brak terminu rozpoznajemy wyłącznie po null.
+  if (value === null) {
     return 'Bez terminu ważności'
   }
 
-  const numericValue = Number.parseInt(value, 10)
-  if (!Number.isFinite(numericValue)) {
-    return value
-  }
-
-  if (numericValue === 1) {
+  if (value === 1) {
     return '1 rok'
   }
 
-  return `${numericValue} lat`
+  return `${value} lat`
 }
 
 const { data, pending, error, refresh } = await useAsyncData(
@@ -170,7 +167,7 @@ const courses = computed(() => data.value?.data ?? [])
                 courseName: course.name,
                 courseSymbol: course.symbol,
                 courseMainName: course.mainName || undefined,
-                courseExpiryTime: course.expiryTime || undefined
+                courseExpiryTime: course.expiryTime ?? undefined
               }
             }"
             class="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-sky-700"

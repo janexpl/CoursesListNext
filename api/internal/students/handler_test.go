@@ -673,6 +673,25 @@ func TestListStudentsByCompanyIdReturnsStudentsResponse(t *testing.T) {
 		t.Fatalf("expected application/json content type, got %q", got)
 	}
 
+	// Dekodowanie do tej samej struktury przeszłoby przy dowolnych tagach, więc
+	// klucze sprawdzamy na surowym JSON-ie - muszą być camelCase jak w GET /students.
+	var raw struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("failed to decode raw response: %v", err)
+	}
+	for _, key := range []string{"id", "firstName", "lastName", "secondName", "birthDate", "birthPlace", "pesel"} {
+		if _, ok := raw.Data[0][key]; !ok {
+			t.Fatalf("expected JSON key %q, got keys %v", key, raw.Data[0])
+		}
+	}
+	for _, legacy := range []string{"firstname", "lastname", "secondname", "birthdate", "birthplace"} {
+		if _, ok := raw.Data[0][legacy]; ok {
+			t.Fatalf("unexpected lowercase JSON key %q", legacy)
+		}
+	}
+
 	var responseBody ListStudentsByCompanyIdResult
 	if err := json.NewDecoder(rec.Body).Decode(&responseBody); err != nil {
 		t.Fatalf("failed to decode response: %v", err)

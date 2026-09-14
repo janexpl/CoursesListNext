@@ -1,11 +1,11 @@
 package courses
 
 type CourseDTO struct {
-	ID         int64   `json:"id"`
-	MainName   string  `json:"mainName"`
-	Name       string  `json:"name"`
-	Symbol     string  `json:"symbol"`
-	ExpiryTime *string `json:"expiryTime"`
+	ID         int64  `json:"id"`
+	MainName   string `json:"mainName"`
+	Name       string `json:"name"`
+	Symbol     string `json:"symbol"`
+	ExpiryTime *int   `json:"expiryTime"`
 }
 
 type CourseDetailDTO struct {
@@ -13,7 +13,7 @@ type CourseDetailDTO struct {
 	MainName                string                            `json:"mainName"`
 	Name                    string                            `json:"name"`
 	Symbol                  string                            `json:"symbol"`
-	ExpiryTime              *string                           `json:"expiryTime"`
+	ExpiryTime              *int                              `json:"expiryTime"`
 	CourseProgram           string                            `json:"courseProgram"`
 	CertFrontPage           string                            `json:"certFrontPage"`
 	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`
@@ -35,7 +35,7 @@ type coursePayload struct {
 	MainName                string                            `json:"mainName"`
 	Name                    string                            `json:"name"`
 	Symbol                  string                            `json:"symbol"`
-	ExpiryTime              *string                           `json:"expiryTime"`
+	ExpiryTime              *int                              `json:"expiryTime"`
 	CourseProgram           string                            `json:"courseProgram"`
 	CertFrontPage           string                            `json:"certFrontPage"`
 	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`

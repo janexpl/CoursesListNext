@@ -327,7 +327,10 @@ const createJournal = `-- name: CreateJournal :one
       i.updated_at,
       i.closed_at,
       0::bigint AS attendees_count,
-      0::bigint AS sessions_count
+      -- inserted_sessions wstawia dokładnie wiersze scheduled_entries. Nowo wstawionych
+      -- wierszy nie widać w tym samym zapytaniu (wspólny snapshot), więc liczymy źródło
+      -- wstawienia zamiast odpytywać training_journal_sessions.
+      (SELECT COUNT(*) FROM scheduled_entries)::bigint AS sessions_count
   FROM inserted i
   JOIN courses c ON c.id = i.course_id
   LEFT JOIN companies comp ON comp.id = i.company_id

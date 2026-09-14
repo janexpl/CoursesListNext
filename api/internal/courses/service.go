@@ -34,7 +34,7 @@ type CreateCourseInput struct {
 	MainName                string
 	Name                    string
 	Symbol                  string
-	ExpiryTime              string
+	ExpiryTime              int
 	CourseProgram           string
 	CertFrontPage           string
 	CertificateTranslations []CourseTranslationInput
@@ -321,12 +321,12 @@ func syncCourseCertificateTranslations(
 	return nil
 }
 
-func normalizeExpiryTime(exp string) (string, error) {
-	expiryValue := strings.TrimSpace(exp)
-
-	expiryInt, err := strconv.Atoi(expiryValue)
-	if err != nil || expiryInt < 0 {
+// normalizeExpiryTime zamienia okres ważności w latach na postać zapisywaną w
+// bazie. Kolumna courses.expirytime jest tekstowa (zapytania SQL rzutują ją na
+// int), więc API przyjmuje i zwraca liczbę, a tekst pozostaje szczegółem zapisu.
+func normalizeExpiryTime(years int) (string, error) {
+	if years < 0 {
 		return "", ErrInvalidInput
 	}
-	return expiryValue, nil
+	return strconv.Itoa(years), nil
 }

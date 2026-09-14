@@ -176,8 +176,8 @@ function statusBadgeClass(value: string) {
     : 'border-sky-200 bg-sky-50 text-sky-700'
 }
 
-function formatHours(value: string) {
-  return `${value.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} h`
+function formatHours(value: number) {
+  return `${String(value)} h`
 }
 
 function formatCreatedAt(value: string) {

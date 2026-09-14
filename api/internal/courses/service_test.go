@@ -132,7 +132,7 @@ func TestServiceUpdateReturnsNotFoundWhenCourseDoesNotExist(t *testing.T) {
 		MainName:      "BHP",
 		Name:          "Szkolenie okresowe",
 		Symbol:        "BHP-OKR",
-		ExpiryTime:    "5",
+		ExpiryTime:    5,
 		CourseProgram: `[{"Subject":"Intro"}]`,
 		CertFrontPage: "<p>Front</p>",
 	})
@@ -236,10 +236,10 @@ func TestServiceUpdateRecordsAuditLogWithBeforeAndAfter(t *testing.T) {
 								t.Fatalf("failed to unmarshal after audit payload: %v", err)
 							}
 
-							if before.Name != "Szkolenie okresowe" || before.ExpiryTime == nil || *before.ExpiryTime != "5" {
+							if before.Name != "Szkolenie okresowe" || before.ExpiryTime == nil || *before.ExpiryTime != 5 {
 								t.Fatalf("unexpected before audit payload: %+v", before)
 							}
-							if after.Name != "Szkolenie okresowe z audytem" || after.ExpiryTime == nil || *after.ExpiryTime != "3" {
+							if after.Name != "Szkolenie okresowe z audytem" || after.ExpiryTime == nil || *after.ExpiryTime != 3 {
 								t.Fatalf("unexpected after audit payload: %+v", after)
 							}
 							if len(after.CertificateTranslations) != 1 || after.CertificateTranslations[0].LanguageCode != "en" {
@@ -291,7 +291,7 @@ func TestServiceUpdateRecordsAuditLogWithBeforeAndAfter(t *testing.T) {
 		MainName:      "BHP",
 		Name:          "Szkolenie okresowe z audytem",
 		Symbol:        "BHP-OKR",
-		ExpiryTime:    "3",
+		ExpiryTime:    3,
 		CourseProgram: `[{"Subject":"Safety"}]`,
 		CertFrontPage: "<p>Front EN</p>",
 		CertificateTranslations: []CourseTranslationInput{
@@ -407,5 +407,17 @@ func TestSyncCourseCertificateTranslationsDeletesMissingTranslations(t *testing.
 	}
 	if len(deletedLanguages) != 1 || deletedLanguages[0] != "de" {
 		t.Fatalf("expected only de deletion, got %+v", deletedLanguages)
+	}
+}
+
+func TestNormalizeExpiryTime(t *testing.T) {
+	if got, err := normalizeExpiryTime(5); err != nil || got != "5" {
+		t.Fatalf("expected \"5\", got %q (%v)", got, err)
+	}
+	if got, err := normalizeExpiryTime(0); err != nil || got != "0" {
+		t.Fatalf("expected \"0\" for zero years, got %q (%v)", got, err)
+	}
+	if _, err := normalizeExpiryTime(-1); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for negative years, got %v", err)
 	}
 }

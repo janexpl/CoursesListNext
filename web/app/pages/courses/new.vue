@@ -504,7 +504,8 @@ async function onSubmit() {
       mainName: trimmedMainName.value,
       name: trimmedName.value,
       symbol: trimmedSymbol.value,
-      expiryTime: trimmedExpiryTime.value,
+      // Pole formularza jest tekstowe; wartość przeszła już walidację /^\d+$/.
+      expiryTime: Number.parseInt(trimmedExpiryTime.value, 10),
       courseProgram: serializedCourseProgram.value,
       certFrontPage: form.certFrontPage,
       certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
@@ -526,7 +527,7 @@ async function onSubmit() {
           courseName: response.data.name,
           courseSymbol: response.data.symbol,
           courseMainName: response.data.mainName || undefined,
-          courseExpiryTime: response.data.expiryTime || undefined
+          courseExpiryTime: response.data.expiryTime ?? undefined
         }
       })
       return

@@ -128,7 +128,7 @@ const certificateLink = computed(() => {
       courseName: course.value.name,
       courseSymbol: course.value.symbol,
       courseMainName: course.value.mainName || undefined,
-      courseExpiryTime: course.value.expiryTime || undefined
+      courseExpiryTime: course.value.expiryTime ?? undefined
     }
   }
 })

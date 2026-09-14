@@ -25,6 +25,11 @@ var (
 	ErrCertificateTranslationNotFound = errors.New("certificate translation not found")
 	ErrRegistryNumberTaken            = errors.New("registry number already taken")
 	ErrCertificateDateBeforeCourseEnd = errors.New("certificate date before course end")
+	// ErrStudentNotFound i ErrCourseNotFound odróżniają brak obiektu wskazanego w ciele
+	// żądania od braku samego zaświadczenia - bez nich oba przypadki kończyły się tym
+	// samym pgx.ErrNoRows, który handler mapował na 500 albo mylące "certificate not found".
+	ErrStudentNotFound = errors.New("student not found")
+	ErrCourseNotFound  = errors.New("course not found")
 )
 
 type CreateCertificateInput struct {
@@ -128,11 +133,11 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 	languageCode := normalizeLanguageCode(input.LanguageCode)
 	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
 	if err != nil {
-		return CreateCertificateResult{}, err
+		return CreateCertificateResult{}, notFoundAs(err, ErrStudentNotFound)
 	}
 	course, err := s.queries.GetCourseByID(ctx, input.CourseID)
 	if err != nil {
-		return CreateCertificateResult{}, err
+		return CreateCertificateResult{}, notFoundAs(err, ErrCourseNotFound)
 	}
 
 	var translation *dbsqlc.GetCourseCertificateTranslationByCourseAndLanguageRow
@@ -289,7 +294,7 @@ func (s *Service) Update(ctx context.Context, certificateID int64, input UpdateC
 
 	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
 	if err != nil {
-		return dbsqlc.UpdateCertificateRow{}, err
+		return dbsqlc.UpdateCertificateRow{}, notFoundAs(err, ErrStudentNotFound)
 	}
 
 	studentSnapshot, err := buildStudentSnapshot(student)
@@ -454,6 +459,15 @@ func validateRegistryChronology(
 	}
 
 	return nil
+}
+
+// notFoundAs zamienia pgx.ErrNoRows na podany błąd domenowy, a pozostałe błędy
+// (np. utratę połączenia z bazą) przepuszcza bez zmian.
+func notFoundAs(err, notFound error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return notFound
+	}
+	return err
 }
 
 func normalizeLanguageCode(value string) string {

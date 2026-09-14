@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 )
@@ -215,10 +217,7 @@ func (h *Handler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 }
 
 func makeCourseDTO(row sqlc.ListCoursesRow) CourseDTO {
-	var expiryTime *string
-	if row.Expirytime.Valid {
-		expiryTime = &row.Expirytime.String
-	}
+	expiryTime := parseExpiryTime(row.Expirytime)
 
 	return CourseDTO{
 		ID:         row.ID,
@@ -230,10 +229,7 @@ func makeCourseDTO(row sqlc.ListCoursesRow) CourseDTO {
 }
 
 func makeCourseDetailDTO(row sqlc.Course, translations []sqlc.ListCourseCertificateTranslationsByCourseIDRow) CourseDetailDTO {
-	var expiryTime *string
-	if row.Expirytime.Valid {
-		expiryTime = &row.Expirytime.String
-	}
+	expiryTime := parseExpiryTime(row.Expirytime)
 
 	return CourseDetailDTO{
 		ID:                      row.ID,
@@ -255,10 +251,7 @@ func makeCourseDetailDTO(row sqlc.Course, translations []sqlc.ListCourseCertific
 // błędu, tylko ciche puste tłumaczenia. Pilnuje tego
 // TestListCoursesDetailsUnpacksAggregatedTranslations.
 func makeCourseDetailDTOFromListRow(row sqlc.ListCoursesDetailsRow) (CourseDetailDTO, error) {
-	var expiryTime *string
-	if row.Expirytime.Valid {
-		expiryTime = &row.Expirytime.String
-	}
+	expiryTime := parseExpiryTime(row.Expirytime)
 
 	translations := make([]CourseCertificateTranslationDTO, 0)
 	if len(row.CertificateTranslations) > 0 {
@@ -277,6 +270,20 @@ func makeCourseDetailDTOFromListRow(row sqlc.ListCoursesDetailsRow) (CourseDetai
 		CertFrontPage:           row.Certfrontpage.String,
 		CertificateTranslations: translations,
 	}, nil
+}
+
+// parseExpiryTime odczytuje okres ważności zapisany tekstowo. Wartość, której nie
+// da się odczytać jako nieujemnej liczby całkowitej, jest zwracana jako brak
+// terminu - tak samo traktują ją zapytania liczące datę wygaśnięcia zaświadczeń.
+func parseExpiryTime(value pgtype.Text) *int {
+	if !value.Valid {
+		return nil
+	}
+	years, err := strconv.Atoi(strings.TrimSpace(value.String))
+	if err != nil || years < 0 {
+		return nil
+	}
+	return &years
 }
 
 func isCourseSymbolConflict(err error) bool {

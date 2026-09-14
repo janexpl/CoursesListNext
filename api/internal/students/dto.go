@@ -55,11 +55,11 @@ type ListCertificatesByStudentResponse struct {
 
 type ListStudentsByCompanyIdDTO struct {
 	ID         int64   `json:"id"`
-	Firstname  string  `json:"firstname"`
-	Lastname   string  `json:"lastname"`
-	Secondname *string `json:"secondname"`
-	Birthdate  string  `json:"birthdate"`
-	Birthplace string  `json:"birthplace"`
+	Firstname  string  `json:"firstName"`
+	Lastname   string  `json:"lastName"`
+	Secondname *string `json:"secondName"`
+	Birthdate  string  `json:"birthDate"`
+	Birthplace string  `json:"birthPlace"`
 	Pesel      *string `json:"pesel"`
 }
 

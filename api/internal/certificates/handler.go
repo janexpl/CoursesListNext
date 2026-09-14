@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -170,6 +171,14 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusConflict, response.CodeConflict, "registry number already taken for the given year")
 			return
 		}
+		if errors.Is(err, ErrStudentNotFound) {
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "student not found")
+			return
+		}
+		if errors.Is(err, ErrCourseNotFound) {
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "course not found")
+			return
+		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create certificate")
 		return
 	}
@@ -286,6 +295,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate date cannot be before course end date")
 			return
 		}
+		if errors.Is(err, ErrStudentNotFound) {
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "student not found")
+			return
+		}
 		response.HandleDBError(w, err, "certificate")
 		return
 	}
@@ -303,8 +316,9 @@ func (h *Handler) SoftDeleteCertificate(w http.ResponseWriter, r *http.Request) 
 	req := SoftDeleteCertificateRequest{}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	err = decoder.Decode(&req)
-	if err != nil {
+	// Ciało jest opcjonalne - niesie tylko powód usunięcia. Klienci HTTP zwykle nie
+	// wysyłają ciała z DELETE, więc jego brak (io.EOF) to po prostu brak powodu.
+	if err = decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}

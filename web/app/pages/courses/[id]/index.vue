@@ -34,21 +34,18 @@ if (!Number.isFinite(courseId.value) || courseId.value <= 0) {
   })
 }
 
-function formatExpiryLabel(value: string | null) {
-  if (!value) {
+function formatExpiryLabel(value: number | null) {
+  // Zero lat to poprawny okres (ważność kończy się z końcem kursu), więc
+  // brak terminu rozpoznajemy wyłącznie po null.
+  if (value === null) {
     return 'Bez terminu ważności'
   }
 
-  const numericValue = Number.parseInt(value, 10)
-  if (!Number.isFinite(numericValue)) {
-    return value
-  }
-
-  if (numericValue === 1) {
+  if (value === 1) {
     return '1 rok'
   }
 
-  return `${numericValue} lat`
+  return `${value} lat`
 }
 
 function formatLanguageLabel(value: string) {
@@ -320,7 +317,7 @@ const certificateLink = computed(() => {
       courseName: course.value.name,
       courseSymbol: course.value.symbol,
       courseMainName: course.value.mainName || undefined,
-      courseExpiryTime: course.value.expiryTime || undefined
+      courseExpiryTime: course.value.expiryTime ?? undefined
     }
   }
 })

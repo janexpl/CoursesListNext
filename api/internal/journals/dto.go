@@ -9,7 +9,7 @@ type JournalListItemDTO struct {
 	FormOfTraining string         `json:"formOfTraining"`
 	DateStart      string         `json:"dateStart"`
 	DateEnd        string         `json:"dateEnd"`
-	TotalHours     string         `json:"totalHours"`
+	TotalHours     float64        `json:"totalHours"`
 	Status         string         `json:"status"`
 	Course         CourseRefDTO   `json:"course"`
 	Company        *CompanyRefDTO `json:"company"`

@@ -233,11 +233,11 @@ export type CreateCompanyPayload = UpdateCompanyPayload
 
 export interface CompanyStudentSummary {
   id: number
-  firstname: string
-  lastname: string
-  secondname: string | null
-  birthdate: string
-  birthplace: string
+  firstName: string
+  lastName: string
+  secondName: string | null
+  birthDate: string
+  birthPlace: string
   pesel: string | null
 }
 
@@ -304,7 +304,8 @@ export interface CourseSummary {
   mainName: string
   name: string
   symbol: string
-  expiryTime: string | null
+  // Okres ważności w latach; null = kurs bez terminu ważności.
+  expiryTime: number | null
 }
 
 export interface CoursesResponse {
@@ -323,7 +324,7 @@ export interface CourseDetails {
   mainName: string
   name: string
   symbol: string
-  expiryTime: string | null
+  expiryTime: number | null
   courseProgram: string
   certFrontPage: string
   certificateTranslations: CourseCertificateTranslation[]
@@ -350,7 +351,7 @@ export interface UpdateCoursePayload {
   mainName: string
   name: string
   symbol: string
-  expiryTime: string
+  expiryTime: number
   courseProgram: string
   certFrontPage: string
   certificateTranslations: CourseCertificateTranslation[]
@@ -391,7 +392,7 @@ export interface JournalSummary {
   formOfTraining: string
   dateStart: string
   dateEnd: string
-  totalHours: string
+  totalHours: number
   status: string
   course: {
     id: number
@@ -710,6 +711,7 @@ const apiErrorMessages: Record<string, string> = {
 
   // certificates
   'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',
+  'not_found:student not found': 'Nie znaleziono kursanta.',
   'bad_request:invalid certificate data': 'Nieprawidłowe dane zaświadczenia.',
   'bad_request:certificate date cannot be before course end date': 'Data wystawienia nie może być wcześniejsza niż data zakończenia szkolenia.',
   'conflict:registry number already taken for the given year': 'Numer rejestru jest już zajęty dla wybranego kursu i roku.',
@@ -727,6 +729,7 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:file is too large': 'Plik jest za duży.',
   'bad_request:file is required': 'Plik jest wymagany.',
   'bad_request:unsupported file type': 'Nieobsługiwany typ pliku.',
+  'not_found:course not found': 'Nie znaleziono kursu.',
   'not_found:journal attendee not found': 'Nie znaleziono uczestnika dziennika.',
   'not_found:journal or student not found': 'Nie znaleziono dziennika lub kursanta.'
 }
