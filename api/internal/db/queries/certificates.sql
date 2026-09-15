@@ -88,7 +88,8 @@ SELECT
     c.revoke_reason,
     c.supersedes_id,
     sup.id AS superseded_by_id,
-    c.duplicate_reason
+    c.duplicate_reason,
+    c.idempotency_key
 FROM certificates c
 LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
@@ -231,7 +232,8 @@ SELECT
     u.revoke_reason,
     u.supersedes_id,
     sup.id AS superseded_by_id,
-    u.duplicate_reason
+    u.duplicate_reason,
+    u.idempotency_key
 FROM updated u
 LEFT JOIN certificates sup ON sup.supersedes_id = u.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
@@ -453,7 +455,8 @@ INSERT INTO certificates (
     course_program_snapshot,
     cert_front_page_snapshot,
     supersedes_id,
-    duplicate_reason
+    duplicate_reason,
+    idempotency_key
 )
 SELECT
     sqlc.arg(date)::date,
@@ -476,7 +479,8 @@ SELECT
     o.course_program_snapshot,
     o.cert_front_page_snapshot,
     o.id,
-    sqlc.arg(reason)::text
+    sqlc.arg(reason)::text,
+    o.idempotency_key
 FROM certificates o
 WHERE o.id = sqlc.arg(original_id)
 RETURNING id;

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
 )
 
 type CourseTranslationInput struct {
@@ -44,11 +46,34 @@ type CreateCourseInput struct {
 type UpdateCourseInput = CreateCourseInput
 
 type Service struct {
-	pool     *pgxpool.Pool
-	queries  *sqlc.Queries
-	recorder *auditlog.Recorder
-	beginTx  func(context.Context) (txScope, error)
+	pool      *pgxpool.Pool
+	queries   *sqlc.Queries
+	recorder  *auditlog.Recorder
+	beginTx   func(context.Context) (txScope, error)
+	publisher *webhooks.Publisher
 }
+
+// SetWebhookPublisher włącza zdarzenie program.updated przy zmianach kursów.
+func (s *Service) SetWebhookPublisher(publisher *webhooks.Publisher) {
+	s.publisher = publisher
+}
+
+// certificateContentChanged mówi, czy zmiana kursu wpływa na treść zaświadczenia w rozumieniu
+// program.updated: nazwa, program szkolenia albo okres ważności.
+func certificateContentChanged(before, after sqlc.Course) bool {
+	return before.Name != after.Name ||
+		before.Expirytime != after.Expirytime ||
+		!sameJSON(before.Courseprogram, after.Courseprogram)
+}
+
+func sameJSON(a, b []byte) bool {
+	var left, right any
+	if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil {
+		return string(a) == string(b)
+	}
+	return reflect.DeepEqual(left, right)
+}
+
 type txScope struct {
 	queries  *sqlc.Queries
 	commit   func(context.Context) error
@@ -225,6 +250,14 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 	courseTranslations, err := tx.queries.ListCourseCertificateTranslationsByCourseID(ctx, courseID)
 	if err != nil {
 		return CourseDetailDTO{}, ErrDatabaseTransactionError
+	}
+
+	// Platforma dostaje zdarzenie tylko o kursach ze swojego katalogu.
+	if s.publisher != nil && (beforeCourse.DeliveredByPlatform || row.DeliveredByPlatform) &&
+		certificateContentChanged(beforeCourse, row) {
+		if err := s.publisher.ProgramUpdated(ctx, tx.queries, courseID); err != nil {
+			return CourseDetailDTO{}, err
+		}
 	}
 
 	if s.recorder != nil {

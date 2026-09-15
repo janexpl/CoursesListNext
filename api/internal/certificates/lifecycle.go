@@ -79,11 +79,16 @@ func (s *Service) Revoke(ctx context.Context, certificateID int64, reason string
 		return err
 	}
 
-	if s.recorder != nil {
-		after, err := tx.queries.GetCertificateByID(ctx, certificateID)
-		if err != nil {
+	after, err := tx.queries.GetCertificateByID(ctx, certificateID)
+	if err != nil {
+		return err
+	}
+	if s.publisher != nil {
+		if err := s.publisher.CertificateRevoked(ctx, tx.queries, after, reason); err != nil {
 			return err
 		}
+	}
+	if s.recorder != nil {
 		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
 			EntityType: "certificate",
 			EntityID:   certificateID,
@@ -202,11 +207,16 @@ func (s *Service) duplicate(ctx context.Context, originalID int64, reason string
 		return 0, err
 	}
 
-	if s.recorder != nil {
-		created, err := tx.queries.GetCertificateByID(ctx, duplicateID)
-		if err != nil {
+	created, err := tx.queries.GetCertificateByID(ctx, duplicateID)
+	if err != nil {
+		return 0, err
+	}
+	if s.publisher != nil {
+		if err := s.publisher.CertificateIssued(ctx, tx.queries, created); err != nil {
 			return 0, err
 		}
+	}
+	if s.recorder != nil {
 		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
 			EntityType: "certificate",
 			EntityID:   duplicateID,

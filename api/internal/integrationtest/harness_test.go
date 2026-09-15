@@ -36,6 +36,14 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/config"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/server"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
+)
+
+// Konfiguracja dispatchera webhooków w testach: krótkie opóźnienia zamiast godzin.
+const (
+	webhookTestRequestTimeout = 300 * time.Millisecond
+	webhookTestRetryDelay     = 50 * time.Millisecond
+	webhookTestPublicBaseURL  = "https://courseslist.test"
 )
 
 // notificationsToken to statyczny token tras /internal/notifications w testach.
@@ -56,6 +64,8 @@ type testEnv struct {
 	apiKey  string
 	adminDB string
 	dbName  string
+
+	stopDispatcher context.CancelFunc
 }
 
 var (
@@ -143,12 +153,26 @@ func setup(adminURL string) (*testEnv, error) {
 		SessionCookieName:     "session_token",
 		LoginRateLimit:        600,
 		NotificationsAPIToken: notificationsToken,
+		PublicBaseURL:         webhookTestPublicBaseURL,
 	}
 	e.server = httptest.NewServer(server.NewRouter(server.Dependencies{
 		Queries: dbsqlc.New(pool),
 		Config:  cfg,
 		Pool:    pool,
 	}))
+	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
+	e.stopDispatcher = stopDispatcher
+	retryDelays := make([]time.Duration, 7)
+	for i := range retryDelays {
+		retryDelays[i] = webhookTestRetryDelay
+	}
+	go webhooks.NewDispatcher(pool, webhooks.Config{
+		PollInterval:   webhookTestRetryDelay,
+		RequestTimeout: webhookTestRequestTimeout,
+		RetryDelays:    retryDelays,
+		BatchSize:      20,
+	}).Run(dispatcherCtx)
+
 	e.client = &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: &http.Transport{MaxIdleConnsPerHost: 64, MaxConnsPerHost: 64},
@@ -158,6 +182,9 @@ func setup(adminURL string) (*testEnv, error) {
 
 func (e *testEnv) teardown() {
 	ctx := context.Background()
+	if e.stopDispatcher != nil {
+		e.stopDispatcher()
+	}
 	if e.server != nil {
 		e.server.Close()
 	}

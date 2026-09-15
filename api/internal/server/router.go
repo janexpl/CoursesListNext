@@ -24,6 +24,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 	"github.com/janexpl/CoursesListNext/api/internal/students"
 	"github.com/janexpl/CoursesListNext/api/internal/users"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
 )
 
 type Dependencies struct {
@@ -44,12 +45,15 @@ func NewRouter(deps Dependencies) http.Handler {
 	companyService := companies.NewService(deps.Pool, deps.Queries, recorder)
 	companyHandler := companies.NewHandler(deps.Queries, companyService)
 	authHandler := auth.NewHandler(deps.Queries, deps.Config)
+	webhookPublisher := webhooks.NewPublisher(deps.Config.PublicBaseURL)
 	certificateService := certificates.NewService(deps.Pool, deps.Queries, recorder)
+	certificateService.SetWebhookPublisher(webhookPublisher)
 	userService := users.NewServiceWithAudit(deps.Pool, deps.Queries, recorder)
 	userHandler := users.NewHandler(deps.Queries, userService)
 	certificateHandler := certificates.NewHandler(deps.Queries, certificateService)
 	dashboardHandler := dashboard.NewHandler(deps.Queries)
 	coursesService := courses.NewService(deps.Pool, deps.Queries, recorder)
+	coursesService.SetWebhookPublisher(webhookPublisher)
 	courseHandler := courses.NewHandler(deps.Queries, coursesService)
 	registryHandler := registries.NewHandler(deps.Queries)
 	journalService := journals.NewService(deps.Pool, deps.Queries, recorder)

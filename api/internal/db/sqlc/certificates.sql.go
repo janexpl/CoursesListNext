@@ -177,7 +177,8 @@ INSERT INTO certificates (
     course_program_snapshot,
     cert_front_page_snapshot,
     supersedes_id,
-    duplicate_reason
+    duplicate_reason,
+    idempotency_key
 )
 SELECT
     $1::date,
@@ -200,7 +201,8 @@ SELECT
     o.course_program_snapshot,
     o.cert_front_page_snapshot,
     o.id,
-    $3::text
+    $3::text,
+    o.idempotency_key
 FROM certificates o
 WHERE o.id = $4
 RETURNING id
@@ -270,7 +272,8 @@ SELECT
     c.revoke_reason,
     c.supersedes_id,
     sup.id AS superseded_by_id,
-    c.duplicate_reason
+    c.duplicate_reason,
+    c.idempotency_key
 FROM certificates c
 LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
@@ -314,6 +317,7 @@ type GetCertificateByIDRow struct {
 	SupersedesID      pgtype.Int8        `json:"supersedes_id"`
 	SupersededByID    pgtype.Int8        `json:"superseded_by_id"`
 	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
+	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
 }
 
 func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertificateByIDRow, error) {
@@ -353,6 +357,7 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.SupersedesID,
 		&i.SupersededByID,
 		&i.DuplicateReason,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -1018,7 +1023,7 @@ WITH updated AS (
       AND c.deleted_at IS NULL
     -- RETURNING całego wiersza: główne zapytanie widzi migawkę sprzed UPDATE w CTE, więc
     -- dane zaświadczenia muszą pochodzić z RETURNING, a nie z ponownego odczytu tabeli.
-    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.supersedes_id, c.duplicate_reason
+    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.supersedes_id, c.duplicate_reason, c.idempotency_key
 )
 SELECT
     u.id,
@@ -1062,7 +1067,8 @@ SELECT
     u.revoke_reason,
     u.supersedes_id,
     sup.id AS superseded_by_id,
-    u.duplicate_reason
+    u.duplicate_reason,
+    u.idempotency_key
 FROM updated u
 LEFT JOIN certificates sup ON sup.supersedes_id = u.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
@@ -1120,6 +1126,7 @@ type UpdateCertificateRow struct {
 	SupersedesID      pgtype.Int8        `json:"supersedes_id"`
 	SupersededByID    pgtype.Int8        `json:"superseded_by_id"`
 	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
+	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
 }
 
 func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificateParams) (UpdateCertificateRow, error) {
@@ -1173,6 +1180,7 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.SupersedesID,
 		&i.SupersededByID,
 		&i.DuplicateReason,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/db"
 	dbsql "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/server"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
 )
 
 // expiredSessionPurger deletes expired session rows; *dbsql.Queries satisfies it.
@@ -48,6 +49,9 @@ func main() {
 
 	go startSessionCleanup(ctx, queries, cfg.SessionCleanupInterval)
 	go startIdempotencyKeyCleanup(ctx, queries, cfg.SessionCleanupInterval)
+	if cfg.WebhooksEnabled {
+		go webhooks.NewDispatcher(pool, webhooks.DefaultConfig()).Run(ctx)
+	}
 
 	go func() {
 		log.Printf("api listening on :%s", cfg.Port)

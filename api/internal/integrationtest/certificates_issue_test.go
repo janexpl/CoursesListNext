@@ -12,9 +12,10 @@ import (
 // Zlecenie, punkt 3: wystawianie zaświadczeń odporne na ponowienia.
 
 type createCertificateData struct {
-	ID             int64 `json:"id"`
-	RegistryYear   int64 `json:"registryYear"`
-	RegistryNumber int64 `json:"registryNumber"`
+	ID               int64  `json:"id"`
+	RegistryYear     int64  `json:"registryYear"`
+	RegistryNumber   int64  `json:"registryNumber"`
+	VerificationCode string `json:"verificationCode"`
 }
 
 func certificatePayload(studentID, courseID int64) map[string]any {

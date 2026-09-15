@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
 	"github.com/janexpl/CoursesListNext/api/internal/validation"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
 )
 
 var (
@@ -79,11 +81,18 @@ type txScope struct {
 }
 
 type Service struct {
-	pool     *pgxpool.Pool
-	queries  *dbsqlc.Queries
-	recorder *auditlog.Recorder
-	beginTx  func(context.Context) (txScope, error)
+	pool      *pgxpool.Pool
+	queries   *dbsqlc.Queries
+	recorder  *auditlog.Recorder
+	beginTx   func(context.Context) (txScope, error)
+	publisher *webhooks.Publisher
 }
+
+// SetWebhookPublisher włącza zapisywanie zdarzeń webhooka w transakcjach zaświadczeń.
+func (s *Service) SetWebhookPublisher(publisher *webhooks.Publisher) {
+	s.publisher = publisher
+}
+
 type studentSnapshot struct {
 	FirstName   string
 	SecondName  *string
@@ -303,6 +312,15 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		}); err != nil {
 			return CreateCertificateResult{}, err
 		}
+		if s.publisher != nil {
+			issued, err := tx.queries.GetCertificateByID(ctx, certificateID)
+			if err != nil {
+				return CreateCertificateResult{}, err
+			}
+			if err := s.publisher.CertificateIssued(ctx, tx.queries, issued); err != nil {
+				return CreateCertificateResult{}, err
+			}
+		}
 	}
 
 	if s.recorder != nil {
@@ -473,6 +491,13 @@ func (s *Service) Update(ctx context.Context, certificateID int64, input UpdateC
 	))
 	if err != nil {
 		return dbsqlc.UpdateCertificateRow{}, err
+	}
+
+	if s.publisher != nil && webhooks.IsPlatformCertificate(beforeCertificate) &&
+		fmt.Sprint(beforeCertificate.ExpiryDate) != fmt.Sprint(updatedCertificate.ExpiryDate) {
+		if err := s.publisher.CertificateValidityChanged(ctx, tx.queries, dbsqlc.GetCertificateByIDRow(updatedCertificate)); err != nil {
+			return dbsqlc.UpdateCertificateRow{}, err
+		}
 	}
 
 	if s.recorder != nil {

@@ -28,6 +28,11 @@ type Config struct {
 	GUSUrl                 string
 	GUSToken               string
 	NotificationsAPIToken  string
+	// PublicBaseURL - publiczny adres API (np. https://courseslist.example.pl), z którego
+	// webhook buduje pdf_url. Pusty pomija pdf_url.
+	PublicBaseURL string
+	// WebhooksEnabled - czy ta instancja uruchamia dispatcher webhooków.
+	WebhooksEnabled bool
 }
 
 func Load() Config {
@@ -117,6 +122,14 @@ func Load() Config {
 
 	notificationsAPIToken := strings.TrimSpace(os.Getenv("NOTIFICATIONS_API_TOKEN"))
 
+	webhooksEnabled := true
+	if raw := os.Getenv("WEBHOOKS_ENABLED"); raw != "" {
+		webhooksEnabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			log.Fatalf("Invalid WEBHOOKS_ENABLED value: %v", err)
+		}
+	}
+
 	return Config{
 		Port:                   port,
 		DBHost:                 dbhost,
@@ -134,6 +147,8 @@ func Load() Config {
 		GUSUrl:                 gusURL,
 		GUSToken:               gusToken,
 		NotificationsAPIToken:  notificationsAPIToken,
+		PublicBaseURL:          os.Getenv("PUBLIC_BASE_URL"),
+		WebhooksEnabled:        webhooksEnabled,
 	}
 }
 

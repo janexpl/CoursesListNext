@@ -73,6 +73,7 @@ type Certificate struct {
 	RevokedByUserID           pgtype.Int8        `json:"revoked_by_user_id"`
 	SupersedesID              pgtype.Int8        `json:"supersedes_id"`
 	DuplicateReason           pgtype.Text        `json:"duplicate_reason"`
+	IdempotencyKey            pgtype.Text        `json:"idempotency_key"`
 }
 
 type Company struct {
@@ -231,4 +232,37 @@ type User struct {
 	Firstname string `json:"firstname"`
 	Lastname  string `json:"lastname"`
 	Role      int32  `json:"role"`
+}
+
+type WebhookDelivery struct {
+	ID             int64              `json:"id"`
+	EventID        int64              `json:"event_id"`
+	EndpointID     int64              `json:"endpoint_id"`
+	SubjectKey     string             `json:"subject_key"`
+	Status         string             `json:"status"`
+	Attempts       int32              `json:"attempts"`
+	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
+	LockedUntil    pgtype.Timestamptz `json:"locked_until"`
+	LastStatusCode pgtype.Int4        `json:"last_status_code"`
+	LastError      pgtype.Text        `json:"last_error"`
+	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type WebhookEndpoint struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	Url       string             `json:"url"`
+	Secret    string             `json:"secret"`
+	Active    bool               `json:"active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type WebhookEvent struct {
+	ID         int64              `json:"id"`
+	EventType  string             `json:"event_type"`
+	SubjectKey string             `json:"subject_key"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+	Payload    []byte             `json:"payload"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }

@@ -23,8 +23,15 @@ func (q *Queries) AcquireIdempotencyKeyLock(ctx context.Context, key string) err
 }
 
 const createIdempotencyKey = `-- name: CreateIdempotencyKey :exec
-INSERT INTO idempotency_keys (key, request_hash, certificate_id)
-VALUES ($1, $2, $3)
+WITH stored AS (
+    INSERT INTO idempotency_keys (key, request_hash, certificate_id)
+    VALUES ($1::text, $2::text, $3::bigint)
+    RETURNING key, certificate_id
+)
+UPDATE certificates
+SET idempotency_key = stored.key
+FROM stored
+WHERE certificates.id = stored.certificate_id
 `
 
 type CreateIdempotencyKeyParams struct {
@@ -33,6 +40,8 @@ type CreateIdempotencyKeyParams struct {
 	CertificateID int64  `json:"certificate_id"`
 }
 
+// Klucz trafia też na zaświadczenie (certificates.idempotency_key), bo wpis w tej tabeli
+// jest usuwany po 30 dniach, a zdarzenia webhooka o dokumencie mogą przyjść później.
 func (q *Queries) CreateIdempotencyKey(ctx context.Context, arg CreateIdempotencyKeyParams) error {
 	_, err := q.db.Exec(ctx, createIdempotencyKey, arg.Key, arg.RequestHash, arg.CertificateID)
 	return err

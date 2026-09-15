@@ -23,10 +23,10 @@ Firma ──< Kursant ──< Zaświadczenie >── Kurs ──< Tłumaczenie k
 
 | Pojęcie | Zasób | Uwagi |
 |---|---|---|
-| Firma | `companies` | Pracodawca kursantów. NIP unikalny. Może dostawać e-maile o wygasających zaświadczeniach. |
-| Kursant | `students` | Opcjonalnie przypisany do jednej firmy. |
-| Kurs | `courses` | Symbol unikalny. Zawiera program szkolenia i szablon HTML zaświadczenia (+ tłumaczenia). |
-| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok). |
+| Firma | `companies` | Pracodawca kursantów. NIP unikalny. Może mieć `externalId` platformy. Może dostawać e-maile o wygasających zaświadczeniach. |
+| Kursant | `students` | Opcjonalnie przypisany do jednej firmy. Może mieć `externalId` platformy. |
+| Kurs | `courses` | Symbol unikalny. Zawiera program szkolenia i szablon HTML zaświadczenia (+ tłumaczenia). Flaga `deliveredByPlatform` wyznacza katalog platformy. |
+| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok), i kod weryfikacyjny. Może zostać unieważnione albo zastąpione duplikatem. |
 | Dziennik szkolenia | `journals` | Dokumentacja jednej edycji kursu: sesje, uczestnicy, obecność, skany. Status `draft` → `closed`. |
 | Uczestnik | `journals/{id}/attendees` | Kursant dodany do dziennika. **Ma własne `id`, różne od `studentId`.** |
 
@@ -39,7 +39,8 @@ Zaświadczenie i uczestnik dziennika zapisują **kopię** danych z chwili utworz
 - uczestnik — imię i nazwisko, datę urodzenia i nazwę firmy.
 
 Późniejsza zmiana kursanta, firmy lub kursu **nie zmienia** wystawionych zaświadczeń ani uczestników.
-Wyjątek: `PATCH /certificates/{id}` odświeża kopię danych kursanta.
+Wyjątek: `PATCH /certificates/{id}` odświeża kopię danych kursanta. Duplikat (`POST /certificates/{id}/duplicate`) kopiuje
+dane z oryginału, nie z aktualnego kursanta i kursu.
 
 ---
 
@@ -153,7 +154,8 @@ Wyjątki od koperty: `GET .../pdf` i pobieranie skanów zwracają plik binarny; 
 | Identyfikator | liczba całkowita dodatnia | `128` |
 | Numer zaświadczenia | `numer/SYMBOL/rok` (wyliczany, nie ma pola) | `12/BHP/2026` |
 
-Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem.
+Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem. Wyjątki, celowo w ISO 8601: parametr
+`updatedSince` (sekcja 6.6) i `timestamp` w webhookach (sekcja 6.7).
 
 ### Pola opcjonalne
 
@@ -499,6 +501,82 @@ GET /api/v1/courses/details?updatedSince=2026-09-15T08:00:00Z&deliveredByPlatfor
   przesunąć między stronami — kolejna synchronizacja przyrostowa go dociągnie.
 - API nie usuwa kursów, więc nie ma zdarzenia „kurs usunięty".
 
+### 6.7. Webhooki — zdarzenia wychodzące
+
+CoursesList sam wysyła zdarzenia do odbiorcy (platformy), także o zmianach wykonanych ręcznie w aplikacji webowej
+(np. unieważnienie przez pracownika). Pełne schematy ciał: sekcja `webhooks` w `openapi.yaml`.
+
+**Konfiguracja (po stronie CoursesList, poza API).** Odbiorcę dodaje administrator bazy:
+
+```sql
+INSERT INTO webhook_endpoints (name, url, secret)
+VALUES ('platforma', 'https://platforma.example.pl/hooks/courseslist', '<wspólny sekret>');
+-- wyłączenie: UPDATE webhook_endpoints SET active = false WHERE name = 'platforma';
+```
+
+Sekret ustalacie poza API. Zmienne środowiskowe API: `PUBLIC_BASE_URL` (publiczny adres API, z którego powstaje
+`pdf_url`; bez niej pole jest pomijane) i `WEBHOOKS_ENABLED` (domyślnie `true`; przy kilku instancjach API można
+wysyłać z dowolnej liczby — doręczenia nie dublują się). Zdarzenia trafiają tylko do odbiorców aktywnych w chwili
+zapisu zmiany; nowy odbiorca nie dostaje zdarzeń wstecz.
+
+**Transport.** `POST` na `url`, `Content-Type: application/json`, nagłówek
+`X-Az-Signature: <HMAC-SHA256(sekret, surowe ciało), hex, małe litery>`. Licz HMAC z bajtów, które przyszły
+(nie z ponownie zserializowanego obiektu), i porównuj stałoczasowo:
+
+```go
+mac := hmac.New(sha256.New, []byte(secret))
+mac.Write(rawBody)
+ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToString(mac.Sum(nil))))
+```
+
+**Zdarzenia.** Pola w `snake_case` — celowo inaczej niż `camelCase` w REST API.
+
+| `event` | Kiedy | Pola |
+|---|---|---|
+| `certificate.issued` | `POST /certificates` z `Idempotency-Key`; duplikat takiego zaświadczenia | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code` |
+| `certificate.revoked` | unieważnienie (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `reason` |
+| `certificate.validity_changed` | `PATCH /certificates/{id}` zmienił termin ważności | `timestamp`, `certificate_number`, `valid_until` (`null` = bez terminu) |
+| `program.updated` | zmiana nazwy, programu lub okresu ważności kursu z `deliveredByPlatform` | `timestamp`, `external_program_id` (= `id` kursu) |
+
+```json
+{"event":"certificate.issued","timestamp":"2026-09-15T10:15:00.123456Z","idempotency_key":"enrollment-8812",
+ "certificate_number":"12/BHP/2026","issued_at":"2026-09-15","valid_until":"2031-09-14",
+ "pdf_url":"https://courseslist.example.pl/api/v1/certificates/9812/pdf","verification_code":"K7QM4XPA9TZC"}
+```
+
+- **Zdarzenia o zaświadczeniach dotyczą wyłącznie dokumentów wystawionych z `Idempotency-Key`** i ich duplikatów
+  (duplikat niesie `idempotency_key` oryginału i własny `certificate_number`). Dokumenty z aplikacji webowej
+  i dzienników nie generują zdarzeń — odbiorca nie miałby ich z czym powiązać.
+- `pdf_url` wymaga klucza API z `certificates:read`; dla unieważnionego dokumentu zwraca 409.
+- `timestamp` to ISO 8601 w UTC z `Z` i mikrosekundami. Rośnie ściśle w obrębie zaświadczenia (i kursu).
+
+**Doręczanie.** Zdarzenie jest zapisywane w tej samej transakcji co zmiana i wysyłane dopiero po jej zatwierdzeniu
+— nieudany zapis nie wysyła niczego, a niedostępny odbiorca nie blokuje wystawienia zaświadczenia.
+
+| Odpowiedź odbiorcy | Zachowanie |
+|---|---|
+| 2xx | doręczone |
+| brak odpowiedzi, timeout (10 s), 5xx | ponowienie po 1 min, 5 min, 15 min, 30 min, 1 h, 2 h, 4 h — łącznie 8 prób w ok. 8 h, potem `failed` |
+| 400, 401, 422 i każdy inny kod (także 3xx, 404) | **bez ponowień** — `failed`, wpis `WEBHOOK ALERT` w logu API |
+
+- Ponowienie wysyła **identyczne bajty** (ten sam `timestamp` i podpis).
+- Kolejność: zdarzenia o jednym zaświadczeniu (i jednym kursie) są doręczane do danego odbiorcy w kolejności
+  powstania — następne czeka, dopóki poprzednie jest ponawiane. Zdarzenie, które skończyło jako `failed`, nie
+  blokuje kolejnych.
+- Doręczenie jest „co najmniej raz": gdy odbiorca przetworzy zdarzenie, ale odpowiedź nie dotrze (timeout),
+  przyjdzie ponownie. Traktuj powtórzony `timestamp` jako już zastosowany (odpowiedz 200).
+
+Monitorowanie i ręczne ponowienie (operator):
+
+```sql
+SELECT d.id, ev.event_type, ev.subject_key, d.attempts, d.last_status_code, d.last_error, ev.payload::text
+FROM webhook_deliveries d JOIN webhook_events ev ON ev.id = d.event_id
+WHERE d.status = 'failed' ORDER BY d.id DESC;
+
+-- po usunięciu przyczyny:
+UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_attempt_at = now() WHERE id = <id>;
+```
+
 ---
 
 ## 7. Obsługa błędów — zalecenia
@@ -521,8 +599,18 @@ obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
 
 ## 8. Czego API nie oferuje
 
-- webhooków ani powiadomień o zmianach — zmiany trzeba odpytywać;
-- filtrowania „zmienione od" (`updatedSince`) i paginacji dla list innych niż kursy;
+- zdarzeń webhook o zaświadczeniach wystawionych bez `Idempotency-Key` (aplikacja webowa, dzienniki), o zmianach
+  kursantów i firm ani o zmianach kursów spoza katalogu platformy — te zmiany trzeba odpytywać;
+- zarządzania odbiorcami webhooków przez API (konfiguracja w bazie, sekcja 6.7) ani ponownego wysłania zdarzenia
+  na żądanie;
+- filtrowania „zmienione od" (`updatedSince`) i paginacji dla list innych niż kursy (kursanci, firmy,
+  zaświadczenia, dzienniki są ograniczone do 100 wyników na zapytanie);
+- przypisania `externalId` do istniejącego kursanta lub firmy — po 409 z `error.id` powiązanie trzymasz po swojej
+  stronie (sekcja 6.2);
+- cofnięcia unieważnienia zaświadczenia;
+- wydruku PDF unieważnionego zaświadczenia;
+- idempotencji operacji zapisu innych niż `POST /certificates` (poza naturalnie idempotentnymi
+  `PUT .../by-external-id/...`, unieważnieniem i duplikatem);
 - operacji zbiorczych (np. obecność wielu osób jednym żądaniem);
 - usuwania kursantów, firm i kursów;
 - wersjonowania poza prefiksem `/api/v1` — specyfikacja opisuje stan kodu z gałęzi `api_and_webhook`

@@ -48,6 +48,159 @@ tags:
     description: Zarządzanie użytkownikami — wymaga konta administratora
   - name: audit
     description: Historia zmian — wymaga konta administratora
+  - name: webhooks
+    description: >-
+      Zdarzenia wysyłane przez CoursesList do odbiorcy (platformy). Pola w snake_case — celowo inaczej niż
+      camelCase w REST API. Konfiguracja i doręczanie: INTEGRATION.md, sekcja 6.7.
+
+webhooks:
+  certificate.issued:
+    post:
+      tags: [webhooks]
+      operationId: webhookWebhookCertificateIssued
+      summary: Wystawiono zaświadczenie (także duplikat)
+      description: >-
+        Wysyłane po wystawieniu zaświadczenia z `Idempotency-Key` (`POST /certificates`) oraz po wystawieniu
+        duplikatu takiego zaświadczenia (duplikat niesie `idempotency_key` oryginału i własny numer).
+        Dokumenty wystawione bez klucza (aplikacja webowa, dzienniki) nie generują zdarzeń.
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookCertificateIssued"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+  certificate.revoked:
+    post:
+      tags: [webhooks]
+      operationId: webhookWebhookCertificateRevoked
+      summary: Unieważniono zaświadczenie
+      description: >-
+        Wysyłane po `POST /certificates/{id}/revoke` — z API i z aplikacji webowej — dla zaświadczeń
+        wystawionych z `Idempotency-Key` (i ich duplikatów).
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookCertificateRevoked"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+  certificate.validity_changed:
+    post:
+      tags: [webhooks]
+      operationId: webhookWebhookCertificateValidityChanged
+      summary: Zmieniła się ważność zaświadczenia
+      description: >-
+        Wysyłane, gdy korekta zaświadczenia (`PATCH /certificates/{id}`) zmienia termin ważności, dla zaświadczeń
+        wystawionych z `Idempotency-Key`. `valid_until` jest `null`, gdy dokument przestał mieć termin
+        ważności (usunięto datę zakończenia kursu).
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookCertificateValidityChanged"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+  program.updated:
+    post:
+      tags: [webhooks]
+      operationId: webhookWebhookProgramUpdated
+      summary: Zmieniła się treść kursu z katalogu platformy
+      description: >-
+        Wysyłane po zmianie nazwy, programu szkolenia lub okresu ważności kursu, który jest (lub przed zmianą był)
+        oznaczony `deliveredByPlatform`. Zmiana szablonu zaświadczenia, nazwy głównej, symbolu, tłumaczeń ani
+        samej flagi nie generuje zdarzenia — do synchronizacji katalogu służy `updatedSince`.
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookProgramUpdated"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
 
 paths:
   /healthz:
@@ -2762,6 +2915,84 @@ components:
           description: Liczba wszystkich pasujących wyników (na wszystkich stronach).
         totalPages:
           type: integer
+
+    # ------------------------------------------------------------------ webhooks
+    WebhookTimestamp:
+      type: string
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+      examples: ["2026-09-15T10:15:00.123456Z"]
+      description: >-
+        Moment zdarzenia, ISO 8601 w UTC z `Z` i mikrosekundami — **inaczej niż w REST API**. Rośnie ściśle
+        w obrębie jednego zaświadczenia (i jednego kursu); ponowienia wysyłają ten sam znacznik.
+    WebhookCertificateNumber:
+      type: string
+      examples: ["12/BHP/2026"]
+      description: Numer zaświadczenia `numer/SYMBOL/rok`.
+    WebhookCertificateIssued:
+      type: object
+      additionalProperties: false
+      required: [event, timestamp, idempotency_key, certificate_number, issued_at]
+      properties:
+        event:
+          const: certificate.issued
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        idempotency_key:
+          type: string
+          description: Wartość `Idempotency-Key` z wystawienia (dla duplikatu — z wystawienia oryginału).
+        certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        issued_at:
+          $ref: "#/components/schemas/Date"
+        valid_until:
+          $ref: "#/components/schemas/Date"
+        pdf_url:
+          type: string
+          format: uri
+          description: >-
+            `GET /api/v1/certificates/{id}/pdf` pod publicznym adresem API. Wymaga klucza API z `certificates:read`.
+            Pomijane, gdy serwer nie ma skonfigurowanego adresu publicznego.
+        verification_code:
+          $ref: "#/components/schemas/VerificationCode"
+    WebhookCertificateRevoked:
+      type: object
+      additionalProperties: false
+      required: [event, timestamp, certificate_number, reason]
+      properties:
+        event:
+          const: certificate.revoked
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        reason:
+          type: string
+    WebhookCertificateValidityChanged:
+      type: object
+      additionalProperties: false
+      required: [event, timestamp, certificate_number, valid_until]
+      properties:
+        event:
+          const: certificate.validity_changed
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        valid_until:
+          $ref: "#/components/schemas/NullableDate"
+    WebhookProgramUpdated:
+      type: object
+      additionalProperties: false
+      required: [event, timestamp, external_program_id]
+      properties:
+        event:
+          const: program.updated
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        external_program_id:
+          type: integer
+          format: int64
+          description: "`id` kursu w CoursesList."
 
     # ------------------------------------------------------------------ auth
     AuthUser:
