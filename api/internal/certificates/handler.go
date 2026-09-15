@@ -106,6 +106,41 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, resp)
 }
 
+// verificationCodeFinder to osobny interfejs, żeby nie rozszerzać Querier o metodę
+// potrzebną tylko jednej trasie.
+type verificationCodeFinder interface {
+	GetCertificateIDByVerificationCode(ctx context.Context, verificationCode string) (int64, error)
+}
+
+// GetByVerificationCode zwraca to samo co GET /certificates/{id} dla zaświadczenia
+// o podanym kodzie. Kod jest normalizowany do wielkich liter (człowiek przepisuje go
+// z papieru); usunięte zaświadczenie daje 404 jak w GET po id.
+func (h *Handler) GetByVerificationCode(w http.ResponseWriter, r *http.Request) {
+	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
+	if !validation.IsCertificateVerificationCode(code) {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid verification code")
+		return
+	}
+	finder, ok := h.querier.(verificationCodeFinder)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to get certificate")
+		return
+	}
+	id, err := finder.GetCertificateIDByVerificationCode(r.Context(), code)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+	certificate, err := h.querier.GetCertificateByID(r.Context(), id)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, CertificateResponse{
+		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
+	})
+}
+
 func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
 	id, err := response.ParsePositiveInt64PathValue(r, "id")
 	if err != nil {
@@ -207,9 +242,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	response.WriteJSON(w, status, CreateCertificateResponse{
 		Data: CreateCertificateResponseData{
-			ID:             result.ID,
-			RegistryYear:   result.RegistryYear,
-			RegistryNumber: result.RegistryNumber,
+			ID:               result.ID,
+			RegistryYear:     result.RegistryYear,
+			RegistryNumber:   result.RegistryNumber,
+			VerificationCode: result.VerificationCode,
 		},
 	})
 }
@@ -644,6 +680,7 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		CertFrontPage:     certificate.CertFrontPage,
 		LanguageCode:      certificate.LanguageCode,
 		ExpiryDate:        expiryDate,
+		VerificationCode:  certificate.VerificationCode,
 		Journal:           journal,
 		PrintVariants:     printVariants,
 	}

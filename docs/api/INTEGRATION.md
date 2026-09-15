@@ -235,55 +235,60 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    `studentFirstname`, `studentSecondname` i `studentLastname`.
 2. `DELETE /certificates/{id}` wymaga konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF,
    a jego numer rejestru można wykorzystać ponownie.
-3. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
+3. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
+   i niezmienny. Dostają go wszystkie dokumenty (API, aplikacja webowa, dziennik, także te sprzed wprowadzenia kodu).
+   Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
+   `GET /certificates/by-verification-code/{code}` (`certificates:read`, wielkość liter bez znaczenia).
+   Kod **nie jest drukowany** na PDF generowanym przez API.
+4. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
    (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 
 ### Kursy
 
-4. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
+5. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
    `"[{\"Subject\":\"Przepisy BHP\",\"TheoryTime\":\"4\",\"PracticeTime\":\"0\"}]"`.
    Musi być tablicą JSON (inaczej 400 `course program must be a JSON array`); klucze wielką literą, godziny jako stringi.
-5. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy.
+6. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy.
    Przy `PATCH /courses/{id}` pominięte `certificateTranslations` zostawia je bez zmian, a `[]` usuwa wszystkie (sekcja 4).
-6. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
+7. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
    nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
 
 ### Kursanci i firmy
 
-7. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
+8. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
    `GET /companies/lookup-by-nip`) i zapisywany jako same cyfry — `123-456-32-18` wróci jako `1234563218`.
-8. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-9. Brak operacji usuwania kursantów, firm i kursów.
-10. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
+9. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+10. Brak operacji usuwania kursantów, firm i kursów.
+11. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
     wartościach, także różniących się tylko wielkością liter lub spacjami (409). Przed utworzeniem kursanta
     wyszukaj go (`GET /students?search=...`). Dane sprzed wprowadzenia tej reguły mogą zawierać takie duplikaty;
     edycja rekordu z takiej pary, zmieniająca jego zapis na identyczny z bliźniakiem, też zwróci 409.
     Integracje, które mają własny identyfikator osoby, powinny zamiast tego używać
     `PUT /students/by-external-id/{externalId}` (sekcja 6.2).
-11. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
+12. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
     Jest tylko do odczytu w `StudentDetails`/`CompanyDetails`, nie ma go na listach, a `POST` i `PATCH` go nie
     przyjmują (400) i nie zmieniają. Rekordy zakładane w aplikacji webowej mają `externalId: null`.
-12. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
+13. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
     firm nie ma telefonu).
 
 ### Dzienniki
 
-13. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+14. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
-14. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-15. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+15. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+16. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
     zaświadczeń ani usunięcia całego dziennika.
-16. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+17. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-17. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+18. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
     dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
-18. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+19. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
     to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
@@ -360,7 +365,7 @@ Idempotency-Key: enrollment-8812
   "courseDateEnd": "2026-09-12",
   "languageCode": "pl"
 }
-→ 201 { "data": { "id": 9812, "registryYear": 2026, "registryNumber": 43 } }
+→ 201 { "data": { "id": 9812, "registryYear": 2026, "registryNumber": 43, "verificationCode": "K7QM4XPA9TZC" } }
 GET  /api/v1/certificates/9812                                 # certificates:read
 GET  /api/v1/certificates/9812/pdf                             # plik PDF
 ```

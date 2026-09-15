@@ -20,4 +20,6 @@ type CreateCertificateResponseData struct {
 	ID             int64 `json:"id"`
 	RegistryYear   int64 `json:"registryYear"`
 	RegistryNumber int32 `json:"registryNumber"`
+	// VerificationCode - kod do publicznej weryfikacji dokumentu; niezmienny.
+	VerificationCode string `json:"verificationCode"`
 }

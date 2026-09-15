@@ -142,10 +142,11 @@ func (s *Service) GenerateAttendeeCertificate(ctx context.Context, journalID, at
 	params.Date = certificateDate
 	params.RegistryID = registryID
 
-	certificateID, err := tx.queries.CreateCertificate(ctx, params)
+	createdCertificate, err := tx.queries.CreateCertificate(ctx, params)
 	if err != nil {
 		return GenerateAttendeeCertificateResult{}, err
 	}
+	certificateID := createdCertificate.ID
 
 	_, err = tx.queries.UpdateJournalAttendeeCertificate(ctx, sqlc.UpdateJournalAttendeeCertificateParams{
 		JournalID:     journalID,

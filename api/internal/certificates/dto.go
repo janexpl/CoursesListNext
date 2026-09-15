@@ -40,6 +40,7 @@ type CertificateDetailsDTO struct {
 	Journal           *CertificateJournalRefDTO    `json:"journal"`
 	LanguageCode      string                       `json:"languageCode"`
 	PrintVariants     []CertificatePrintVariantDTO `json:"printVariants"`
+	VerificationCode  string                       `json:"verificationCode"`
 }
 
 type CertificatePrintVariantDTO struct {

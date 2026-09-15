@@ -119,6 +119,8 @@ func NewRouter(deps Dependencies) http.Handler {
 
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates", certificateHandler.List)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates", certificateHandler.Create)
+			// Statyczny segment wyprzedza w chi wzorzec /certificates/{id}.
+			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates/by-verification-code/{code}", certificateHandler.GetByVerificationCode)
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates/{id}", certificateHandler.Get)
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates/{id}/pdf", certificateHandler.PDF)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Patch("/certificates/{id}", certificateHandler.Patch)

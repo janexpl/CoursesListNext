@@ -968,7 +968,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CertificateCreatedResponse"
         "201":
-          description: Wystawione zaświadczenie (id i numer rejestru — szczegóły pobierz przez GET).
+          description: Wystawione zaświadczenie (id, numer rejestru i kod weryfikacyjny — szczegóły pobierz przez GET).
           content:
             application/json:
               schema:
@@ -1002,6 +1002,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /certificates/by-verification-code/{code}:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        description: >-
+          Kod weryfikacyjny. Białe znaki na brzegach są obcinane, a litery zamieniane na wielkie (kod przepisany
+          z papieru małymi literami też zadziała).
+        schema:
+          type: string
+          examples: ["K7QM4XPA9TZC"]
+    get:
+      tags: [certificates]
+      operationId: getCertificateByVerificationCode
+      summary: Szczegóły zaświadczenia po kodzie weryfikacyjnym
+      description: >-
+        Ten sam kształt odpowiedzi co `GET /certificates/{id}`. Zaświadczenie usunięte (soft delete) daje 404.
+      x-required-scope: certificates:read
+      responses:
+        "200":
+          description: Zaświadczenie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          description: "Niepoprawny format kodu (`invalid verification code`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -3061,7 +3101,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode]
       properties:
         id:
           type: integer
@@ -3123,6 +3163,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CertificatePrintVariant"
+        verificationCode:
+          $ref: "#/components/schemas/VerificationCode"
+    VerificationCode:
+      type: string
+      pattern: "^[2-9A-HJ-NP-Z]{12}$"
+      examples: ["K7QM4XPA9TZC"]
+      description: >-
+        Kod weryfikacyjny zaświadczenia: 12 znaków z alfabetu `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (bez `0`, `O`,
+        `1`, `I`, `l`). Losowy (generator kryptograficzny), niezależny od numeru rejestru, unikalny w całej bazie
+        i niezmienny. Nadawany każdemu zaświadczeniu — wystawionemu przez API, w aplikacji webowej i z dziennika;
+        zaświadczenia sprzed wprowadzenia kodu dostały go migracją.
     CertificateDetailsResponse:
       type: object
       required: [data]
@@ -3175,7 +3226,7 @@ components:
       properties:
         data:
           type: object
-          required: [id, registryYear, registryNumber]
+          required: [id, registryYear, registryNumber, verificationCode]
           properties:
             id:
               type: integer
@@ -3187,6 +3238,8 @@ components:
               type: integer
               format: int32
               description: Numer nadany przez serwer albo podany w żądaniu.
+            verificationCode:
+              $ref: "#/components/schemas/VerificationCode"
     CertificateUpdate:
       type: object
       additionalProperties: false

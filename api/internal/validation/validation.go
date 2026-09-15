@@ -114,3 +114,21 @@ func ParseEmailList(value string) ([]string, error) {
 
 	return emails, nil
 }
+
+// certificateVerificationCodeAlphabet to znaki kodu weryfikacyjnego zaświadczenia:
+// cyfry 2-9 i wielkie litery bez I i O (migracja 0021).
+const certificateVerificationCodeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+// IsCertificateVerificationCode sprawdza format kodu weryfikacyjnego: 12 znaków z alfabetu
+// bez znaków mylących. Wielkość liter musi być już znormalizowana.
+func IsCertificateVerificationCode(code string) bool {
+	if len(code) != 12 {
+		return false
+	}
+	for _, r := range code {
+		if !strings.ContainsRune(certificateVerificationCodeAlphabet, r) {
+			return false
+		}
+	}
+	return true
+}

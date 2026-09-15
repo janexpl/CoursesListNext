@@ -8,7 +8,8 @@ SELECT
     ik.request_hash,
     ik.certificate_id,
     r.year AS registry_year,
-    r.number AS registry_number
+    r.number AS registry_number,
+    c.verification_code
 FROM idempotency_keys ik
 JOIN certificates c ON c.id = ik.certificate_id
 JOIN registries r ON r.id = c.registry_id

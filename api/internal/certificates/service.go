@@ -65,6 +65,8 @@ type CreateCertificateResult struct {
 	ID             int64
 	RegistryYear   int64
 	RegistryNumber int32
+	// VerificationCode nadaje baza (DEFAULT kolumny) - patrz migracja 0021.
+	VerificationCode string
 	// Replayed - zaświadczenie wystawiło wcześniejsze żądanie z tym samym kluczem
 	// idempotencji; nic nie zostało utworzone.
 	Replayed bool
@@ -281,7 +283,8 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		courseSnapshot,
 		languageCode,
 	)
-	certificateID, err := tx.queries.CreateCertificate(ctx, certificateParams)
+	createdRow, err := tx.queries.CreateCertificate(ctx, certificateParams)
+	certificateID := createdRow.ID
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
@@ -326,9 +329,10 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 	committed = true
 
 	return CreateCertificateResult{
-		ID:             certificateID,
-		RegistryYear:   registryYear,
-		RegistryNumber: registryNumber,
+		ID:               certificateID,
+		RegistryYear:     registryYear,
+		RegistryNumber:   registryNumber,
+		VerificationCode: createdRow.VerificationCode,
 	}, nil
 }
 
@@ -350,10 +354,11 @@ func replayIdempotentCreate(ctx context.Context, q idempotencyKeyReader, key, re
 		return CreateCertificateResult{}, true, ErrIdempotencyKeyReused
 	}
 	return CreateCertificateResult{
-		ID:             stored.CertificateID,
-		RegistryYear:   stored.RegistryYear,
-		RegistryNumber: stored.RegistryNumber,
-		Replayed:       true,
+		ID:               stored.CertificateID,
+		RegistryYear:     stored.RegistryYear,
+		RegistryNumber:   stored.RegistryNumber,
+		VerificationCode: stored.VerificationCode,
+		Replayed:         true,
 	}, true, nil
 }
 

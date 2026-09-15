@@ -98,7 +98,7 @@ INSERT INTO certificates (
     $18,
     $19
 )
-RETURNING id
+RETURNING id, verification_code
 `
 
 type CreateCertificateParams struct {
@@ -123,7 +123,12 @@ type CreateCertificateParams struct {
 	CertFrontPageSnapshot     string      `json:"cert_front_page_snapshot"`
 }
 
-func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificateParams) (int64, error) {
+type CreateCertificateRow struct {
+	ID               int64  `json:"id"`
+	VerificationCode string `json:"verification_code"`
+}
+
+func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificateParams) (CreateCertificateRow, error) {
 	row := q.db.QueryRow(ctx, createCertificate,
 		arg.Date,
 		arg.StudentID,
@@ -145,9 +150,9 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 		arg.CourseProgramSnapshot,
 		arg.CertFrontPageSnapshot,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i CreateCertificateRow
+	err := row.Scan(&i.ID, &i.VerificationCode)
+	return i, err
 }
 
 const getCertificateByID = `-- name: GetCertificateByID :one
@@ -187,7 +192,8 @@ SELECT
             ELSE NULL::text
         END,
         ''
-    ) AS expiry_date
+    ) AS expiry_date,
+    c.verification_code
 FROM certificates c
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
@@ -224,6 +230,7 @@ type GetCertificateByIDRow struct {
 	JournalTitle      pgtype.Text `json:"journal_title"`
 	JournalStatus     pgtype.Text `json:"journal_status"`
 	ExpiryDate        interface{} `json:"expiry_date"`
+	VerificationCode  string      `json:"verification_code"`
 }
 
 func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertificateByIDRow, error) {
@@ -257,8 +264,23 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.JournalTitle,
 		&i.JournalStatus,
 		&i.ExpiryDate,
+		&i.VerificationCode,
 	)
 	return i, err
+}
+
+const getCertificateIDByVerificationCode = `-- name: GetCertificateIDByVerificationCode :one
+SELECT id
+FROM certificates
+WHERE verification_code = $1
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) GetCertificateIDByVerificationCode(ctx context.Context, verificationCode string) (int64, error) {
+	row := q.db.QueryRow(ctx, getCertificateIDByVerificationCode, verificationCode)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listCertificates = `-- name: ListCertificates :many
@@ -833,7 +855,8 @@ SELECT
             ELSE NULL::text
         END,
         ''
-    ) AS expiry_date
+    ) AS expiry_date,
+    c.verification_code
 FROM updated u
 JOIN certificates c ON c.id = u.id
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
@@ -885,6 +908,7 @@ type UpdateCertificateRow struct {
 	JournalTitle      pgtype.Text `json:"journal_title"`
 	JournalStatus     pgtype.Text `json:"journal_status"`
 	ExpiryDate        interface{} `json:"expiry_date"`
+	VerificationCode  string      `json:"verification_code"`
 }
 
 func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificateParams) (UpdateCertificateRow, error) {
@@ -932,6 +956,7 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.JournalTitle,
 		&i.JournalStatus,
 		&i.ExpiryDate,
+		&i.VerificationCode,
 	)
 	return i, err
 }

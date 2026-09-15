@@ -79,7 +79,8 @@ SELECT
             ELSE NULL::text
         END,
         ''
-    ) AS expiry_date
+    ) AS expiry_date,
+    c.verification_code
 FROM certificates c
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
@@ -129,7 +130,7 @@ INSERT INTO certificates (
     sqlc.arg(course_program_snapshot),
     sqlc.arg(cert_front_page_snapshot)
 )
-RETURNING id;
+RETURNING id, verification_code;
 
 -- name: ListCertificatesByStudentID :many
   SELECT
@@ -210,7 +211,8 @@ SELECT
             ELSE NULL::text
         END,
         ''
-    ) AS expiry_date
+    ) AS expiry_date,
+    c.verification_code
 FROM updated u
 JOIN certificates c ON c.id = u.id
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
@@ -357,3 +359,9 @@ OFFSET sqlc.arg(offset_count);
     )
   ORDER BY expiry_date ASC, certificate_id ASC
   LIMIT sqlc.arg(limit_count);
+
+-- name: GetCertificateIDByVerificationCode :one
+SELECT id
+FROM certificates
+WHERE verification_code = $1
+  AND deleted_at IS NULL;

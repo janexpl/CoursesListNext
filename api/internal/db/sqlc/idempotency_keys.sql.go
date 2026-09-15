@@ -56,7 +56,8 @@ SELECT
     ik.request_hash,
     ik.certificate_id,
     r.year AS registry_year,
-    r.number AS registry_number
+    r.number AS registry_number,
+    c.verification_code
 FROM idempotency_keys ik
 JOIN certificates c ON c.id = ik.certificate_id
 JOIN registries r ON r.id = c.registry_id
@@ -64,10 +65,11 @@ WHERE ik.key = $1
 `
 
 type GetIdempotencyKeyRow struct {
-	RequestHash    string `json:"request_hash"`
-	CertificateID  int64  `json:"certificate_id"`
-	RegistryYear   int64  `json:"registry_year"`
-	RegistryNumber int32  `json:"registry_number"`
+	RequestHash      string `json:"request_hash"`
+	CertificateID    int64  `json:"certificate_id"`
+	RegistryYear     int64  `json:"registry_year"`
+	RegistryNumber   int32  `json:"registry_number"`
+	VerificationCode string `json:"verification_code"`
 }
 
 func (q *Queries) GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error) {
@@ -78,6 +80,7 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, key string) (GetIdempot
 		&i.CertificateID,
 		&i.RegistryYear,
 		&i.RegistryNumber,
+		&i.VerificationCode,
 	)
 	return i, err
 }

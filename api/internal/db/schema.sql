@@ -134,12 +134,61 @@ CREATE TABLE certificates (
     deleted_by_user_id bigint REFERENCES users(id) ON DELETE RESTRICT,
     delete_reason text,
     company_id_snapshot bigint REFERENCES companies(id) ON DELETE RESTRICT,
+    verification_code text NOT NULL,
     CONSTRAINT certificates_language_code_check
         CHECK (
             language_code = lower(btrim(language_code))
             AND language_code <> ''
-        )
+        ),
+    CONSTRAINT certificates_verification_code_format
+        CHECK (verification_code ~ '^[2-9A-HJ-NP-Z]{12}$')
 );
+
+-- Kod weryfikacyjny: losowy, unikalny, niezmienny (migracja 0021).
+CREATE FUNCTION generate_certificate_verification_code() RETURNS text
+    LANGUAGE plpgsql
+    VOLATILE
+AS $$
+DECLARE
+    alphabet constant text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    positions constant int[] := ARRAY[0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14];
+    random_bytes bytea;
+    code text;
+    pos int;
+BEGIN
+    LOOP
+        random_bytes := uuid_send(gen_random_uuid());
+        code := '';
+        FOREACH pos IN ARRAY positions LOOP
+            code := code || substr(alphabet, get_byte(random_bytes, pos) % 32 + 1, 1);
+        END LOOP;
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM certificates WHERE verification_code = code);
+    END LOOP;
+    RETURN code;
+END;
+$$;
+
+ALTER TABLE certificates
+    ALTER COLUMN verification_code SET DEFAULT generate_certificate_verification_code();
+
+CREATE UNIQUE INDEX certificates_verification_code_uidx ON certificates (verification_code);
+
+CREATE FUNCTION certificates_verification_code_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.verification_code IS DISTINCT FROM OLD.verification_code THEN
+        RAISE EXCEPTION 'certificates.verification_code is immutable (certificate id %)', OLD.id
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER certificates_verification_code_immutable
+    BEFORE UPDATE OF verification_code ON certificates
+    FOR EACH ROW
+    EXECUTE FUNCTION certificates_verification_code_immutable();
 
 CREATE INDEX certificates_company_id_snapshot_idx
     ON certificates (company_id_snapshot)
