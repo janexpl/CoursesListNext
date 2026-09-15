@@ -157,8 +157,8 @@ Znaczniki czasu **nie są ISO 8601** — parsuj je jawnym formatem.
 
 ### Pola opcjonalne
 
-W odpowiedziach brakująca wartość to `null`. Jedyny wyjątek: `companyName` na listach zaświadczeń i na pulpicie
-to pusty string, gdy kursant nie miał firmy.
+W odpowiedziach brakująca wartość to `null`. Wyjątki: `companyName` na listach zaświadczeń i na pulpicie
+to pusty string, gdy kursant nie miał firmy, a `telephone` firmy to pusty string, gdy firma nie ma telefonu.
 W żądaniach pusty string w polu opcjonalnym jest zapisywany jako `null` (białe znaki na brzegach są obcinane).
 
 ### Ciała żądań
@@ -195,7 +195,7 @@ pole pominięte w żądaniu **nie zostaje bez zmian**, tylko jest czyszczone. Je
 | Operacja | Co zniknie, jeśli pole pominiesz |
 |---|---|
 | `PATCH /students/{id}` | `secondName`, `pesel`, adres, `telephone`, `companyId` (kursant straci firmę) |
-| `PATCH /companies/{id}` | `email`, `contactPerson`, `note`, `expiryNotificationEmail`; `expiryNotificationsEnabled` → `false` |
+| `PATCH /companies/{id}` | `email`, `contactPerson`, `note`, `expiryNotificationEmail`, `telephone` (→ pusty string); `expiryNotificationsEnabled` → `false` |
 | `PATCH /courses/{id}` | — (wszystkie pola kursu wymagane). **Wyjątek:** pominięte `certificateTranslations` zostawia tłumaczenia bez zmian; podana lista je zastępuje, a `[]` usuwa wszystkie |
 | `PATCH /certificates/{id}` | `courseDateEnd` |
 | `PATCH /journals/{id}` | `companyId`, `organizerAddress`, `notes` |
@@ -215,6 +215,9 @@ Mapowanie odpowiedzi GET na ciało PATCH nie jest 1:1 — przykłady:
 | `StudentDetails.company.id` | `StudentWrite.companyId` |
 | `CourseDetails.certificateTranslations` | `CourseWrite.certificateTranslations` (ten sam kształt — przepisz w całości) |
 | `JournalDetails.companyId` | `JournalUpdate.companyId` (bez `courseId` — kursu nie da się zmienić) |
+
+`PUT /students/by-external-id/{externalId}` i `PUT /companies/by-external-id/{externalId}` nadpisują istniejący
+rekord dokładnie tak samo jak odpowiadający im `PATCH`. Żadna z tych operacji nie zmienia `externalId`.
 
 Operacje `PATCH` o innej semantyce (nie nadpisują obiektu): `PATCH /journals/{id}/sessions/{sessionId}`
 (zmienia tylko datę i prowadzącego), `PATCH /journals/{id}/attendance` (upsert jednego wpisu),
@@ -255,25 +258,32 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
     wartościach, także różniących się tylko wielkością liter lub spacjami (409). Przed utworzeniem kursanta
     wyszukaj go (`GET /students?search=...`). Dane sprzed wprowadzenia tej reguły mogą zawierać takie duplikaty;
     edycja rekordu z takiej pary, zmieniająca jego zapis na identyczny z bliźniakiem, też zwróci 409.
+    Integracje, które mają własny identyfikator osoby, powinny zamiast tego używać
+    `PUT /students/by-external-id/{externalId}` (sekcja 6.2).
+11. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
+    Jest tylko do odczytu w `StudentDetails`/`CompanyDetails`, nie ma go na listach, a `POST` i `PATCH` go nie
+    przyjmują (400) i nie zmieniają. Rekordy zakładane w aplikacji webowej mają `externalId: null`.
+12. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
+    firm nie ma telefonu).
 
 ### Dzienniki
 
-11. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+13. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
-12. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-13. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+14. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+15. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
     zaświadczeń ani usunięcia całego dziennika.
-14. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+16. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-15. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+17. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
     dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
-16. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+18. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
     to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
@@ -287,18 +297,54 @@ GET /api/v1/companies/lookup-by-nip?nip=1234563218            # companies:read
 ```
 
 Zmapuj odpowiedź na `CompanyWrite`: `name`, `city`, `postalCode` → `zipcode`, `street` + `houseNumber`
-(+ `/apartment`, jeśli niepuste) → `street`. `telephone` jest wymagany, a GUS go nie zwraca — pozyskaj go osobno.
+(+ `/apartment`, jeśli niepuste) → `street`. GUS nie zwraca telefonu — `telephone` jest opcjonalny, możesz go pominąć.
 
 ```http
 POST /api/v1/companies                                         # companies:write
 { "name": "...", "street": "...", "city": "...", "zipcode": "...", "nip": "1234563218",
-  "telephone": "...", "expiryNotificationsEnabled": false }
+  "expiryNotificationsEnabled": false }
 ```
+
+Integracja z własnym identyfikatorem firmy: zamiast `POST` użyj `PUT /api/v1/companies/by-external-id/{externalId}`
+z tym samym ciałem (sekcja 6.2).
 
 409 = firma już istnieje → znajdź ją przez `GET /companies?search=1234563218`. 400 `nip validation error: …` = niepoprawny NIP;
 `lookup-by-nip` stosuje tę samą walidację, więc NIP, który przeszedł wyszukiwanie w GUS, przejdzie też zapis.
 
-### 6.2. Wystawienie zaświadczenia
+### 6.2. Znajdź-lub-utwórz firmę i kursanta po identyfikatorze platformy
+
+Przepływ integracji wydającej zaświadczenia maszynowo: firma → kursant → zaświadczenie (sekcja 6.3).
+Każdy krok można powtarzać bez tworzenia duplikatów.
+
+```http
+PUT /api/v1/companies/by-external-id/0b8e6f5a-...          # companies:write
+{ "name": "...", "street": "...", "city": "...", "zipcode": "...", "nip": "1234563218" }
+→ 201 { "data": { "id": 7, ..., "externalId": "0b8e6f5a-..." } }     (kolejne wywołania: 200)
+
+PUT /api/v1/students/by-external-id/3f6c1a2e-...           # students:write
+{ "firstName": "Anna", "lastName": "Nowak", "birthDate": "1991-05-20", "birthPlace": "Kraków", "companyId": 7 }
+→ 201 { "data": { "id": 15, ..., "externalId": "3f6c1a2e-..." } }    (kolejne wywołania: 200)
+```
+
+- Brak rekordu o tym `externalId` → `201` i nowy rekord. Rekord istnieje → `200` i **pełne nadpisanie** jak w PATCH
+  (sekcja 4) — wysyłaj komplet danych.
+- Ciało to zwykłe `StudentWrite` / `CompanyWrite`; `externalId` jest tylko w ścieżce. `birthDate` i `birthPlace`
+  kursanta pozostają wymagane — trafiają na zaświadczenie.
+- `externalId`: 1–64 znaki, porównywany dokładnie, nie jest interpretowany. Zakoduj go w ścieżce; `/` nie jest obsługiwany.
+- Równoległe wywołania z tym samym `externalId` tworzą jeden rekord (jedno `201`, pozostałe `200`).
+- **Kolizja klucza naturalnego z innym rekordem** (kursant: imię + nazwisko + data urodzenia bez rozróżniania
+  wielkości liter i spacji; firma: NIP) — np. osoba założona wcześniej w aplikacji webowej:
+
+  ```json
+  409 { "error": { "code": "conflict", "message": "student with the same natural key already exists", "id": 4812 } }
+  ```
+
+  Dla firmy komunikat to `company with the same natural key already exists`. Nic nie zostało utworzone ani zmienione.
+  `error.id` to istniejący rekord — jeśli to ta sama osoba/firma, zapamiętaj to `id` po swojej stronie i używaj go
+  dalej (`GET`/`PATCH /students/{id}`, `studentId` w zaświadczeniu). API nie przypisuje `externalId` do istniejącego
+  rekordu, więc kolejne `PUT` z tym `externalId` znów zwróci 409 — nie ponawiaj go w pętli.
+
+### 6.3. Wystawienie zaświadczenia
 
 Zalecany sposób dla integracji: **bez numeru rejestru i z kluczem idempotencji**.
 
@@ -361,7 +407,7 @@ Reguły walidacji:
 - `languageCode` ≠ `pl` wymaga tłumaczenia kursu w tym języku, inaczej 400 `certificate translation not found`.
 - Nieistniejący kursant lub kurs → 404 `student not found` / `course not found`.
 
-### 6.3. Dziennik szkolenia od utworzenia do zaświadczeń
+### 6.4. Dziennik szkolenia od utworzenia do zaświadczeń
 
 Wszystkie kroki: `journals:write` (odczyty `journals:read`).
 
@@ -385,7 +431,7 @@ GET   /api/v1/journals/55/pdf
 Generowanie zaświadczenia z dziennika samo dobiera numer i datę (rok i data z `dateEnd` dziennika, numer = ostatni + 1)
 i od razu wiąże zaświadczenie z uczestnikiem. Nie wymaga zakresu `certificates:write`.
 
-### 6.4. Wygasające zaświadczenia
+### 6.5. Wygasające zaświadczenia
 
 ```http
 GET /api/v1/dashboard                               # dashboard:read — do 50 najbliższych w ciągu 30 dni
@@ -408,7 +454,8 @@ Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) 
 | 500 | Ostrożnie | Błąd serwera. `POST /certificates` z `Idempotency-Key` możesz bezpiecznie ponawiać z opóźnieniem. Pozostałe operacje `POST` nie są idempotentne — ponów najwyżej raz. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany. `POST /certificates` z `Idempotency-Key` ponów z tym samym kluczem i ciałem (dostaniesz `200` z pierwotnym wynikiem, jeśli dokument powstał). Dla pozostałych operacji przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
-Klucze idempotencji obsługuje wyłącznie `POST /certificates` (sekcja 6.2). Pozostałe operacje zapisu ich nie
+Klucze idempotencji obsługuje wyłącznie `POST /certificates` (sekcja 6.3). Operacje
+`PUT .../by-external-id/{externalId}` są idempotentne same z siebie (sekcja 6.2). Pozostałe operacje zapisu ich nie
 obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
 
 ---

@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
@@ -20,6 +22,27 @@ var ErrInvalidInput = errors.New("invalid input")
 // ErrInvalidNIP opakowuje konkretny błąd z pakietu validation, żeby handler mógł
 // zwrócić ten sam komunikat co GET /companies/lookup-by-nip.
 var ErrInvalidNIP = errors.New("invalid nip")
+
+// MaxExternalIDLength to limit długości identyfikatora platformy (CHECK w migracji 0020).
+const MaxExternalIDLength = 64
+
+// NaturalKeyConflictError - NIP z PUT by-external-id należy do innej firmy.
+// ID to kolidujący rekord; 0, gdy nie udało się go ustalić.
+type NaturalKeyConflictError struct {
+	ID int64
+}
+
+func (e *NaturalKeyConflictError) Error() string {
+	return "company with the same natural key already exists"
+}
+
+func findCompanyIDByNIP(ctx context.Context, q *dbsqlc.Queries, nip string, excludeID pgtype.Int8) (int64, error) {
+	id, err := q.FindCompanyIDByNIP(ctx, dbsqlc.FindCompanyIDByNIPParams{Nip: nip, ExcludeID: excludeID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return id, err
+}
 
 type txScope struct {
 	queries  *dbsqlc.Queries
@@ -154,6 +177,137 @@ func (s *Service) Update(ctx context.Context, companyID int64, req UpdateCompany
 	return afterSnapshot, nil
 }
 
+// UpsertByExternalID zakłada firmę o danym identyfikatorze platformy albo nadpisuje
+// istniejącą (jak PATCH). created mówi, czy rekord powstał. NIP należący do innej firmy
+// kończy się *NaturalKeyConflictError - bez tworzenia duplikatu i bez zmiany cudzego rekordu.
+func (s *Service) UpsertByExternalID(ctx context.Context, externalID string, req CreateCompanyRequest) (CompanyDetailsDTO, bool, error) {
+	if externalID == "" || len([]rune(externalID)) > MaxExternalIDLength {
+		return CompanyDetailsDTO{}, false, ErrInvalidInput
+	}
+	params, err := buildCreateCompanyParams(req)
+	if err != nil {
+		return CompanyDetailsDTO{}, false, err
+	}
+	externalIDText := pgtype.Text{String: externalID, Valid: true}
+
+	company, created, err := s.upsertByExternalID(ctx, externalIDText, params)
+	if isNIPUniqueViolation(err) {
+		// Wyścig z równoległym zapisem firmy o tym NIP-ie: transakcja jest już wycofana,
+		// więc kolidujący rekord szukamy poza nią.
+		conflict := &NaturalKeyConflictError{}
+		if s.queries != nil {
+			excludeID := pgtype.Int8{}
+			if existingID, lookupErr := s.queries.GetCompanyIDByExternalID(ctx, externalIDText); lookupErr == nil {
+				excludeID = pgtype.Int8{Int64: existingID, Valid: true}
+			}
+			if id, lookupErr := findCompanyIDByNIP(ctx, s.queries, params.Nip, excludeID); lookupErr == nil {
+				conflict.ID = id
+			}
+		}
+		err = conflict
+	}
+	return company, created, err
+}
+
+func (s *Service) upsertByExternalID(ctx context.Context, externalID pgtype.Text, params dbsqlc.CreateCompanyParams) (CompanyDetailsDTO, bool, error) {
+	tx, err := s.beginTxFn(ctx)
+	if err != nil {
+		return CompanyDetailsDTO{}, false, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if rollbackErr := tx.rollback(ctx); rollbackErr != nil {
+				log.Printf("unable to rollback changes: %v", rollbackErr)
+			}
+		}
+	}()
+
+	if err := tx.queries.AcquireCompanyExternalIDLock(ctx, externalID.String); err != nil {
+		return CompanyDetailsDTO{}, false, err
+	}
+
+	existingID, err := tx.queries.GetCompanyIDByExternalID(ctx, externalID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		existingID = 0
+	case err != nil:
+		return CompanyDetailsDTO{}, false, err
+	}
+
+	excludeID := pgtype.Int8{}
+	if existingID != 0 {
+		excludeID = pgtype.Int8{Int64: existingID, Valid: true}
+	}
+	duplicateID, err := findCompanyIDByNIP(ctx, tx.queries, params.Nip, excludeID)
+	if err != nil {
+		return CompanyDetailsDTO{}, false, err
+	}
+	if duplicateID != 0 {
+		return CompanyDetailsDTO{}, false, &NaturalKeyConflictError{ID: duplicateID}
+	}
+
+	var (
+		result CompanyDetailsDTO
+		entry  auditlog.Entry
+	)
+	if existingID == 0 {
+		createdCompany, err := tx.queries.CreateCompany(ctx, params)
+		if err != nil {
+			return CompanyDetailsDTO{}, false, err
+		}
+		if err := tx.queries.SetCompanyExternalID(ctx, dbsqlc.SetCompanyExternalIDParams{
+			ExternalID: externalID,
+			ID:         createdCompany.ID,
+		}); err != nil {
+			return CompanyDetailsDTO{}, false, err
+		}
+		createdCompany.ExternalID = externalID
+		result = mapCompanyDetailRow(createdCompany)
+		entry = auditlog.Entry{EntityType: "company", EntityID: createdCompany.ID, Action: "create", After: result}
+	} else {
+		beforeCompany, err := tx.queries.GetCompanyByID(ctx, existingID)
+		if err != nil {
+			return CompanyDetailsDTO{}, false, err
+		}
+		updatedCompany, err := tx.queries.UpdateCompany(ctx, dbsqlc.UpdateCompanyParams{
+			ID:                         existingID,
+			Name:                       params.Name,
+			Street:                     params.Street,
+			City:                       params.City,
+			Zipcode:                    params.Zipcode,
+			Nip:                        params.Nip,
+			Email:                      params.Email,
+			Contactperson:              params.Contactperson,
+			Telephoneno:                params.Telephoneno,
+			Note:                       params.Note,
+			ExpiryNotificationsEnabled: params.ExpiryNotificationsEnabled,
+			ExpiryNotificationEmail:    params.ExpiryNotificationEmail,
+		})
+		if err != nil {
+			return CompanyDetailsDTO{}, false, err
+		}
+		result = mapCompanyDetailRow(updatedCompany)
+		entry = auditlog.Entry{EntityType: "company", EntityID: existingID, Action: "update", Before: mapCompanyDetailRow(beforeCompany), After: result}
+	}
+
+	if s.recorder != nil {
+		if err := s.recorder.Record(ctx, tx.queries, entry); err != nil {
+			return CompanyDetailsDTO{}, false, err
+		}
+	}
+	if err := tx.commit(ctx); err != nil {
+		return CompanyDetailsDTO{}, false, err
+	}
+	committed = true
+	return result, existingID == 0, nil
+}
+
+func isNIPUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "check_unique_nip"
+}
+
 func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyParams, error) {
 	const maxExpiryNotificationRecipients = 10
 	name := strings.TrimSpace(req.Name)
@@ -178,7 +332,9 @@ func buildCreateCompanyParams(req CreateCompanyRequest) (dbsqlc.CreateCompanyPar
 		}
 	}
 
-	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" || telephone == "" {
+	// Telefon jest opcjonalny - brak zapisujemy jako pusty string, tak jak jest
+	// w istniejących danych (kolumna telephoneno pozostaje NOT NULL).
+	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" {
 		return dbsqlc.CreateCompanyParams{}, ErrInvalidInput
 	}
 	// NIP zapisujemy jako same cyfry - w tym formacie są wszystkie istniejące

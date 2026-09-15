@@ -40,6 +40,16 @@ func WriteError(w http.ResponseWriter, statusCode int, code, message string) {
 	}
 }
 
+// WriteErrorWithID dokłada do błędu id rekordu, którego dotyczy - np. kolidującego
+// rekordu przy konflikcie klucza naturalnego, żeby klient mógł go użyć bez szukania.
+func WriteErrorWithID(w http.ResponseWriter, statusCode int, code, message string, id int64) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(ErrorResponse{Error: ErrorBody{Code: code, Message: message, ID: &id}}); err != nil {
+		log.Printf("response: failed to encode error JSON: %v", err)
+	}
+}
+
 func WriteNoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -47,6 +57,7 @@ func WriteNoContent(w http.ResponseWriter) {
 type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	ID      *int64 `json:"id,omitempty"`
 }
 
 type ErrorResponse struct {

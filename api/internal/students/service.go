@@ -95,6 +95,37 @@ func personKeyChanged(before dbsqlc.GetStudentByIDRow, params dbsqlc.UpdateStude
 		!before.Birthdate.Time.Equal(params.Birthdate.Time)
 }
 
+// MaxExternalIDLength to limit długości identyfikatora platformy (CHECK w migracji 0020).
+const MaxExternalIDLength = 64
+
+// NaturalKeyConflictError - dane z PUT by-external-id wskazują na osobę, która już
+// istnieje jako inny rekord. ID to kolidujący rekord; 0, gdy nie udało się go ustalić.
+type NaturalKeyConflictError struct {
+	ID int64
+}
+
+func (e *NaturalKeyConflictError) Error() string {
+	return "student with the same natural key already exists"
+}
+
+func (e *NaturalKeyConflictError) Unwrap() error {
+	return ErrDuplicateStudent
+}
+
+// findDuplicateStudentID zwraca id innego kursanta o tym samym kluczu naturalnym albo 0.
+func findDuplicateStudentID(ctx context.Context, q *dbsqlc.Queries, firstname, lastname string, birthdate pgtype.Date, excludeID pgtype.Int8) (int64, error) {
+	id, err := q.FindDuplicateStudent(ctx, dbsqlc.FindDuplicateStudentParams{
+		Firstname: firstname,
+		Lastname:  lastname,
+		Birthdate: birthdate,
+		ExcludeID: excludeID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return id, err
+}
+
 type txScope struct {
 	queries  *dbsqlc.Queries
 	commit   func(context.Context) error
@@ -102,12 +133,14 @@ type txScope struct {
 }
 
 type Service struct {
+	queries   *dbsqlc.Queries
 	recorder  *auditlog.Recorder
 	beginTxFn func(context.Context) (txScope, error)
 }
 
 func NewService(pool *pgxpool.Pool, queries *dbsqlc.Queries, recorder *auditlog.Recorder) *Service {
 	return &Service{
+		queries:  queries,
 		recorder: recorder,
 		beginTxFn: func(ctx context.Context) (txScope, error) {
 			tx, err := pool.Begin(ctx)
@@ -238,6 +271,143 @@ func (s *Service) Update(ctx context.Context, studentID int64, req UpdateStudent
 	return afterSnapshot, nil
 }
 
+// UpsertByExternalID zakłada kursanta o danym identyfikatorze platformy albo nadpisuje
+// istniejącego (jak PATCH). created mówi, czy rekord powstał. Kolizja klucza naturalnego
+// z innym rekordem kończy się *NaturalKeyConflictError - bez tworzenia duplikatu
+// i bez zmiany cudzego rekordu.
+func (s *Service) UpsertByExternalID(ctx context.Context, externalID string, req CreateStudentRequest) (StudentDetailsDTO, bool, error) {
+	if externalID == "" || len([]rune(externalID)) > MaxExternalIDLength {
+		return StudentDetailsDTO{}, false, ErrInvalidInput
+	}
+	params, err := buildCreateStudentParams(req)
+	if err != nil {
+		return StudentDetailsDTO{}, false, err
+	}
+	externalIDText := pgtype.Text{String: externalID, Valid: true}
+
+	student, created, err := s.upsertByExternalID(ctx, externalIDText, params)
+	if err != nil && errors.Is(err, ErrDuplicateStudent) {
+		var conflict *NaturalKeyConflictError
+		if !errors.As(err, &conflict) {
+			// Wyścig z równoległym zapisem tej samej osoby: sprawdzenie przeszło, ale
+			// ograniczenie w bazie odrzuciło zapis. Transakcja jest już wycofana, więc
+			// kolidujący rekord szukamy poza nią.
+			conflict = &NaturalKeyConflictError{}
+			if s.queries != nil {
+				excludeID := pgtype.Int8{}
+				if existingID, lookupErr := s.queries.GetStudentIDByExternalID(ctx, externalIDText); lookupErr == nil {
+					excludeID = pgtype.Int8{Int64: existingID, Valid: true}
+				}
+				if id, lookupErr := findDuplicateStudentID(ctx, s.queries, params.Firstname, params.Lastname, params.Birthdate, excludeID); lookupErr == nil {
+					conflict.ID = id
+				}
+			}
+			err = conflict
+		}
+	}
+	return student, created, err
+}
+
+func (s *Service) upsertByExternalID(ctx context.Context, externalID pgtype.Text, params dbsqlc.CreateStudentParams) (StudentDetailsDTO, bool, error) {
+	tx, err := s.beginTxFn(ctx)
+	if err != nil {
+		return StudentDetailsDTO{}, false, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if rollbackErr := tx.rollback(ctx); rollbackErr != nil {
+				log.Printf("unable to rollback changes: %v", rollbackErr)
+			}
+		}
+	}()
+
+	if err := tx.queries.AcquireStudentExternalIDLock(ctx, externalID.String); err != nil {
+		return StudentDetailsDTO{}, false, err
+	}
+
+	existingID, err := tx.queries.GetStudentIDByExternalID(ctx, externalID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		existingID = 0
+	case err != nil:
+		return StudentDetailsDTO{}, false, err
+	}
+
+	var (
+		result StudentDetailsDTO
+		entry  auditlog.Entry
+	)
+	if existingID == 0 {
+		duplicateID, err := findDuplicateStudentID(ctx, tx.queries, params.Firstname, params.Lastname, params.Birthdate, pgtype.Int8{})
+		if err != nil {
+			return StudentDetailsDTO{}, false, err
+		}
+		if duplicateID != 0 {
+			return StudentDetailsDTO{}, false, &NaturalKeyConflictError{ID: duplicateID}
+		}
+
+		createdStudent, err := tx.queries.CreateStudent(ctx, params)
+		if err != nil {
+			return StudentDetailsDTO{}, false, studentWriteError(err)
+		}
+		if err := tx.queries.SetStudentExternalID(ctx, dbsqlc.SetStudentExternalIDParams{
+			ExternalID: externalID,
+			ID:         createdStudent.ID,
+		}); err != nil {
+			return StudentDetailsDTO{}, false, err
+		}
+		createdStudent.ExternalID = externalID
+		result = mapCreateStudentRow(createdStudent)
+		entry = auditlog.Entry{EntityType: "student", EntityID: createdStudent.ID, Action: "create", After: result}
+	} else {
+		updateParams := dbsqlc.UpdateStudentParams{
+			Firstname:     params.Firstname,
+			Lastname:      params.Lastname,
+			Secondname:    params.Secondname,
+			Birthdate:     params.Birthdate,
+			Birthplace:    params.Birthplace,
+			Pesel:         params.Pesel,
+			Addressstreet: params.Addressstreet,
+			Addresscity:   params.Addresscity,
+			Addresszip:    params.Addresszip,
+			Telephoneno:   params.Telephoneno,
+			CompanyID:     params.CompanyID,
+			StudentID:     existingID,
+		}
+		beforeStudent, err := tx.queries.GetStudentByID(ctx, existingID)
+		if err != nil {
+			return StudentDetailsDTO{}, false, err
+		}
+		if personKeyChanged(beforeStudent, updateParams) {
+			duplicateID, err := findDuplicateStudentID(ctx, tx.queries, params.Firstname, params.Lastname, params.Birthdate, pgtype.Int8{Int64: existingID, Valid: true})
+			if err != nil {
+				return StudentDetailsDTO{}, false, err
+			}
+			if duplicateID != 0 {
+				return StudentDetailsDTO{}, false, &NaturalKeyConflictError{ID: duplicateID}
+			}
+		}
+		updatedStudent, err := tx.queries.UpdateStudent(ctx, updateParams)
+		if err != nil {
+			return StudentDetailsDTO{}, false, studentWriteError(err)
+		}
+		result = mapStudentDetailsRow(updatedStudent)
+		entry = auditlog.Entry{EntityType: "student", EntityID: existingID, Action: "update", Before: mapStudentGetRow(beforeStudent), After: result}
+	}
+
+	if s.recorder != nil {
+		if err := s.recorder.Record(ctx, tx.queries, entry); err != nil {
+			return StudentDetailsDTO{}, false, err
+		}
+	}
+	if err := tx.commit(ctx); err != nil {
+		return StudentDetailsDTO{}, false, err
+	}
+	committed = true
+	return result, existingID == 0, nil
+}
+
 func buildCreateStudentParams(req CreateStudentRequest) (dbsqlc.CreateStudentParams, error) {
 	payload, birthDate, err := normalizeStudentPayload(req.studentPayload)
 	if err != nil {
@@ -320,6 +490,7 @@ func mapStudentGetRow(row dbsqlc.GetStudentByIDRow) StudentDetailsDTO {
 		AddressCity:   pgutil.NullableString(row.Addresscity),
 		AddressZip:    pgutil.NullableString(row.Addresszip),
 		Telephone:     pgutil.NullableString(row.Telephoneno),
+		ExternalID:    pgutil.NullableString(row.ExternalID),
 	}
 	if row.CompanyID.Valid && row.CompanyName.Valid {
 		dto.Company = &CompanyDTO{ID: row.CompanyID.Int64, Name: row.CompanyName.String}

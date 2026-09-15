@@ -49,7 +49,8 @@
       s.addresszip,
       s.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      s.external_id
   FROM students s
   LEFT JOIN companies c ON c.id = s.company_id
   WHERE s.id = $1;
@@ -96,7 +97,8 @@
           s.addresscity,
           s.addresszip,
           s.telephoneno,
-          s.company_id
+          s.company_id,
+          s.external_id
 
   )
   SELECT
@@ -112,7 +114,8 @@
       u.addresszip,
       u.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      u.external_id
   FROM updated u
   LEFT JOIN companies c ON c.id = u.company_id;
 
@@ -155,7 +158,8 @@
           addresscity,
           addresszip,
           telephoneno,
-          company_id
+          company_id,
+          external_id
   )
   SELECT
       s.id,
@@ -170,7 +174,8 @@
       s.addresszip,
       s.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      s.external_id
   FROM inserted s
   LEFT JOIN companies c ON c.id = s.company_id;
 
@@ -188,3 +193,17 @@ WHERE lower(btrim(lastname)) = lower(btrim(sqlc.arg(lastname)::text))
   AND (sqlc.narg(exclude_id)::bigint IS NULL OR id <> sqlc.narg(exclude_id)::bigint)
 ORDER BY id
 LIMIT 1;
+
+-- name: AcquireStudentExternalIDLock :exec
+-- Szereguje równoległe PUT /students/by-external-id/{externalId} z tym samym identyfikatorem.
+SELECT pg_advisory_xact_lock(hashtextextended('student-external-id:' || @external_id::text, 0));
+
+-- name: GetStudentIDByExternalID :one
+SELECT id
+FROM students
+WHERE external_id = $1;
+
+-- name: SetStudentExternalID :exec
+UPDATE students
+SET external_id = sqlc.arg(external_id)
+WHERE id = sqlc.arg(id);

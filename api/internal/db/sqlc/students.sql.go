@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireStudentExternalIDLock = `-- name: AcquireStudentExternalIDLock :exec
+SELECT pg_advisory_xact_lock(hashtextextended('student-external-id:' || $1::text, 0))
+`
+
+// Szereguje równoległe PUT /students/by-external-id/{externalId} z tym samym identyfikatorem.
+func (q *Queries) AcquireStudentExternalIDLock(ctx context.Context, externalID string) error {
+	_, err := q.db.Exec(ctx, acquireStudentExternalIDLock, externalID)
+	return err
+}
+
 const createStudent = `-- name: CreateStudent :one
   WITH inserted AS (
       INSERT INTO students (
@@ -50,7 +60,8 @@ const createStudent = `-- name: CreateStudent :one
           addresscity,
           addresszip,
           telephoneno,
-          company_id
+          company_id,
+          external_id
   )
   SELECT
       s.id,
@@ -65,7 +76,8 @@ const createStudent = `-- name: CreateStudent :one
       s.addresszip,
       s.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      s.external_id
   FROM inserted s
   LEFT JOIN companies c ON c.id = s.company_id
 `
@@ -98,6 +110,7 @@ type CreateStudentRow struct {
 	Telephoneno   pgtype.Text `json:"telephoneno"`
 	CompanyID     pgtype.Int8 `json:"company_id"`
 	CompanyName   pgtype.Text `json:"company_name"`
+	ExternalID    pgtype.Text `json:"external_id"`
 }
 
 func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (CreateStudentRow, error) {
@@ -129,6 +142,7 @@ func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (C
 		&i.Telephoneno,
 		&i.CompanyID,
 		&i.CompanyName,
+		&i.ExternalID,
 	)
 	return i, err
 }
@@ -181,7 +195,8 @@ const getStudentByID = `-- name: GetStudentByID :one
       s.addresszip,
       s.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      s.external_id
   FROM students s
   LEFT JOIN companies c ON c.id = s.company_id
   WHERE s.id = $1
@@ -201,6 +216,7 @@ type GetStudentByIDRow struct {
 	Telephoneno   pgtype.Text `json:"telephoneno"`
 	CompanyID     pgtype.Int8 `json:"company_id"`
 	CompanyName   pgtype.Text `json:"company_name"`
+	ExternalID    pgtype.Text `json:"external_id"`
 }
 
 func (q *Queries) GetStudentByID(ctx context.Context, id int64) (GetStudentByIDRow, error) {
@@ -220,8 +236,22 @@ func (q *Queries) GetStudentByID(ctx context.Context, id int64) (GetStudentByIDR
 		&i.Telephoneno,
 		&i.CompanyID,
 		&i.CompanyName,
+		&i.ExternalID,
 	)
 	return i, err
+}
+
+const getStudentIDByExternalID = `-- name: GetStudentIDByExternalID :one
+SELECT id
+FROM students
+WHERE external_id = $1
+`
+
+func (q *Queries) GetStudentIDByExternalID(ctx context.Context, externalID pgtype.Text) (int64, error) {
+	row := q.db.QueryRow(ctx, getStudentIDByExternalID, externalID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listStudents = `-- name: ListStudents :many
@@ -362,6 +392,22 @@ func (q *Queries) ListStudentsByCompanyID(ctx context.Context, companyID pgtype.
 	return items, nil
 }
 
+const setStudentExternalID = `-- name: SetStudentExternalID :exec
+UPDATE students
+SET external_id = $1
+WHERE id = $2
+`
+
+type SetStudentExternalIDParams struct {
+	ExternalID pgtype.Text `json:"external_id"`
+	ID         int64       `json:"id"`
+}
+
+func (q *Queries) SetStudentExternalID(ctx context.Context, arg SetStudentExternalIDParams) error {
+	_, err := q.db.Exec(ctx, setStudentExternalID, arg.ExternalID, arg.ID)
+	return err
+}
+
 const updateStudent = `-- name: UpdateStudent :one
   WITH updated AS (
       UPDATE students AS s
@@ -390,7 +436,8 @@ const updateStudent = `-- name: UpdateStudent :one
           s.addresscity,
           s.addresszip,
           s.telephoneno,
-          s.company_id
+          s.company_id,
+          s.external_id
 
   )
   SELECT
@@ -406,7 +453,8 @@ const updateStudent = `-- name: UpdateStudent :one
       u.addresszip,
       u.telephoneno,
       c.id AS company_id,
-      c.name AS company_name
+      c.name AS company_name,
+      u.external_id
   FROM updated u
   LEFT JOIN companies c ON c.id = u.company_id
 `
@@ -440,6 +488,7 @@ type UpdateStudentRow struct {
 	Telephoneno   pgtype.Text `json:"telephoneno"`
 	CompanyID     pgtype.Int8 `json:"company_id"`
 	CompanyName   pgtype.Text `json:"company_name"`
+	ExternalID    pgtype.Text `json:"external_id"`
 }
 
 func (q *Queries) UpdateStudent(ctx context.Context, arg UpdateStudentParams) (UpdateStudentRow, error) {
@@ -472,6 +521,7 @@ func (q *Queries) UpdateStudent(ctx context.Context, arg UpdateStudentParams) (U
 		&i.Telephoneno,
 		&i.CompanyID,
 		&i.CompanyName,
+		&i.ExternalID,
 	)
 	return i, err
 }

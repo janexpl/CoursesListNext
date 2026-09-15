@@ -67,7 +67,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	r.Use(limitRequestBody(maxJSONBodyBytes))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -106,6 +106,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/students/{id}/certificates", studentHandler.ListCertificatesByStudent)
 			r.With(auth.RequireScope(auth.ScopeStudentsWrite)).Patch("/students/{id}", studentHandler.Patch)
 			r.With(auth.RequireScope(auth.ScopeStudentsWrite)).Post("/students", studentHandler.CreateStudent)
+			r.With(auth.RequireScope(auth.ScopeStudentsWrite)).Put("/students/by-external-id/{externalId}", studentHandler.PutByExternalID)
 
 			r.With(auth.RequireScope(auth.ScopeCompaniesRead)).Get("/companies", companyHandler.List)
 			r.With(auth.RequireScope(auth.ScopeCompaniesRead)).Get("/companies/{id}", companyHandler.Get)
@@ -113,6 +114,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/companies/{id}/certificates", certificateHandler.ListByCompanyID)
 			r.With(auth.RequireScope(auth.ScopeCompaniesWrite)).Patch("/companies/{id}", companyHandler.Patch)
 			r.With(auth.RequireScope(auth.ScopeCompaniesWrite)).Post("/companies", companyHandler.CreateCompany)
+			r.With(auth.RequireScope(auth.ScopeCompaniesWrite)).Put("/companies/by-external-id/{externalId}", companyHandler.PutByExternalID)
 			r.With(auth.RequireScope(auth.ScopeCompaniesRead)).Get("/companies/lookup-by-nip", gusclientHandler.FindCompany)
 
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates", certificateHandler.List)

@@ -31,6 +31,8 @@ type StudentDetailsDTO struct {
 	AddressZip    *string     `json:"addressZip"`
 	Telephone     *string     `json:"telephone"`
 	Company       *CompanyDTO `json:"company"`
+	// ExternalID - identyfikator platformy nadany przez PUT /students/by-external-id; tylko do odczytu.
+	ExternalID *string `json:"externalId"`
 }
 
 type StudentDetailsResponse struct {

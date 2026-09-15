@@ -22,6 +22,8 @@ type CompanyDetailsDTO struct {
 	Note                       *string `json:"note"`
 	ExpiryNotificationsEnabled bool    `json:"expiryNotificationsEnabled"`
 	ExpiryNotificationEmail    *string `json:"expiryNotificationEmail"`
+	// ExternalID - identyfikator platformy nadany przez PUT /companies/by-external-id; tylko do odczytu.
+	ExternalID *string `json:"externalId"`
 }
 
 type CompanyDetailsResponse struct {

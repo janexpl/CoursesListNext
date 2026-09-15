@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -226,6 +227,32 @@ func applyMigration(ctx context.Context, connConfig *pgx.ConnConfig, file string
 	return tx.Commit(ctx)
 }
 
+// callWithKey wysyła żądanie innym kluczem API - do sprawdzania wymaganych zakresów.
+func (e *testEnv) callWithKey(t *testing.T, key, method, path string, body any) apiResponse {
+	t.Helper()
+	original := e.apiKey
+	e.apiKey = key
+	defer func() { e.apiKey = original }()
+	return e.mustCall(t, method, path, body, nil)
+}
+
+// seedScopedAPIKey tworzy klucz z podanymi zakresami na koncie administratora testów.
+func (e *testEnv) seedScopedAPIKey(t *testing.T, scopes ...string) string {
+	t.Helper()
+	raw, prefix, hash, err := auth.NewAPIKeyToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.pool.Exec(context.Background(), `
+		INSERT INTO api_keys (name, prefix, token_hash, user_id, scopes)
+		SELECT 'integration-scoped', $1, $2, id, $3 FROM users WHERE email = 'integration@example.com'`,
+		prefix, hash, scopes)
+	if err != nil {
+		t.Fatalf("seed scoped api key: %v", err)
+	}
+	return raw
+}
+
 func seedAPIKey(ctx context.Context, pool *pgxpool.Pool) (string, error) {
 	var userID int64
 	err := pool.QueryRow(ctx, `
@@ -308,7 +335,39 @@ func (e *testEnv) call(method, path string, body any, headers map[string]string)
 	if err != nil {
 		return apiResponse{}, err
 	}
+	recordResponse(method, path, resp.StatusCode, resp.Header.Get("Content-Type"), data)
 	return apiResponse{Status: resp.StatusCode, Body: data, Header: resp.Header}, nil
+}
+
+var recordMu sync.Mutex
+
+// recordResponse dopisuje odpowiedź do pliku z IT_RECORD_RESPONSES (JSON Lines), żeby
+// można było sprawdzić rzeczywiste odpowiedzi względem docs/api/openapi.yaml.
+func recordResponse(method, path string, status int, contentType string, body []byte) {
+	file := os.Getenv("IT_RECORD_RESPONSES")
+	if file == "" || !strings.HasPrefix(contentType, "application/json") {
+		return
+	}
+	line, err := json.Marshal(map[string]any{
+		"method": method,
+		"path":   "/api/v1" + strings.SplitN(path, "?", 2)[0],
+		"status": status,
+		"body":   json.RawMessage(body),
+	})
+	if err != nil {
+		return
+	}
+	recordMu.Lock()
+	defer recordMu.Unlock()
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		log.Printf("integrationtest: cannot record response: %v", err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		log.Printf("integrationtest: cannot record response: %v", err)
+	}
 }
 
 func (e *testEnv) mustCall(t *testing.T, method, path string, body any, headers map[string]string) apiResponse {

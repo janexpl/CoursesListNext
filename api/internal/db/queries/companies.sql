@@ -31,7 +31,8 @@ SELECT
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email
+      expiry_notification_email,
+      external_id
   FROM companies
   WHERE id = $1;
 
@@ -62,7 +63,8 @@ SELECT
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email;
+      expiry_notification_email,
+      external_id;
     
 -- name: CreateCompany :one
   INSERT INTO companies (
@@ -92,7 +94,8 @@ SELECT
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email;
+      expiry_notification_email,
+      external_id;
 
 -- name: CompanyHasCertificatesHistory :one
   SELECT EXISTS (
@@ -106,8 +109,25 @@ SELECT
   WHERE id = $1
   RETURNING id;
 
-      
+-- name: AcquireCompanyExternalIDLock :exec
+-- Szereguje równoległe PUT /companies/by-external-id/{externalId} z tym samym identyfikatorem.
+SELECT pg_advisory_xact_lock(hashtextextended('company-external-id:' || @external_id::text, 0));
 
+-- name: GetCompanyIDByExternalID :one
+SELECT id
+FROM companies
+WHERE external_id = $1;
 
+-- name: FindCompanyIDByNIP :one
+-- Klucz naturalny firmy to NIP (ograniczenie check_unique_nip). excludeID pomija
+-- aktualizowaną firmę.
+SELECT id
+FROM companies
+WHERE nip = sqlc.arg(nip)
+  AND (sqlc.narg(exclude_id)::bigint IS NULL OR id <> sqlc.narg(exclude_id)::bigint)
+LIMIT 1;
 
-
+-- name: SetCompanyExternalID :exec
+UPDATE companies
+SET external_id = sqlc.arg(external_id)
+WHERE id = sqlc.arg(id);

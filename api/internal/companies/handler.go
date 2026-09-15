@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
@@ -23,6 +24,12 @@ type Querier interface {
 type Creator interface {
 	Create(ctx context.Context, req CreateCompanyRequest) (CompanyDetailsDTO, error)
 	Update(ctx context.Context, companyID int64, req UpdateCompanyDTO) (CompanyDetailsDTO, error)
+}
+
+// ExternalIDUpserter obsługuje PUT /companies/by-external-id/{externalId}. Osobny
+// interfejs, żeby nie rozszerzać Creator o metodę, której nie potrzebuje reszta tras.
+type ExternalIDUpserter interface {
+	UpsertByExternalID(ctx context.Context, externalID string, req CreateCompanyRequest) (CompanyDetailsDTO, bool, error)
 }
 
 type Handler struct {
@@ -103,9 +110,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	city := strings.TrimSpace(req.City)
 	zipcode := strings.TrimSpace(req.Zipcode)
 	nip := strings.TrimSpace(req.Nip)
+	// Telefon jest opcjonalny (brak = pusty string, jak w istniejących danych).
 	telephone := strings.TrimSpace(req.Telephone)
 
-	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" || telephone == "" {
+	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
@@ -161,9 +169,10 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	city := strings.TrimSpace(req.City)
 	zipcode := strings.TrimSpace(req.Zipcode)
 	nip := strings.TrimSpace(req.Nip)
+	// Telefon jest opcjonalny (brak = pusty string, jak w istniejących danych).
 	telephone := strings.TrimSpace(req.Telephone)
 
-	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" || telephone == "" {
+	if name == "" || street == "" || city == "" || zipcode == "" || nip == "" {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
@@ -200,6 +209,55 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusCreated, CompanyDetailsResponse{
 		Data: row,
 	})
+}
+
+// PutByExternalID zakłada (201) albo nadpisuje (200) firmę o identyfikatorze platformy.
+// Ciało to CompanyWrite - te same reguły co POST i PATCH.
+func (h *Handler) PutByExternalID(w http.ResponseWriter, r *http.Request) {
+	externalID := r.PathValue("externalId")
+	if externalID == "" || utf8.RuneCountInString(externalID) > MaxExternalIDLength {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid external id")
+		return
+	}
+	upserter, ok := h.creator.(ExternalIDUpserter)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to save company")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	req := CreateCompanyRequest{}
+	if err := decoder.Decode(&req); err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return
+	}
+
+	company, created, err := upserter.UpsertByExternalID(r.Context(), externalID, req)
+	if err != nil {
+		var conflict *NaturalKeyConflictError
+		switch {
+		case errors.Is(err, ErrInvalidNIP):
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, nipValidationMessage(err))
+		case errors.Is(err, ErrInvalidInput):
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		case errors.As(err, &conflict):
+			if conflict.ID > 0 {
+				response.WriteErrorWithID(w, http.StatusConflict, response.CodeConflict, conflict.Error(), conflict.ID)
+			} else {
+				response.WriteError(w, http.StatusConflict, response.CodeConflict, conflict.Error())
+			}
+		default:
+			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to save company")
+		}
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	response.WriteJSON(w, status, CompanyDetailsResponse{Data: company})
 }
 
 // nipValidationMessage buduje komunikat w tym samym formacie, którego używa
@@ -245,6 +303,7 @@ func mapCompanyDetailRow(row dbsqlc.Company) CompanyDetailsDTO {
 		Note:                       pgutil.NullableString(row.Note),
 		ExpiryNotificationsEnabled: row.ExpiryNotificationsEnabled,
 		ExpiryNotificationEmail:    pgutil.NullableString(row.ExpiryNotificationEmail),
+		ExternalID:                 pgutil.NullableString(row.ExternalID),
 	}
 	return dto
 }

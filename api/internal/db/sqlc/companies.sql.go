@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireCompanyExternalIDLock = `-- name: AcquireCompanyExternalIDLock :exec
+SELECT pg_advisory_xact_lock(hashtextextended('company-external-id:' || $1::text, 0))
+`
+
+// Szereguje równoległe PUT /companies/by-external-id/{externalId} z tym samym identyfikatorem.
+func (q *Queries) AcquireCompanyExternalIDLock(ctx context.Context, externalID string) error {
+	_, err := q.db.Exec(ctx, acquireCompanyExternalIDLock, externalID)
+	return err
+}
+
 const companyHasCertificatesHistory = `-- name: CompanyHasCertificatesHistory :one
   SELECT EXISTS (
       SELECT 1
@@ -54,7 +64,8 @@ const createCompany = `-- name: CreateCompany :one
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email
+      expiry_notification_email,
+      external_id
 `
 
 type CreateCompanyParams struct {
@@ -99,8 +110,31 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.Note,
 		&i.ExpiryNotificationsEnabled,
 		&i.ExpiryNotificationEmail,
+		&i.ExternalID,
 	)
 	return i, err
+}
+
+const findCompanyIDByNIP = `-- name: FindCompanyIDByNIP :one
+SELECT id
+FROM companies
+WHERE nip = $1
+  AND ($2::bigint IS NULL OR id <> $2::bigint)
+LIMIT 1
+`
+
+type FindCompanyIDByNIPParams struct {
+	Nip       string      `json:"nip"`
+	ExcludeID pgtype.Int8 `json:"exclude_id"`
+}
+
+// Klucz naturalny firmy to NIP (ograniczenie check_unique_nip). excludeID pomija
+// aktualizowaną firmę.
+func (q *Queries) FindCompanyIDByNIP(ctx context.Context, arg FindCompanyIDByNIPParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findCompanyIDByNIP, arg.Nip, arg.ExcludeID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getCompanyByID = `-- name: GetCompanyByID :one
@@ -116,7 +150,8 @@ const getCompanyByID = `-- name: GetCompanyByID :one
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email
+      expiry_notification_email,
+      external_id
   FROM companies
   WHERE id = $1
 `
@@ -137,8 +172,22 @@ func (q *Queries) GetCompanyByID(ctx context.Context, id int64) (Company, error)
 		&i.Note,
 		&i.ExpiryNotificationsEnabled,
 		&i.ExpiryNotificationEmail,
+		&i.ExternalID,
 	)
 	return i, err
+}
+
+const getCompanyIDByExternalID = `-- name: GetCompanyIDByExternalID :one
+SELECT id
+FROM companies
+WHERE external_id = $1
+`
+
+func (q *Queries) GetCompanyIDByExternalID(ctx context.Context, externalID pgtype.Text) (int64, error) {
+	row := q.db.QueryRow(ctx, getCompanyIDByExternalID, externalID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listCompanies = `-- name: ListCompanies :many
@@ -203,6 +252,22 @@ func (q *Queries) ListCompanies(ctx context.Context, arg ListCompaniesParams) ([
 	return items, nil
 }
 
+const setCompanyExternalID = `-- name: SetCompanyExternalID :exec
+UPDATE companies
+SET external_id = $1
+WHERE id = $2
+`
+
+type SetCompanyExternalIDParams struct {
+	ExternalID pgtype.Text `json:"external_id"`
+	ID         int64       `json:"id"`
+}
+
+func (q *Queries) SetCompanyExternalID(ctx context.Context, arg SetCompanyExternalIDParams) error {
+	_, err := q.db.Exec(ctx, setCompanyExternalID, arg.ExternalID, arg.ID)
+	return err
+}
+
 const updateCompany = `-- name: UpdateCompany :one
   UPDATE companies
   SET
@@ -230,7 +295,8 @@ const updateCompany = `-- name: UpdateCompany :one
       telephoneno,
       note,
       expiry_notifications_enabled,
-      expiry_notification_email
+      expiry_notification_email,
+      external_id
 `
 
 type UpdateCompanyParams struct {
@@ -277,6 +343,7 @@ func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (C
 		&i.Note,
 		&i.ExpiryNotificationsEnabled,
 		&i.ExpiryNotificationEmail,
+		&i.ExternalID,
 	)
 	return i, err
 }

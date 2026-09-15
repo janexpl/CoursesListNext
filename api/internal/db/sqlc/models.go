@@ -82,6 +82,7 @@ type Company struct {
 	Note                       pgtype.Text `json:"note"`
 	ExpiryNotificationsEnabled bool        `json:"expiry_notifications_enabled"`
 	ExpiryNotificationEmail    pgtype.Text `json:"expiry_notification_email"`
+	ExternalID                 pgtype.Text `json:"external_id"`
 }
 
 type Course struct {
@@ -132,6 +133,7 @@ type Student struct {
 	Telephoneno   pgtype.Text `json:"telephoneno"`
 	CompanyID     pgtype.Int8 `json:"company_id"`
 	Addresszip    pgtype.Text `json:"addresszip"`
+	ExternalID    pgtype.Text `json:"external_id"`
 }
 
 type TrainingJournal struct {

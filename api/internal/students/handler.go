@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbsqlc "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
@@ -27,6 +28,12 @@ type Querier interface {
 type Creator interface {
 	Create(ctx context.Context, req CreateStudentRequest) (StudentDetailsDTO, error)
 	Update(ctx context.Context, studentID int64, req UpdateStudentRequest) (StudentDetailsDTO, error)
+}
+
+// ExternalIDUpserter obsługuje PUT /students/by-external-id/{externalId}. Osobny
+// interfejs, żeby nie rozszerzać Creator o metodę, której nie potrzebuje reszta tras.
+type ExternalIDUpserter interface {
+	UpsertByExternalID(ctx context.Context, externalID string, req CreateStudentRequest) (StudentDetailsDTO, bool, error)
 }
 
 type Handler struct {
@@ -302,6 +309,59 @@ func (h *Handler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// PutByExternalID zakłada (201) albo nadpisuje (200) kursanta o identyfikatorze platformy.
+// Ciało to StudentWrite - te same reguły co POST i PATCH.
+func (h *Handler) PutByExternalID(w http.ResponseWriter, r *http.Request) {
+	externalID := r.PathValue("externalId")
+	if externalID == "" || utf8.RuneCountInString(externalID) > MaxExternalIDLength {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid external id")
+		return
+	}
+	upserter, ok := h.creator.(ExternalIDUpserter)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to save student")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	req := CreateStudentRequest{}
+	if err := decoder.Decode(&req); err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return
+	}
+	if req.CompanyID != nil && *req.CompanyID <= 0 {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return
+	}
+
+	student, created, err := upserter.UpsertByExternalID(r.Context(), externalID, req)
+	if err != nil {
+		var conflict *NaturalKeyConflictError
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		case errors.Is(err, ErrCompanyNotFound):
+			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
+		case errors.As(err, &conflict):
+			if conflict.ID > 0 {
+				response.WriteErrorWithID(w, http.StatusConflict, response.CodeConflict, conflict.Error(), conflict.ID)
+			} else {
+				response.WriteError(w, http.StatusConflict, response.CodeConflict, conflict.Error())
+			}
+		default:
+			response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to save student")
+		}
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	response.WriteJSON(w, status, StudentDetailsResponse{Data: student})
+}
+
 func mapStudentDetailsRow(row dbsqlc.UpdateStudentRow) StudentDetailsDTO {
 
 	dto := StudentDetailsDTO{
@@ -316,6 +376,7 @@ func mapStudentDetailsRow(row dbsqlc.UpdateStudentRow) StudentDetailsDTO {
 		AddressZip:    pgutil.NullableString(row.Addresszip),
 		Telephone:     pgutil.NullableString(row.Telephoneno),
 		SecondName:    pgutil.NullableString(row.Secondname),
+		ExternalID:    pgutil.NullableString(row.ExternalID),
 	}
 	if row.CompanyID.Valid && row.CompanyName.Valid {
 		dto.Company = &CompanyDTO{

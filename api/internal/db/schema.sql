@@ -10,9 +10,12 @@ CREATE TABLE companies (
     telephoneno text NOT NULL,
     note text,
     expiry_notifications_enabled boolean NOT NULL DEFAULT false,
-    expiry_notification_email text
+    expiry_notification_email text,
+    external_id text,
+    CONSTRAINT companies_external_id_length CHECK (char_length(external_id) BETWEEN 1 AND 64)
 );
 CREATE UNIQUE INDEX check_unique_nip ON companies (nip);
+CREATE UNIQUE INDEX companies_external_id_uidx ON companies (external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE students (
     id bigint PRIMARY KEY,
@@ -26,8 +29,12 @@ CREATE TABLE students (
     addresscity text,
     telephoneno text,
     company_id bigint,
-    addresszip text
+    addresszip text,
+    external_id text,
+    CONSTRAINT students_external_id_length CHECK (char_length(external_id) BETWEEN 1 AND 64)
 );
+
+CREATE UNIQUE INDEX students_external_id_uidx ON students (external_id) WHERE external_id IS NOT NULL;
 
 ALTER TABLE students
     ADD CONSTRAINT students_company_id_fkey

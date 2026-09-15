@@ -162,6 +162,74 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /students/by-external-id/{externalId}:
+    parameters:
+      - $ref: "#/components/parameters/ExternalId"
+    put:
+      tags: [students]
+      operationId: upsertStudentByExternalId
+      summary: Znajdź-lub-utwórz kursanta po identyfikatorze platformy
+      description: >-
+        Brak kursanta o tym `externalId` → tworzy go (`201`). Kursant istnieje → **pełne nadpisanie** jego
+        danych jak w PATCH (`200`); pominięte pola opcjonalne zostaną ustawione na `null`. Wywołanie można
+        bezpiecznie powtarzać, także równolegle — powstanie jeden rekord.
+
+        Ciało to `StudentWrite` — bez `externalId` (jest w ścieżce; pole w ciele → 400 `invalid request body`).
+        `externalId` zapisany na kursancie nie zmienia się przy PATCH i nie da się go ustawić ani usunąć
+        inaczej niż tą operacją.
+      x-required-scope: students:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentWrite"
+      responses:
+        "200":
+          description: Kursant istniał i został nadpisany.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDetailsResponse"
+        "201":
+          description: Kursant utworzony.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentDetailsResponse"
+        "400":
+          description: "`invalid request body`, `invalid external id` (pusty lub dłuższy niż 64 znaki)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Firma wskazana w `companyId` nie istnieje (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Dane z ciała kolidują z kluczem naturalnym **innego** rekordu (imię, nazwisko i data urodzenia — bez rozróżniania wielkości liter i spacji na brzegach). Nic nie zostało
+            utworzone ani zmienione. Komunikat `student with the same natural key already exists`; `error.id` to id kolidującego rekordu
+            — możesz zdecydować, czy skojarzyć się z nim po swojej stronie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: conflict
+                  message: student with the same natural key already exists
+                  id: 4812
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /students/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -192,7 +260,7 @@ paths:
       description: >-
         **Mimo metody PATCH to pełne nadpisanie.** Pominięte pola opcjonalne (`pesel`, `secondName`,
         adres, `telephone`, `companyId`) zostaną ustawione na `null`. Zawsze wysyłaj komplet danych —
-        najpierw pobierz kursanta przez GET.
+        najpierw pobierz kursanta przez GET. `externalId` kursanta nie jest zmieniany.
       x-required-scope: students:write
       requestBody:
         required: true
@@ -397,6 +465,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /companies/by-external-id/{externalId}:
+    parameters:
+      - $ref: "#/components/parameters/ExternalId"
+    put:
+      tags: [companies]
+      operationId: upsertCompanyByExternalId
+      summary: Znajdź-lub-utwórz firmę po identyfikatorze platformy
+      description: >-
+        Brak firmy o tym `externalId` → tworzy ją (`201`). Firma istnieje → **pełne nadpisanie** jej danych
+        jak w PATCH (`200`). Wywołanie można bezpiecznie powtarzać, także równolegle — powstanie jeden rekord.
+
+        Ciało to `CompanyWrite` — bez `externalId` (jest w ścieżce; pole w ciele → 400 `invalid request body`).
+        `externalId` zapisany na firmie nie zmienia się przy PATCH i nie da się go ustawić ani usunąć inaczej
+        niż tą operacją.
+      x-required-scope: companies:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyWrite"
+      responses:
+        "200":
+          description: Firma istniała i została nadpisana.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetailsResponse"
+        "201":
+          description: Firma utworzona.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetailsResponse"
+        "400":
+          description: >-
+            `invalid request body`, `invalid external id` (pusty lub dłuższy niż 64 znaki) albo niepoprawny NIP:
+            `nip validation error: nip must contain exactly 10 digits`, `nip validation error: nip contains invalid
+            characters`, `nip validation error: invalid nip checksum`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: >-
+            Dane z ciała kolidują z kluczem naturalnym **innego** rekordu (NIP). Nic nie zostało
+            utworzone ani zmienione. Komunikat `company with the same natural key already exists`; `error.id` to id kolidującego rekordu
+            — możesz zdecydować, czy skojarzyć się z nim po swojej stronie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: conflict
+                  message: company with the same natural key already exists
+                  id: 4812
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /companies/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -426,8 +558,9 @@ paths:
       summary: Aktualizacja firmy (pełne nadpisanie)
       description: >-
         **Mimo metody PATCH to pełne nadpisanie.** Pominięte `email`, `contactPerson`, `note`,
-        `expiryNotificationEmail` zostaną wyczyszczone, a pominięte `expiryNotificationsEnabled`
-        ustawi się na `false`. Zawsze wysyłaj komplet danych.
+        `expiryNotificationEmail` zostaną wyczyszczone, pominięty `telephone` zapisze się jako pusty string,
+        a pominięte `expiryNotificationsEnabled` ustawi się na `false`. Zawsze wysyłaj komplet danych.
+        `externalId` firmy nie jest zmieniany.
       x-required-scope: companies:write
       requestBody:
         required: true
@@ -2164,6 +2297,19 @@ components:
       description: "Data `YYYY-MM-DD`, włącznie."
       schema:
         $ref: "#/components/schemas/Date"
+    ExternalId:
+      name: externalId
+      in: path
+      required: true
+      description: >-
+        Identyfikator rekordu po stronie platformy (np. UUID), 1–64 znaki. API go nie interpretuje i porównuje
+        dokładnie (z rozróżnieniem wielkości liter). Zakoduj go w ścieżce (percent-encoding); znak `/` nie jest
+        obsługiwany.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        examples: ["3f6c1a2e-8b7d-4c0e-9f13-5a2b7c9d0e41"]
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2301,6 +2447,12 @@ components:
               description: >-
                 Komunikat po angielsku. Komunikaty wymienione w opisach operacji są stabilne i można na nich
                 opierać logikę; pozostałe traktuj jako informacyjne.
+            id:
+              type: integer
+              format: int64
+              description: >-
+                Tylko przy konflikcie klucza naturalnego w `PUT .../by-external-id/{externalId}`: id istniejącego
+                rekordu, z którym koliduje żądanie. W pozostałych błędach pole nie występuje.
     IdResponse:
       type: object
       required: [data]
@@ -2400,7 +2552,7 @@ components:
             $ref: "#/components/schemas/StudentListItem"
     StudentDetails:
       type: object
-      required: [id, firstName, lastName, secondName, birthDate, birthPlace, pesel, addressStreet, addressCity, addressZip, telephone, company]
+      required: [id, firstName, lastName, secondName, birthDate, birthPlace, pesel, addressStreet, addressCity, addressZip, telephone, company, externalId]
       properties:
         id:
           type: integer
@@ -2429,6 +2581,12 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CompanyRef"
             - type: "null"
+        externalId:
+          type: [string, "null"]
+          maxLength: 64
+          description: >-
+            Identyfikator platformy nadany przez `PUT /students/by-external-id/{externalId}`; `null` dla kursantów
+            zakładanych w inny sposób. Tylko do odczytu.
     StudentDetailsResponse:
       type: object
       required: [data]
@@ -2549,6 +2707,7 @@ components:
           type: [string, "null"]
         telephone:
           type: string
+          description: Pusty string, gdy firma nie ma telefonu.
     CompanyListResponse:
       type: object
       required: [data]
@@ -2559,7 +2718,7 @@ components:
             $ref: "#/components/schemas/CompanyListItem"
     CompanyDetails:
       type: object
-      required: [id, name, street, city, zipcode, nip, email, contactPerson, telephone, note, expiryNotificationsEnabled, expiryNotificationEmail]
+      required: [id, name, street, city, zipcode, nip, email, contactPerson, telephone, note, expiryNotificationsEnabled, expiryNotificationEmail, externalId]
       properties:
         id:
           type: integer
@@ -2580,6 +2739,7 @@ components:
           type: [string, "null"]
         telephone:
           type: string
+          description: Pusty string, gdy firma nie ma telefonu (wyjątek od zasady `null` dla braku wartości).
         note:
           type: [string, "null"]
         expiryNotificationsEnabled:
@@ -2588,6 +2748,12 @@ components:
         expiryNotificationEmail:
           type: [string, "null"]
           description: Adresy odbiorców przypomnień rozdzielone przecinkami (bez spacji).
+        externalId:
+          type: [string, "null"]
+          maxLength: 64
+          description: >-
+            Identyfikator platformy nadany przez `PUT /companies/by-external-id/{externalId}`; `null` dla firm
+            zakładanych w inny sposób. Tylko do odczytu.
     CompanyDetailsResponse:
       type: object
       required: [data]
@@ -2600,7 +2766,7 @@ components:
       description: >-
         Wymagane pola nie mogą być puste po obcięciu białych znaków. NIP jest walidowany (10 cyfr, suma
         kontrolna), a myślniki i spacje są usuwane — w odpowiedzi i w bazie NIP to same cyfry.
-      required: [name, street, city, zipcode, nip, telephone]
+      required: [name, street, city, zipcode, nip]
       properties:
         name:
           type: string
@@ -2622,8 +2788,10 @@ components:
         contactPerson:
           type: [string, "null"]
         telephone:
-          type: string
-          minLength: 1
+          type: [string, "null"]
+          description: >-
+            Opcjonalny. Pominięty, `null` albo pusty — firma bez telefonu (w odpowiedziach `telephone` jest wtedy
+            pustym stringiem).
         note:
           type: [string, "null"]
         expiryNotificationsEnabled:
