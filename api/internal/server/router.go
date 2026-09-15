@@ -135,6 +135,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Patch("/courses/{id}", courseHandler.Patch)
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Post("/courses", courseHandler.CreateCourse)
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/courses/{id}/certificates", certificateHandler.ListByCourseID)
+			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses/{id}/platform-delivery", courseHandler.GetPlatformDelivery)
+			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Put("/courses/{id}/platform-delivery", courseHandler.PutPlatformDelivery)
 
 			r.With(auth.RequireScope(auth.ScopeRegistriesRead)).Get("/registries/next-number", registryHandler.GetNextNumber)
 

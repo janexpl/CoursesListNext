@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -40,22 +41,120 @@ func NewHandler(queries Querier, creator Creator) *Handler {
 	}
 }
 
-func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+// courseListParams to wspólne parametry GET /courses i GET /courses/details.
+type courseListParams struct {
+	search              pgtype.Text
+	limit               int32
+	page                int32
+	updatedSince        pgtype.Timestamptz
+	deliveredByPlatform pgtype.Bool
+}
+
+// maxCoursePage ogranicza page tak, żeby (page-1)*limit mieściło się w int32.
+const maxCoursePage = 1_000_000
+
+// parseCourseListParams odczytuje parametry list kursów. Komunikat błędu nadaje się
+// wprost do odpowiedzi 400.
+func parseCourseListParams(r *http.Request) (courseListParams, string) {
 	searchPg, limitInt, err := response.ParseListParams(r)
 	if err != nil {
-		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, err.Error())
+		return courseListParams{}, err.Error()
+	}
+	params := courseListParams{search: searchPg, limit: limitInt, page: 1}
+
+	query := r.URL.Query()
+	if raw := query.Get("page"); raw != "" {
+		page, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || page < 1 || page > maxCoursePage {
+			return courseListParams{}, "invalid page value"
+		}
+		params.page = int32(page)
+	}
+	if raw := query.Get("updatedSince"); raw != "" {
+		// RFC 3339 to profil ISO 8601 z obowiązkową strefą - moment bez strefy byłby niejednoznaczny.
+		since, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return courseListParams{}, "invalid updatedSince value"
+		}
+		params.updatedSince = pgtype.Timestamptz{Time: since, Valid: true}
+	}
+	if raw := query.Get("deliveredByPlatform"); raw != "" {
+		switch raw {
+		case "true":
+			params.deliveredByPlatform = pgtype.Bool{Bool: true, Valid: true}
+		case "false":
+			params.deliveredByPlatform = pgtype.Bool{Bool: false, Valid: true}
+		default:
+			return courseListParams{}, "invalid deliveredByPlatform value"
+		}
+	}
+	return params, ""
+}
+
+func (p courseListParams) offset() int32 {
+	return (p.page - 1) * p.limit
+}
+
+// pagination liczy kopertę. total pochodzi z COUNT(*) OVER () w zapytaniu; gdy strona
+// wykracza poza wyniki, zapytanie nie zwraca wierszy, więc total dopytuje fetchTotal.
+func (p courseListParams) pagination(windowTotal int64, rows int, fetchTotal func() (int64, error)) (PaginationDTO, error) {
+	total := windowTotal
+	if rows == 0 && p.page > 1 {
+		var err error
+		if total, err = fetchTotal(); err != nil {
+			return PaginationDTO{}, err
+		}
+	}
+	// Zwrócone wiersze to dolna granica liczby wyników (gdy total nie przyszedł z zapytania).
+	if minimum := int64(p.offset()) + int64(rows); rows > 0 && total < minimum {
+		total = minimum
+	}
+	return PaginationDTO{
+		Page:       p.page,
+		Limit:      p.limit,
+		Total:      total,
+		TotalPages: int32((total + int64(p.limit) - 1) / int64(p.limit)),
+	}, nil
+}
+
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	params, message := parseCourseListParams(r)
+	if message != "" {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, message)
 		return
 	}
-	courses, err := h.queries.ListCourses(r.Context(), sqlc.ListCoursesParams{
-		Search:     searchPg,
-		LimitCount: limitInt,
+	queryParams := sqlc.ListCoursesParams{
+		Search:              params.search,
+		UpdatedSince:        params.updatedSince,
+		DeliveredByPlatform: params.deliveredByPlatform,
+		OffsetCount:         params.offset(),
+		LimitCount:          params.limit,
+	}
+	courses, err := h.queries.ListCourses(r.Context(), queryParams)
+	if err != nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
+		return
+	}
+	var windowTotal int64
+	if len(courses) > 0 {
+		windowTotal = courses[0].TotalCount
+	}
+	pagination, err := params.pagination(windowTotal, len(courses), func() (int64, error) {
+		firstPage := queryParams
+		firstPage.OffsetCount, firstPage.LimitCount = 0, 1
+		rows, err := h.queries.ListCourses(r.Context(), firstPage)
+		if err != nil || len(rows) == 0 {
+			return 0, err
+		}
+		return rows[0].TotalCount, nil
 	})
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
 		return
 	}
 	resp := ListCoursesResponse{
-		Data: make([]CourseDTO, 0, len(courses)),
+		Data:       make([]CourseDTO, 0, len(courses)),
+		Pagination: pagination,
 	}
 	for _, row := range courses {
 		resp.Data = append(resp.Data, makeCourseDTO(row))
@@ -67,21 +166,47 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 // szablonem zaświadczenia i tłumaczeniami. Wszystko przychodzi jednym
 // zapytaniem, więc liczba kursów nie przekłada się na liczbę zapytań.
 func (h *Handler) ListDetails(w http.ResponseWriter, r *http.Request) {
-	searchPg, limitInt, err := response.ParseListParams(r)
-	if err != nil {
-		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, err.Error())
+	params, message := parseCourseListParams(r)
+	if message != "" {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, message)
 		return
 	}
-	rows, err := h.queries.ListCoursesDetails(r.Context(), sqlc.ListCoursesDetailsParams{
-		Search:     searchPg,
-		LimitCount: limitInt,
+	queryParams := sqlc.ListCoursesDetailsParams{
+		Search:              params.search,
+		UpdatedSince:        params.updatedSince,
+		DeliveredByPlatform: params.deliveredByPlatform,
+		OffsetCount:         params.offset(),
+		LimitCount:          params.limit,
+	}
+	rows, err := h.queries.ListCoursesDetails(r.Context(), queryParams)
+	if err != nil {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
+		return
+	}
+	var windowTotal int64
+	if len(rows) > 0 {
+		windowTotal = rows[0].TotalCount
+	}
+	pagination, err := params.pagination(windowTotal, len(rows), func() (int64, error) {
+		// Lżejsze ListCourses z tymi samymi filtrami wystarczy do policzenia wyników.
+		countRows, err := h.queries.ListCourses(r.Context(), sqlc.ListCoursesParams{
+			Search:              params.search,
+			UpdatedSince:        params.updatedSince,
+			DeliveredByPlatform: params.deliveredByPlatform,
+			LimitCount:          1,
+		})
+		if err != nil || len(countRows) == 0 {
+			return 0, err
+		}
+		return countRows[0].TotalCount, nil
 	})
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to list courses")
 		return
 	}
 	resp := ListCoursesDetailsResponse{
-		Data: make([]CourseDetailDTO, 0, len(rows)),
+		Data:       make([]CourseDetailDTO, 0, len(rows)),
+		Pagination: pagination,
 	}
 	for _, row := range rows {
 		dto, err := makeCourseDetailDTOFromListRow(row)
@@ -92,6 +217,58 @@ func (h *Handler) ListDetails(w http.ResponseWriter, r *http.Request) {
 		resp.Data = append(resp.Data, dto)
 	}
 	response.WriteJSON(w, http.StatusOK, resp)
+}
+
+// PlatformDeliverySetter zmienia flagę deliveredByPlatform. Osobny interfejs, żeby nie
+// rozszerzać Creator o metodę potrzebną jednej trasie.
+type PlatformDeliverySetter interface {
+	SetDeliveredByPlatform(ctx context.Context, courseID int64, delivered bool) (bool, error)
+}
+
+// GetPlatformDelivery zwraca flagę deliveredByPlatform kursu.
+func (h *Handler) GetPlatformDelivery(w http.ResponseWriter, r *http.Request) {
+	courseID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid course ID")
+		return
+	}
+	course, err := h.queries.GetCourseByID(r.Context(), courseID)
+	if err != nil {
+		response.HandleDBError(w, err, "course")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, PlatformDeliveryResponse{
+		Data: PlatformDeliveryDTO{DeliveredByPlatform: course.DeliveredByPlatform},
+	})
+}
+
+// PutPlatformDelivery ustawia flagę deliveredByPlatform kursu.
+func (h *Handler) PutPlatformDelivery(w http.ResponseWriter, r *http.Request) {
+	courseID, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid course ID")
+		return
+	}
+	setter, ok := h.creator.(PlatformDeliverySetter)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to update course")
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	req := PlatformDeliveryRequest{}
+	if err := decoder.Decode(&req); err != nil || req.DeliveredByPlatform == nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return
+	}
+	delivered, err := setter.SetDeliveredByPlatform(r.Context(), courseID, *req.DeliveredByPlatform)
+	if err != nil {
+		response.HandleDBError(w, err, "course")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, PlatformDeliveryResponse{
+		Data: PlatformDeliveryDTO{DeliveredByPlatform: delivered},
+	})
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
@@ -220,11 +397,12 @@ func makeCourseDTO(row sqlc.ListCoursesRow) CourseDTO {
 	expiryTime := parseExpiryTime(row.Expirytime)
 
 	return CourseDTO{
-		ID:         row.ID,
-		MainName:   row.Mainname.String,
-		Name:       row.Name,
-		Symbol:     row.Symbol,
-		ExpiryTime: expiryTime,
+		ID:                  row.ID,
+		MainName:            row.Mainname.String,
+		Name:                row.Name,
+		Symbol:              row.Symbol,
+		ExpiryTime:          expiryTime,
+		DeliveredByPlatform: row.DeliveredByPlatform,
 	}
 }
 

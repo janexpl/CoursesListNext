@@ -334,9 +334,47 @@ useSeoMeta({
   title: () => course.value?.name || 'Szczegół kursu'
 })
 
+const {
+  data: platformDeliveryData,
+  error: platformDeliveryError,
+  refresh: refreshPlatformDelivery
+} = await useAsyncData(
+  `course-platform-delivery:${courseId.value}`,
+  async () => await api.coursePlatformDelivery(courseId.value)
+)
+
+const deliveredByPlatform = computed(() => platformDeliveryData.value?.data.deliveredByPlatform ?? false)
+const platformDeliveryPending = ref(false)
+const platformDeliverySaveError = ref('')
+const platformDeliveryErrorMessage = computed(() => {
+  if (platformDeliverySaveError.value) {
+    return platformDeliverySaveError.value
+  }
+  return platformDeliveryError.value
+    ? getApiErrorMessage(platformDeliveryError.value, 'Nie udało się pobrać ustawienia platformy.')
+    : ''
+})
+
+// Flaga zapisuje się od razu, niezależnie od formularza edycji kursu - to osobny zasób API.
+async function updateDeliveredByPlatform(value: boolean) {
+  platformDeliveryPending.value = true
+  platformDeliverySaveError.value = ''
+  try {
+    platformDeliveryData.value = await api.updateCoursePlatformDelivery(courseId.value, value)
+    if (isAdmin.value) {
+      await refreshAudit()
+    }
+  } catch (error) {
+    platformDeliverySaveError.value = getApiErrorMessage(error, 'Nie udało się zapisać ustawienia platformy.')
+  } finally {
+    platformDeliveryPending.value = false
+  }
+}
+
 async function refreshAll() {
   await Promise.all([
     refresh(),
+    refreshPlatformDelivery(),
     isAdmin.value ? refreshAudit() : Promise.resolve()
   ])
 }
@@ -641,6 +679,34 @@ async function refreshAll() {
         </div>
 
         <aside class="space-y-6">
+          <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+            <h2 class="text-lg font-semibold text-slate-900">Platforma e-learningowa</h2>
+            <p class="mt-2 text-sm text-slate-500">
+              Kurs oznaczony jako dostarczany przez platformę pojawia się w jej katalogu. Nie zaznaczaj szkoleń
+              wymagających części praktycznej.
+            </p>
+
+            <div class="mt-5 flex items-center justify-between gap-4">
+              <span class="text-sm font-medium text-slate-900">
+                {{ deliveredByPlatform ? 'Dostarczany przez platformę' : 'Niedostępny na platformie' }}
+              </span>
+              <USwitch
+                :model-value="deliveredByPlatform"
+                :loading="platformDeliveryPending"
+                :disabled="platformDeliveryPending || !!platformDeliveryError"
+                aria-label="Kurs dostarczany przez platformę e-learningową"
+                @update:model-value="updateDeliveredByPlatform"
+              />
+            </div>
+
+            <p
+              v-if="platformDeliveryErrorMessage"
+              class="mt-3 text-sm text-red-600"
+            >
+              {{ platformDeliveryErrorMessage }}
+            </p>
+          </section>
+
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <h2 class="text-lg font-semibold text-slate-900">Metadane</h2>
 

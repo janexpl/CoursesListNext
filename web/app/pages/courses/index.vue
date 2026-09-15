@@ -133,6 +133,14 @@ const courses = computed(() => data.value?.data ?? [])
             <span>ID {{ course.id }}</span>
             <span>•</span>
             <span class="break-all">{{ course.symbol }}</span>
+            <UBadge
+              v-if="course.deliveredByPlatform"
+              color="primary"
+              variant="subtle"
+              class="normal-case tracking-normal"
+            >
+              Platforma e-learningowa
+            </UBadge>
           </div>
 
           <NuxtLink

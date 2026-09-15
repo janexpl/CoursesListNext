@@ -693,11 +693,17 @@ paths:
         `search` dopasowuje fragment w nazwie głównej, nazwie lub symbolu. Wyniki są rankingowane:
         dokładny symbol, symbol zaczynający się od frazy, nazwa zaczynająca się od frazy, nazwa
         główna zaczynająca się od frazy, symbol zawierający frazę, reszta; w obrębie grupy
-        sortowanie po symbolu i nazwie.
+        sortowanie po symbolu, nazwie i id (kolejność jest stabilna, więc strony się nie nakładają).
+
+        Stronicowanie: `page` + `limit`; koperta `pagination` zawiera łączną liczbę wyników. Bez `page`
+        zwracana jest pierwsza strona (domyślny `limit` pozostaje 50).
       x-required-scope: courses:read
       parameters:
         - $ref: "#/components/parameters/Search"
         - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CoursePage"
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/DeliveredByPlatform"
       responses:
         "200":
           description: Kursy.
@@ -706,7 +712,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CourseListResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `incorrect limit value`, `invalid page value`, `invalid updatedSince value`,
+            `invalid deliveredByPlatform value`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -758,11 +770,18 @@ paths:
       description: >-
         Te same wyniki i ta sama kolejność co `GET /courses` dla tych samych parametrów, ale każdy
         element zawiera pełną treść kursu. Odpowiedź bywa duża (szablony HTML mają kilka kB na kurs) —
-        używaj tylko, gdy treść jest potrzebna.
+        używaj tylko, gdy treść jest potrzebna. Stronicowanie i filtry jak w `GET /courses`.
+
+        Elementy mają kształt `CourseDetails` — **bez** `deliveredByPlatform` (kształt `CourseDetails` jest
+        zamrożony). Filtruj parametrem `deliveredByPlatform`; wartość flagi pojedynczego kursu zwraca
+        `GET /courses/{id}/platform-delivery`.
       x-required-scope: courses:read
       parameters:
         - $ref: "#/components/parameters/Search"
         - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CoursePage"
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/DeliveredByPlatform"
       responses:
         "200":
           description: Kursy z treścią.
@@ -771,7 +790,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CourseDetailsListResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >-
+            `incorrect limit value`, `invalid page value`, `invalid updatedSince value`,
+            `invalid deliveredByPlatform value`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -829,6 +854,68 @@ paths:
           description: >-
             `invalid request body` (brak wymaganego pola, ujemne `expiryTime`), `course program must be a JSON array`,
             `unsupported translation language`, `duplicate translation language`, `translation fields are required`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /courses/{id}/platform-delivery:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [courses]
+      operationId: getCoursePlatformDelivery
+      summary: Czy kurs jest dostarczany przez platformę e-learningową
+      description: >-
+        Flaga decyduje, czy kurs ma być w katalogu platformy. Ustawia ją CoursesList (aplikacja webowa,
+        strona kursu). Nowe i istniejące kursy mają domyślnie `false`.
+      x-required-scope: courses:read
+      responses:
+        "200":
+          description: Flaga kursu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoursePlatformDeliveryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [courses]
+      operationId: setCoursePlatformDelivery
+      summary: Ustawienie flagi dostarczania kursu przez platformę
+      description: >-
+        Zmiana flagi podnosi znacznik zmian kursu, więc kurs wraca w `updatedSince`. Zapis jest odnotowany
+        w historii zmian kursu.
+      x-required-scope: courses:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoursePlatformDelivery"
+      responses:
+        "200":
+          description: Flaga po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoursePlatformDeliveryResponse"
+        "400":
+          description: "`invalid course ID`, `invalid request body` (brak pola, pole spoza schematu, wartość nie-logiczna)."
           content:
             application/json:
               schema:
@@ -2350,6 +2437,35 @@ components:
         minLength: 1
         maxLength: 64
         examples: ["3f6c1a2e-8b7d-4c0e-9f13-5a2b7c9d0e41"]
+    CoursePage:
+      name: page
+      in: query
+      description: Numer strony, od 1 (maks. 1 000 000). Niepoprawny → 400 `invalid page value`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000000
+        default: 1
+    UpdatedSince:
+      name: updatedSince
+      in: query
+      description: >-
+        Tylko kursy zmienione **po** tym momencie (ściśle później). ISO 8601 / RFC 3339 z obowiązkową strefą,
+        np. `2026-09-15T08:00:00Z` albo `2026-09-15T10:00:00.5+02:00`; niepoprawny lub bez strefy → 400
+        `invalid updatedSince value`. Zmianą jest zmiana dowolnego pola kursu, jego programu, flagi
+        `deliveredByPlatform` oraz dodanie, zmiana lub usunięcie tłumaczenia. Zapis bez zmiany treści nie liczy się.
+      schema:
+        type: string
+        format: date-time
+    DeliveredByPlatform:
+      name: deliveredByPlatform
+      in: query
+      description: >-
+        `true` — tylko kursy dostarczane przez platformę, `false` — tylko pozostałe; brak parametru — wszystkie.
+        Inna wartość → 400 `invalid deliveredByPlatform value`.
+      schema:
+        type: string
+        enum: ["true", "false"]
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2515,7 +2631,7 @@ components:
         total:
           type: integer
           format: int64
-          description: Liczba wszystkich pasujących zaświadczeń.
+          description: Liczba wszystkich pasujących wyników (na wszystkich stronach).
         totalPages:
           type: integer
 
@@ -2881,7 +2997,7 @@ components:
     # --------------------------------------------------------------- courses
     CourseListItem:
       type: object
-      required: [id, mainName, name, symbol, expiryTime]
+      required: [id, mainName, name, symbol, expiryTime, deliveredByPlatform]
       properties:
         id:
           type: integer
@@ -2895,14 +3011,32 @@ components:
           description: Unikalny symbol kursu, używany w numerze zaświadczenia.
         expiryTime:
           $ref: "#/components/schemas/ExpiryTime"
+        deliveredByPlatform:
+          type: boolean
+          description: Czy kurs jest dostarczany przez platformę e-learningową.
     CourseListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
           type: array
           items:
             $ref: "#/components/schemas/CourseListItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+    CoursePlatformDelivery:
+      type: object
+      additionalProperties: false
+      required: [deliveredByPlatform]
+      properties:
+        deliveredByPlatform:
+          type: boolean
+    CoursePlatformDeliveryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CoursePlatformDelivery"
     ExpiryTime:
       type: [integer, "null"]
       minimum: 0
@@ -2976,12 +3110,14 @@ components:
           $ref: "#/components/schemas/CourseDetails"
     CourseDetailsListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
           type: array
           items:
             $ref: "#/components/schemas/CourseDetails"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
     CourseWrite:
       type: object
       additionalProperties: false

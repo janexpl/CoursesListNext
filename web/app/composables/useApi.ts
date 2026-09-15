@@ -306,10 +306,25 @@ export interface CourseSummary {
   symbol: string
   // Okres ważności w latach; null = kurs bez terminu ważności.
   expiryTime: number | null
+  // Czy kurs jest oferowany przez platformę e-learningową. Opcjonalne, bo podsumowanie
+  // kursu bywa składane z parametrów adresu (np. przy wystawianiu zaświadczenia).
+  deliveredByPlatform?: boolean
 }
 
 export interface CoursesResponse {
   data: CourseSummary[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+export interface CoursePlatformDeliveryResponse {
+  data: {
+    deliveredByPlatform: boolean
+  }
 }
 
 export interface CourseCertificateTranslation {
@@ -908,6 +923,11 @@ export function useApi() {
       body: payload
     }),
     courseAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/courses/${id}/audit-log`),
+    coursePlatformDelivery: async (id: number) => await request<CoursePlatformDeliveryResponse>(`/api/v1/courses/${id}/platform-delivery`),
+    updateCoursePlatformDelivery: async (id: number, deliveredByPlatform: boolean) => await request<CoursePlatformDeliveryResponse>(`/api/v1/courses/${id}/platform-delivery`, {
+      method: 'PUT',
+      body: { deliveredByPlatform }
+    }),
     courseCertificates: async (id: number, params: { page?: number, limit?: number, dateFrom?: string, dateTo?: string } = {}) => await request<PaginatedCourseCertificatesResponse>(`/api/v1/courses/${id}/certificates`, {
       query: {
         page: params.page || undefined,

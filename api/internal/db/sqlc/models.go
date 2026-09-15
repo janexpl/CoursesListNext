@@ -87,13 +87,15 @@ type Company struct {
 }
 
 type Course struct {
-	ID            int64       `json:"id"`
-	Mainname      pgtype.Text `json:"mainname"`
-	Name          string      `json:"name"`
-	Symbol        string      `json:"symbol"`
-	Expirytime    pgtype.Text `json:"expirytime"`
-	Courseprogram []byte      `json:"courseprogram"`
-	Certfrontpage pgtype.Text `json:"certfrontpage"`
+	ID                  int64              `json:"id"`
+	Mainname            pgtype.Text        `json:"mainname"`
+	Name                string             `json:"name"`
+	Symbol              string             `json:"symbol"`
+	Expirytime          pgtype.Text        `json:"expirytime"`
+	Courseprogram       []byte             `json:"courseprogram"`
+	Certfrontpage       pgtype.Text        `json:"certfrontpage"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	DeliveredByPlatform bool               `json:"delivered_by_platform"`
 }
 
 type CourseCertificateTranslation struct {

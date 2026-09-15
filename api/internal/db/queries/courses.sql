@@ -1,10 +1,13 @@
 -- name: ListCourses :many
+-- total_count to liczba wszystkich kursów spełniających filtry (dla koperty pagination).
 SELECT
     id,
     mainname,
     name,
     symbol,
-    expirytime
+    expirytime,
+    delivered_by_platform,
+    COUNT(*) OVER () AS total_count
 FROM courses
 WHERE
     (
@@ -13,6 +16,8 @@ WHERE
         OR COALESCE(name, '') ILIKE '%' || sqlc.narg(search)::text || '%'
         OR COALESCE(symbol, '') ILIKE '%' || sqlc.narg(search)::text || '%'
     )
+    AND (sqlc.narg(updated_since)::timestamptz IS NULL OR updated_at > sqlc.narg(updated_since)::timestamptz)
+    AND (sqlc.narg(delivered_by_platform)::boolean IS NULL OR delivered_by_platform = sqlc.narg(delivered_by_platform)::boolean)
 ORDER BY
     CASE
         WHEN sqlc.narg(search)::text IS NULL THEN 5
@@ -24,8 +29,10 @@ ORDER BY
         ELSE 5
     END,
     symbol,
-    name
-LIMIT sqlc.arg(limit_count);
+    name,
+    id
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);
 
 
 -- name: ListCoursesDetails :many
@@ -51,7 +58,8 @@ SELECT
     c.expirytime,
     c.courseprogram,
     c.certfrontpage,
-    COALESCE(t.translations, '[]'::json)::json AS certificate_translations
+    COALESCE(t.translations, '[]'::json)::json AS certificate_translations,
+    COUNT(*) OVER () AS total_count
 FROM courses c
 LEFT JOIN LATERAL (
     SELECT json_agg(
@@ -75,6 +83,8 @@ WHERE
         OR COALESCE(c.name, '') ILIKE '%' || sqlc.narg(search)::text || '%'
         OR COALESCE(c.symbol, '') ILIKE '%' || sqlc.narg(search)::text || '%'
     )
+    AND (sqlc.narg(updated_since)::timestamptz IS NULL OR c.updated_at > sqlc.narg(updated_since)::timestamptz)
+    AND (sqlc.narg(delivered_by_platform)::boolean IS NULL OR c.delivered_by_platform = sqlc.narg(delivered_by_platform)::boolean)
 ORDER BY
     CASE
         WHEN sqlc.narg(search)::text IS NULL THEN 5
@@ -86,12 +96,14 @@ ORDER BY
         ELSE 5
     END,
     c.symbol,
-    c.name
-LIMIT sqlc.arg(limit_count);
+    c.name,
+    c.id
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);
 
 
 -- name: GetCourseByID :one
-SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage FROM courses
+SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform FROM courses
 WHERE id = $1;
 
 
@@ -105,7 +117,7 @@ WHERE id = $1;
       courseprogram = $6,
       certfrontpage = $7
   WHERE id = $1
-  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage;
+  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform;
 
 -- name: CreateCourse :one
   INSERT INTO courses (
@@ -125,4 +137,12 @@ WHERE id = $1;
       symbol,
       expirytime,
       courseprogram,
-      certfrontpage;
+      certfrontpage,
+      updated_at,
+      delivered_by_platform;
+
+-- name: SetCourseDeliveredByPlatform :one
+UPDATE courses
+SET delivered_by_platform = sqlc.arg(delivered_by_platform)
+WHERE id = sqlc.arg(id)
+RETURNING delivered_by_platform;

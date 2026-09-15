@@ -6,6 +6,8 @@ type CourseDTO struct {
 	Name       string `json:"name"`
 	Symbol     string `json:"symbol"`
 	ExpiryTime *int   `json:"expiryTime"`
+	// DeliveredByPlatform - czy kurs jest oferowany przez platformę e-learningową.
+	DeliveredByPlatform bool `json:"deliveredByPlatform"`
 }
 
 type CourseDetailDTO struct {
@@ -20,11 +22,35 @@ type CourseDetailDTO struct {
 }
 
 type ListCoursesResponse struct {
-	Data []CourseDTO `json:"data"`
+	Data       []CourseDTO   `json:"data"`
+	Pagination PaginationDTO `json:"pagination"`
 }
 
 type ListCoursesDetailsResponse struct {
-	Data []CourseDetailDTO `json:"data"`
+	Data       []CourseDetailDTO `json:"data"`
+	Pagination PaginationDTO     `json:"pagination"`
+}
+
+type PaginationDTO struct {
+	Page       int32 `json:"page"`
+	Limit      int32 `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int32 `json:"totalPages"`
+}
+
+// PlatformDeliveryDTO to podzasób kursu /courses/{id}/platform-delivery. Flaga nie
+// trafia do CourseDetails, którego kształt jest zamrożony dla integracji.
+type PlatformDeliveryDTO struct {
+	DeliveredByPlatform bool `json:"deliveredByPlatform"`
+}
+
+type PlatformDeliveryResponse struct {
+	Data PlatformDeliveryDTO `json:"data"`
+}
+
+// PlatformDeliveryRequest ma wskaźnik, żeby odróżnić brak pola od false.
+type PlatformDeliveryRequest struct {
+	DeliveredByPlatform *bool `json:"deliveredByPlatform"`
 }
 
 type GetCourseResponse struct {

@@ -170,9 +170,10 @@ W żądaniach pusty string w polu opcjonalnym jest zapisywany jako `null` (biał
 ### Listy, wyszukiwanie, limity
 
 - Listy przyjmują `search` i `limit` (1–100, domyślnie 50).
-- **Brak paginacji** poza `GET /companies/{id}/certificates` i `GET /courses/{id}/certificates`
-  (`page`, `limit` 1–100 z domyślną wartością **10**).
-- Konsekwencja: **nie da się pobrać pełnej listy kursantów, firm, kursów, zaświadczeń ani dzienników,
+- Paginację (`page` od 1 + koperta `pagination`) mają tylko:
+  `GET /companies/{id}/certificates` i `GET /courses/{id}/certificates` (`limit` 1–100, domyślnie **10**) oraz
+  `GET /courses` i `GET /courses/details` (`limit` 1–100, domyślnie **50**).
+- Konsekwencja: **nie da się pobrać pełnej listy kursantów, firm, zaświadczeń ani dzienników,
   jeśli jest ich więcej niż 100.** Zawężaj wyszukiwaniem (`search`, `companyId`, `courseId`, `status`,
   zakresy dat). Nie projektuj pełnej synchronizacji bazy przez to API.
 - Kolejność wyników każdej listy jest opisana w `openapi.yaml` i jest deterministyczna.
@@ -252,43 +253,46 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    Przy `PATCH /courses/{id}` pominięte `certificateTranslations` zostawia je bez zmian, a `[]` usuwa wszystkie (sekcja 4).
 7. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
    nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
+8. `GET /courses` i `GET /courses/details` przyjmują `updatedSince` i `deliveredByPlatform` (sekcja 6.6).
+   Wartość `deliveredByPlatform` jest na elementach `GET /courses` i pod `GET /courses/{id}/platform-delivery`,
+   ale **nie** w `CourseDetails` (także nie w `GET /courses/details`) — kształt `CourseDetails` się nie zmienia.
 
 ### Kursanci i firmy
 
-8. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
+9. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
    `GET /companies/lookup-by-nip`) i zapisywany jako same cyfry — `123-456-32-18` wróci jako `1234563218`.
-9. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-10. Brak operacji usuwania kursantów, firm i kursów.
-11. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
+10. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+11. Brak operacji usuwania kursantów, firm i kursów.
+12. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
     wartościach, także różniących się tylko wielkością liter lub spacjami (409). Przed utworzeniem kursanta
     wyszukaj go (`GET /students?search=...`). Dane sprzed wprowadzenia tej reguły mogą zawierać takie duplikaty;
     edycja rekordu z takiej pary, zmieniająca jego zapis na identyczny z bliźniakiem, też zwróci 409.
     Integracje, które mają własny identyfikator osoby, powinny zamiast tego używać
     `PUT /students/by-external-id/{externalId}` (sekcja 6.2).
-12. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
+13. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
     Jest tylko do odczytu w `StudentDetails`/`CompanyDetails`, nie ma go na listach, a `POST` i `PATCH` go nie
     przyjmują (400) i nie zmieniają. Rekordy zakładane w aplikacji webowej mają `externalId: null`.
-13. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
+14. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
     firm nie ma telefonu).
 
 ### Dzienniki
 
-14. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+15. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
-15. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-16. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+16. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+17. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
     zaświadczeń ani usunięcia całego dziennika.
-17. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+18. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-18. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+19. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
     dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
-19. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+20. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
     to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
@@ -445,6 +449,39 @@ GET /api/v1/certificates?dateFrom=2021-01-01&dateTo=2021-12-31&limit=100   # cer
 
 Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) i nie da się po nim filtrować w API.
 
+### 6.6. Synchronizacja katalogu kursów
+
+Katalog platformy to kursy z `deliveredByPlatform = true`. Flagę ustawia CoursesList (strona kursu w aplikacji
+webowej lub `PUT /courses/{id}/platform-delivery` z `courses:write`), nie platforma.
+
+Pierwsze pobranie — wszystkie strony:
+
+```http
+GET /api/v1/courses/details?deliveredByPlatform=true&limit=100&page=1     # courses:read
+→ 200 { "data": [ ...CourseDetails... ], "pagination": { "page": 1, "limit": 100, "total": 240, "totalPages": 3 } }
+GET /api/v1/courses/details?deliveredByPlatform=true&limit=100&page=2
+...
+```
+
+Kolejne pobrania — tylko zmiany od poprzedniej synchronizacji:
+
+```http
+GET /api/v1/courses/details?updatedSince=2026-09-15T08:00:00Z&deliveredByPlatform=true&limit=100&page=1
+GET /api/v1/courses/details?updatedSince=2026-09-15T08:00:00Z&deliveredByPlatform=false&limit=100&page=1
+```
+
+- Pierwsze zapytanie zwraca kursy nowe lub zmienione w katalogu — nadpisz je u siebie.
+- Drugie zwraca kursy zmienione i **nie** dostarczane przez platformę — w tym te, którym właśnie wyłączono flagę.
+  Usuń je (ukryj) u siebie, jeśli je masz. Zmiana flagi liczy się jako zmiana kursu.
+- `updatedSince` jest ściśle „po". Jako wartość weź moment rozpoczęcia poprzedniej udanej synchronizacji
+  z zapasem (np. nagłówek `Date` pierwszej odpowiedzi minus 5 minut) i deduplikuj po `id` — zmiana zapisana
+  w trakcie poprzedniego pobierania nie zginie.
+- Zmianą kursu jest zmiana dowolnego pola, programu, dodanie/zmiana/usunięcie tłumaczenia i zmiana flagi.
+  Zapis bez zmiany treści znacznika nie podnosi. Po wdrożeniu wszystkie kursy mają znacznik z chwili migracji.
+- Stronicuj do `page = totalPages`. Kolejność jest stabilna, ale kurs zmieniony w trakcie stronicowania może się
+  przesunąć między stronami — kolejna synchronizacja przyrostowa go dociągnie.
+- API nie usuwa kursów, więc nie ma zdarzenia „kurs usunięty".
+
 ---
 
 ## 7. Obsługa błędów — zalecenia
@@ -468,7 +505,7 @@ obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
 ## 8. Czego API nie oferuje
 
 - webhooków ani powiadomień o zmianach — zmiany trzeba odpytywać;
-- filtrowania „zmienione od" (`updatedSince`) i paginacji dla dużych list;
+- filtrowania „zmienione od" (`updatedSince`) i paginacji dla list innych niż kursy;
 - operacji zbiorczych (np. obecność wielu osób jednym żądaniem);
 - usuwania kursantów, firm i kursów;
 - wersjonowania poza prefiksem `/api/v1` — specyfikacja opisuje stan kodu z gałęzi `api_and_webhook`

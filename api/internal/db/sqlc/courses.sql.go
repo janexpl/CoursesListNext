@@ -29,7 +29,9 @@ const createCourse = `-- name: CreateCourse :one
       symbol,
       expirytime,
       courseprogram,
-      certfrontpage
+      certfrontpage,
+      updated_at,
+      delivered_by_platform
 `
 
 type CreateCourseParams struct {
@@ -59,12 +61,14 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		&i.Expirytime,
 		&i.Courseprogram,
 		&i.Certfrontpage,
+		&i.UpdatedAt,
+		&i.DeliveredByPlatform,
 	)
 	return i, err
 }
 
 const getCourseByID = `-- name: GetCourseByID :one
-SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage FROM courses
+SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform FROM courses
 WHERE id = $1
 `
 
@@ -79,6 +83,8 @@ func (q *Queries) GetCourseByID(ctx context.Context, id int64) (Course, error) {
 		&i.Expirytime,
 		&i.Courseprogram,
 		&i.Certfrontpage,
+		&i.UpdatedAt,
+		&i.DeliveredByPlatform,
 	)
 	return i, err
 }
@@ -89,7 +95,9 @@ SELECT
     mainname,
     name,
     symbol,
-    expirytime
+    expirytime,
+    delivered_by_platform,
+    COUNT(*) OVER () AS total_count
 FROM courses
 WHERE
     (
@@ -98,6 +106,8 @@ WHERE
         OR COALESCE(name, '') ILIKE '%' || $1::text || '%'
         OR COALESCE(symbol, '') ILIKE '%' || $1::text || '%'
     )
+    AND ($2::timestamptz IS NULL OR updated_at > $2::timestamptz)
+    AND ($3::boolean IS NULL OR delivered_by_platform = $3::boolean)
 ORDER BY
     CASE
         WHEN $1::text IS NULL THEN 5
@@ -109,25 +119,39 @@ ORDER BY
         ELSE 5
     END,
     symbol,
-    name
-LIMIT $2
+    name,
+    id
+LIMIT $5
+OFFSET $4
 `
 
 type ListCoursesParams struct {
-	Search     pgtype.Text `json:"search"`
-	LimitCount int32       `json:"limit_count"`
+	Search              pgtype.Text        `json:"search"`
+	UpdatedSince        pgtype.Timestamptz `json:"updated_since"`
+	DeliveredByPlatform pgtype.Bool        `json:"delivered_by_platform"`
+	OffsetCount         int32              `json:"offset_count"`
+	LimitCount          int32              `json:"limit_count"`
 }
 
 type ListCoursesRow struct {
-	ID         int64       `json:"id"`
-	Mainname   pgtype.Text `json:"mainname"`
-	Name       string      `json:"name"`
-	Symbol     string      `json:"symbol"`
-	Expirytime pgtype.Text `json:"expirytime"`
+	ID                  int64       `json:"id"`
+	Mainname            pgtype.Text `json:"mainname"`
+	Name                string      `json:"name"`
+	Symbol              string      `json:"symbol"`
+	Expirytime          pgtype.Text `json:"expirytime"`
+	DeliveredByPlatform bool        `json:"delivered_by_platform"`
+	TotalCount          int64       `json:"total_count"`
 }
 
+// total_count to liczba wszystkich kursów spełniających filtry (dla koperty pagination).
 func (q *Queries) ListCourses(ctx context.Context, arg ListCoursesParams) ([]ListCoursesRow, error) {
-	rows, err := q.db.Query(ctx, listCourses, arg.Search, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listCourses,
+		arg.Search,
+		arg.UpdatedSince,
+		arg.DeliveredByPlatform,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +165,8 @@ func (q *Queries) ListCourses(ctx context.Context, arg ListCoursesParams) ([]Lis
 			&i.Name,
 			&i.Symbol,
 			&i.Expirytime,
+			&i.DeliveredByPlatform,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
@@ -161,7 +187,8 @@ SELECT
     c.expirytime,
     c.courseprogram,
     c.certfrontpage,
-    COALESCE(t.translations, '[]'::json)::json AS certificate_translations
+    COALESCE(t.translations, '[]'::json)::json AS certificate_translations,
+    COUNT(*) OVER () AS total_count
 FROM courses c
 LEFT JOIN LATERAL (
     SELECT json_agg(
@@ -185,6 +212,8 @@ WHERE
         OR COALESCE(c.name, '') ILIKE '%' || $1::text || '%'
         OR COALESCE(c.symbol, '') ILIKE '%' || $1::text || '%'
     )
+    AND ($2::timestamptz IS NULL OR c.updated_at > $2::timestamptz)
+    AND ($3::boolean IS NULL OR c.delivered_by_platform = $3::boolean)
 ORDER BY
     CASE
         WHEN $1::text IS NULL THEN 5
@@ -196,13 +225,18 @@ ORDER BY
         ELSE 5
     END,
     c.symbol,
-    c.name
-LIMIT $2
+    c.name,
+    c.id
+LIMIT $5
+OFFSET $4
 `
 
 type ListCoursesDetailsParams struct {
-	Search     pgtype.Text `json:"search"`
-	LimitCount int32       `json:"limit_count"`
+	Search              pgtype.Text        `json:"search"`
+	UpdatedSince        pgtype.Timestamptz `json:"updated_since"`
+	DeliveredByPlatform pgtype.Bool        `json:"delivered_by_platform"`
+	OffsetCount         int32              `json:"offset_count"`
+	LimitCount          int32              `json:"limit_count"`
 }
 
 type ListCoursesDetailsRow struct {
@@ -214,6 +248,7 @@ type ListCoursesDetailsRow struct {
 	Courseprogram           []byte      `json:"courseprogram"`
 	Certfrontpage           pgtype.Text `json:"certfrontpage"`
 	CertificateTranslations []byte      `json:"certificate_translations"`
+	TotalCount              int64       `json:"total_count"`
 }
 
 // To samo wyszukiwanie i ta sama kolejność co w ListCourses, ale z pełną
@@ -231,7 +266,13 @@ type ListCoursesDetailsRow struct {
 // tylko wtedy, gdy treści są faktycznie potrzebne - do samej listy wystarczy
 // ListCourses.
 func (q *Queries) ListCoursesDetails(ctx context.Context, arg ListCoursesDetailsParams) ([]ListCoursesDetailsRow, error) {
-	rows, err := q.db.Query(ctx, listCoursesDetails, arg.Search, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listCoursesDetails,
+		arg.Search,
+		arg.UpdatedSince,
+		arg.DeliveredByPlatform,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +289,7 @@ func (q *Queries) ListCoursesDetails(ctx context.Context, arg ListCoursesDetails
 			&i.Courseprogram,
 			&i.Certfrontpage,
 			&i.CertificateTranslations,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
@@ -257,6 +299,25 @@ func (q *Queries) ListCoursesDetails(ctx context.Context, arg ListCoursesDetails
 		return nil, err
 	}
 	return items, nil
+}
+
+const setCourseDeliveredByPlatform = `-- name: SetCourseDeliveredByPlatform :one
+UPDATE courses
+SET delivered_by_platform = $1
+WHERE id = $2
+RETURNING delivered_by_platform
+`
+
+type SetCourseDeliveredByPlatformParams struct {
+	DeliveredByPlatform bool  `json:"delivered_by_platform"`
+	ID                  int64 `json:"id"`
+}
+
+func (q *Queries) SetCourseDeliveredByPlatform(ctx context.Context, arg SetCourseDeliveredByPlatformParams) (bool, error) {
+	row := q.db.QueryRow(ctx, setCourseDeliveredByPlatform, arg.DeliveredByPlatform, arg.ID)
+	var delivered_by_platform bool
+	err := row.Scan(&delivered_by_platform)
+	return delivered_by_platform, err
 }
 
 const updateCourse = `-- name: UpdateCourse :one
@@ -269,7 +330,7 @@ const updateCourse = `-- name: UpdateCourse :one
       courseprogram = $6,
       certfrontpage = $7
   WHERE id = $1
-  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage
+  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform
 `
 
 type UpdateCourseParams struct {
@@ -301,6 +362,8 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.Expirytime,
 		&i.Courseprogram,
 		&i.Certfrontpage,
+		&i.UpdatedAt,
+		&i.DeliveredByPlatform,
 	)
 	return i, err
 }

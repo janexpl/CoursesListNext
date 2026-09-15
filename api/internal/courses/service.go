@@ -362,3 +362,48 @@ func normalizeExpiryTime(years int) (string, error) {
 	}
 	return strconv.Itoa(years), nil
 }
+
+// SetDeliveredByPlatform zmienia flagę dostarczania kursu przez platformę i zapisuje
+// zmianę w historii kursu. Nieistniejący kurs daje pgx.ErrNoRows.
+func (s *Service) SetDeliveredByPlatform(ctx context.Context, courseID int64, delivered bool) (bool, error) {
+	tx, err := s.beginTx(ctx)
+	if err != nil {
+		return false, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if rollbackErr := tx.rollback(ctx); rollbackErr != nil {
+				log.Printf("unable to rollback changes: %v", rollbackErr)
+			}
+		}
+	}()
+
+	before, err := tx.queries.GetCourseByID(ctx, courseID)
+	if err != nil {
+		return false, err
+	}
+	after, err := tx.queries.SetCourseDeliveredByPlatform(ctx, sqlc.SetCourseDeliveredByPlatformParams{
+		ID:                  courseID,
+		DeliveredByPlatform: delivered,
+	})
+	if err != nil {
+		return false, err
+	}
+	if s.recorder != nil && before.DeliveredByPlatform != after {
+		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
+			EntityType: "course",
+			EntityID:   courseID,
+			Action:     "update",
+			Before:     map[string]any{"deliveredByPlatform": before.DeliveredByPlatform},
+			After:      map[string]any{"deliveredByPlatform": after},
+		}); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.commit(ctx); err != nil {
+		return false, err
+	}
+	committed = true
+	return after, nil
+}
