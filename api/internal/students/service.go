@@ -3,11 +3,12 @@ package students
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
@@ -39,6 +40,59 @@ func companyNotFoundAs(err error) error {
 		}
 	}
 	return err
+}
+
+// ErrDuplicateStudent oznacza, że istnieje już kursant o tym samym imieniu, nazwisku
+// i dacie urodzenia (bez rozróżniania wielkości liter i spacji na brzegach).
+var ErrDuplicateStudent = errors.New("student with the same name and birth date already exists")
+
+// studentPersonUniqueConstraints to ograniczenia unikalności osoby: stara nazwa,
+// nazwa nadana w 0017 i indeks z 0018. Służą jako zabezpieczenie przed wyścigiem
+// dwóch równoczesnych zapisów, gdy sprawdzenie w ensureNoDuplicateStudent nie wystarczy.
+var studentPersonUniqueConstraints = map[string]struct{}{
+	"unique_user_lastname_birthdate":  {},
+	"students_person_unique":          {},
+	"students_person_normalized_uidx": {},
+}
+
+// studentWriteError tłumaczy błędy bazy przy zapisie kursanta na błędy domenowe.
+func studentWriteError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if _, ok := studentPersonUniqueConstraints[pgErr.ConstraintName]; ok {
+			return ErrDuplicateStudent
+		}
+	}
+	return companyNotFoundAs(err)
+}
+
+// ensureNoDuplicateStudent blokuje duplikat osoby, także różniący się tylko wielkością
+// liter lub spacjami. Ograniczenie w bazie (0017) łapie wyłącznie identyczny zapis;
+// pełną regułę w bazie wprowadza 0018, możliwa dopiero po uporządkowaniu istniejących
+// duplikatów. excludeID pomija edytowanego kursanta.
+func ensureNoDuplicateStudent(ctx context.Context, q *dbsqlc.Queries, firstname, lastname string, birthdate pgtype.Date, excludeID pgtype.Int8) error {
+	_, err := q.FindDuplicateStudent(ctx, dbsqlc.FindDuplicateStudentParams{
+		Firstname: firstname,
+		Lastname:  lastname,
+		Birthdate: birthdate,
+		ExcludeID: excludeID,
+	})
+	if err == nil {
+		return ErrDuplicateStudent
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	return err
+}
+
+// personKeyChanged mówi, czy edycja zmienia dane identyfikujące osobę. Porównanie
+// odpowiada normalizacji z FindDuplicateStudent.
+func personKeyChanged(before dbsqlc.GetStudentByIDRow, params dbsqlc.UpdateStudentParams) bool {
+	normalize := func(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+	return normalize(before.Firstname) != normalize(params.Firstname) ||
+		normalize(before.Lastname) != normalize(params.Lastname) ||
+		!before.Birthdate.Time.Equal(params.Birthdate.Time)
 }
 
 type txScope struct {
@@ -89,9 +143,13 @@ func (s *Service) Create(ctx context.Context, req CreateStudentRequest) (Student
 		}
 	}()
 
+	if err := ensureNoDuplicateStudent(ctx, tx.queries, params.Firstname, params.Lastname, params.Birthdate, pgtype.Int8{}); err != nil {
+		return StudentDetailsDTO{}, err
+	}
+
 	createdStudent, err := tx.queries.CreateStudent(ctx, params)
 	if err != nil {
-		return StudentDetailsDTO{}, companyNotFoundAs(err)
+		return StudentDetailsDTO{}, studentWriteError(err)
 	}
 
 	createdSnapshot := mapCreateStudentRow(createdStudent)
@@ -144,9 +202,17 @@ func (s *Service) Update(ctx context.Context, studentID int64, req UpdateStudent
 		return StudentDetailsDTO{}, err
 	}
 
+	// Sprawdzamy duplikat tylko przy zmianie danych osoby - inaczej rekordów z istniejących
+	// grup duplikatów nie dałoby się edytować (np. poprawić telefonu) przed ich scaleniem.
+	if personKeyChanged(beforeStudent, params) {
+		if err := ensureNoDuplicateStudent(ctx, tx.queries, params.Firstname, params.Lastname, params.Birthdate, pgtype.Int8{Int64: studentID, Valid: true}); err != nil {
+			return StudentDetailsDTO{}, err
+		}
+	}
+
 	updatedStudent, err := tx.queries.UpdateStudent(ctx, params)
 	if err != nil {
-		return StudentDetailsDTO{}, companyNotFoundAs(err)
+		return StudentDetailsDTO{}, studentWriteError(err)
 	}
 
 	beforeSnapshot := mapStudentGetRow(beforeStudent)

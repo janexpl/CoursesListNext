@@ -226,6 +226,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
 			return
 		}
+		if errors.Is(err, ErrDuplicateStudent) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "student with the same name and birth date already exists")
+			return
+		}
 		response.HandleDBError(w, err, "student")
 		return
 	}
@@ -282,6 +286,10 @@ func (h *Handler) CreateStudent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrCompanyNotFound) {
 			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "company not found")
+			return
+		}
+		if errors.Is(err, ErrDuplicateStudent) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "student with the same name and birth date already exists")
 			return
 		}
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create student")

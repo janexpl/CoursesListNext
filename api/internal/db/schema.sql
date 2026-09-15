@@ -37,13 +37,23 @@ CREATE INDEX students_company_id_idx
     ON students (company_id)
     WHERE company_id IS NOT NULL;
 
+-- Unikalność osoby: dokładny zapis (0017) oraz bez rozróżniania wielkości liter
+-- i spacji na brzegach (0018; na bazach z istniejącymi duplikatami do czasu ich
+-- uporządkowania zamiast tego indeksu działa students_person_lookup_idx z 0017).
+ALTER TABLE students
+    ADD CONSTRAINT students_person_unique UNIQUE (firstname, lastname, birthdate);
+
+CREATE UNIQUE INDEX students_person_normalized_uidx
+    ON students (lower(btrim(firstname)), lower(btrim(lastname)), birthdate);
+
 CREATE TABLE users (
     id bigint PRIMARY KEY,
     email text NOT NULL,
     password bytea NOT NULL,
     firstname text NOT NULL,
     lastname text NOT NULL,
-    role integer NOT NULL
+    role integer NOT NULL,
+    CONSTRAINT users_email_unique UNIQUE (email)
 );
 
 CREATE TABLE api_sessions (

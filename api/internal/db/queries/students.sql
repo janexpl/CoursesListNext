@@ -174,3 +174,17 @@
   FROM inserted s
   LEFT JOIN companies c ON c.id = s.company_id;
 
+
+-- name: FindDuplicateStudent :one
+-- Szuka innego kursanta z tym samym imieniem, nazwiskiem i datą urodzenia, bez
+-- rozróżniania wielkości liter i spacji na brzegach. Warunek na lower(btrim(lastname))
+-- i birthdate korzysta z indeksu students_person_lookup_idx (0017) lub
+-- students_person_normalized_uidx (0018).
+SELECT id
+FROM students
+WHERE lower(btrim(lastname)) = lower(btrim(sqlc.arg(lastname)::text))
+  AND birthdate = sqlc.arg(birthdate)
+  AND lower(btrim(firstname)) = lower(btrim(sqlc.arg(firstname)::text))
+  AND (sqlc.narg(exclude_id)::bigint IS NULL OR id <> sqlc.narg(exclude_id)::bigint)
+ORDER BY id
+LIMIT 1;

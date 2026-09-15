@@ -151,6 +151,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Istnieje już kursant o tym samym imieniu, nazwisku i dacie urodzenia — bez rozróżniania wielkości
+            liter i spacji na brzegach (`student with the same name and birth date already exists`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -207,6 +215,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           description: "Kursant nie istnieje (`student not found`) albo firma z `companyId` nie istnieje (`company not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Istnieje już kursant o tym samym imieniu, nazwisku i dacie urodzenia — bez rozróżniania wielkości
+            liter i spacji na brzegach (`student with the same name and birth date already exists`).
           content:
             application/json:
               schema:
@@ -2384,7 +2400,8 @@ components:
       additionalProperties: false
       description: >-
         Wymagane pola nie mogą być puste po obcięciu białych znaków. Puste stringi w polach opcjonalnych
-        są zapisywane jako `null`. PESEL nie jest walidowany.
+        są zapisywane jako `null`. PESEL nie jest walidowany. Imię, nazwisko i data urodzenia identyfikują osobę:
+        drugi kursant z tymi samymi wartościami (bez rozróżniania wielkości liter i spacji) jest odrzucany (409).
       required: [firstName, lastName, birthDate, birthPlace]
       properties:
         firstName:

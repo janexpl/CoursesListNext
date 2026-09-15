@@ -133,6 +133,40 @@ func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (C
 	return i, err
 }
 
+const findDuplicateStudent = `-- name: FindDuplicateStudent :one
+SELECT id
+FROM students
+WHERE lower(btrim(lastname)) = lower(btrim($1::text))
+  AND birthdate = $2
+  AND lower(btrim(firstname)) = lower(btrim($3::text))
+  AND ($4::bigint IS NULL OR id <> $4::bigint)
+ORDER BY id
+LIMIT 1
+`
+
+type FindDuplicateStudentParams struct {
+	Lastname  string      `json:"lastname"`
+	Birthdate pgtype.Date `json:"birthdate"`
+	Firstname string      `json:"firstname"`
+	ExcludeID pgtype.Int8 `json:"exclude_id"`
+}
+
+// Szuka innego kursanta z tym samym imieniem, nazwiskiem i datą urodzenia, bez
+// rozróżniania wielkości liter i spacji na brzegach. Warunek na lower(btrim(lastname))
+// i birthdate korzysta z indeksu students_person_lookup_idx (0017) lub
+// students_person_normalized_uidx (0018).
+func (q *Queries) FindDuplicateStudent(ctx context.Context, arg FindDuplicateStudentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, findDuplicateStudent,
+		arg.Lastname,
+		arg.Birthdate,
+		arg.Firstname,
+		arg.ExcludeID,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getStudentByID = `-- name: GetStudentByID :one
   SELECT
       s.id,

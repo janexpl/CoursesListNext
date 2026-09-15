@@ -1218,3 +1218,32 @@ func TestSubordinateStudentListsReturnNotFoundForMissingParent(t *testing.T) {
 		}
 	}
 }
+
+func TestStudentWritesReturnConflictForDuplicatePerson(t *testing.T) {
+	handler := NewHandler(dbsqlc.New(fakeDB{}), fakeCreator{
+		createFunc: func(context.Context, CreateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, ErrDuplicateStudent
+		},
+		updateFunc: func(context.Context, int64, UpdateStudentRequest) (StudentDetailsDTO, error) {
+			return StudentDetailsDTO{}, ErrDuplicateStudent
+		},
+	})
+	body := `{"firstName":"Jan","lastName":"Kowalski","birthDate":"1990-01-10","birthPlace":"Warszawa"}`
+
+	create := httptest.NewRecorder()
+	handler.CreateStudent(create, httptest.NewRequest(http.MethodPost, "/api/v1/students", strings.NewReader(body)))
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/students/5", strings.NewReader(body))
+	patchReq.SetPathValue("id", "5")
+	patch := httptest.NewRecorder()
+	handler.Patch(patch, patchReq)
+
+	for name, rec := range map[string]*httptest.ResponseRecorder{"POST": create, "PATCH": patch} {
+		var payload response.ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: failed to decode response: %v", name, err)
+		}
+		if rec.Code != http.StatusConflict || payload.Error.Message != "student with the same name and birth date already exists" {
+			t.Fatalf("%s: expected 409 for a duplicate person, got %d %q", name, rec.Code, payload.Error.Message)
+		}
+	}
+}

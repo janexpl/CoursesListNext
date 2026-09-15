@@ -705,6 +705,7 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:nip validation error: invalid nip checksum': 'Podany NIP ma nieprawidłową sumę kontrolną.',
   'not_found:company not found in GUS registry': 'Nie znaleziono firmy dla podanego NIP.',
   'not_found:company not found': 'Nie znaleziono firmy.',
+  'conflict:student with the same name and birth date already exists': 'Kursant o tym imieniu, nazwisku i dacie urodzenia już istnieje.',
   'bad_request:nip validation error: nip contains invalid characters': 'NIP może zawierać wyłącznie cyfry.',
   'internal_error:gus lookup is not configured': 'Pobieranie danych z GUS nie jest skonfigurowane.',
 

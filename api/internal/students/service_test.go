@@ -57,6 +57,10 @@ func TestServiceCreateRecordsAuditLog(t *testing.T) {
 		beginTxFn: func(context.Context) (txScope, error) {
 			return txScope{
 				queries: dbsqlc.New(fakeServiceDB{queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
+					// Sprawdzenie duplikatu osoby nie jest częścią scenariusza tych testów.
+					if strings.Contains(sql, "-- name: FindDuplicateStudent") {
+						return fakeServiceRow{err: pgx.ErrNoRows}
+					}
 					txCallCount++
 					switch txCallCount {
 					case 1:
@@ -135,6 +139,10 @@ func TestServiceUpdateRecordsAuditLog(t *testing.T) {
 		beginTxFn: func(context.Context) (txScope, error) {
 			return txScope{
 				queries: dbsqlc.New(fakeServiceDB{queryRow: func(_ context.Context, sql string, args ...interface{}) pgx.Row {
+					// Sprawdzenie duplikatu osoby nie jest częścią scenariusza tych testów.
+					if strings.Contains(sql, "-- name: FindDuplicateStudent") {
+						return fakeServiceRow{err: pgx.ErrNoRows}
+					}
 					txCallCount++
 					switch txCallCount {
 					case 1:
@@ -250,5 +258,148 @@ func TestCompanyNotFoundAsMapsOnlyTheCompanyForeignKey(t *testing.T) {
 	dbErr := errors.New("connection reset")
 	if err := companyNotFoundAs(dbErr); !errors.Is(err, dbErr) {
 		t.Fatalf("expected unrelated errors to pass through, got %v", err)
+	}
+}
+
+func TestStudentWriteErrorMapsPersonUniqueConstraints(t *testing.T) {
+	for _, name := range []string{"unique_user_lastname_birthdate", "students_person_unique", "students_person_normalized_uidx"} {
+		err := studentWriteError(&pgconn.PgError{Code: "23505", ConstraintName: name})
+		if !errors.Is(err, ErrDuplicateStudent) {
+			t.Fatalf("expected ErrDuplicateStudent for %q, got %v", name, err)
+		}
+	}
+	if err := studentWriteError(&pgconn.PgError{Code: "23503", ConstraintName: "fk_company"}); !errors.Is(err, ErrCompanyNotFound) {
+		t.Fatalf("expected foreign key violations to still map to ErrCompanyNotFound, got %v", err)
+	}
+	if err := studentWriteError(&pgconn.PgError{Code: "23505", ConstraintName: "students_pkey"}); errors.Is(err, ErrDuplicateStudent) {
+		t.Fatal("an unrelated unique violation must not be reported as a duplicate student")
+	}
+}
+
+func TestPersonKeyChanged(t *testing.T) {
+	before := dbsqlc.GetStudentByIDRow{
+		Firstname: " Jan",
+		Lastname:  "Kowalski ",
+		Birthdate: pgtype.Date{Time: time.Date(1990, 1, 10, 0, 0, 0, 0, time.UTC), Valid: true},
+	}
+	same := func(firstname, lastname string, birthdate time.Time) dbsqlc.UpdateStudentParams {
+		return dbsqlc.UpdateStudentParams{Firstname: firstname, Lastname: lastname, Birthdate: pgtype.Date{Time: birthdate, Valid: true}}
+	}
+	day := time.Date(1990, 1, 10, 0, 0, 0, 0, time.UTC)
+
+	if personKeyChanged(before, same("JAN", "kowalski", day)) {
+		t.Fatal("a change of letter case or surrounding spaces must not count as a different person")
+	}
+	if !personKeyChanged(before, same("Janusz", "Kowalski", day)) {
+		t.Fatal("a different first name must count as a change")
+	}
+	if !personKeyChanged(before, same("Jan", "Kowalski", day.AddDate(0, 0, 1))) {
+		t.Fatal("a different birth date must count as a change")
+	}
+}
+
+// studentWriteDB symuluje bazę dla zapisu kursanta: duplicateID > 0 oznacza, że
+// FindDuplicateStudent znajduje innego kursanta; writes zlicza próby zapisu.
+type studentWriteDB struct {
+	duplicateID int64
+	lookups     *int
+	writes      *int
+}
+
+func (d studentWriteDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, errors.New("unexpected exec")
+}
+
+func (d studentWriteDB) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, errors.New("unexpected query")
+}
+
+func (d studentWriteDB) QueryRow(_ context.Context, sql string, _ ...interface{}) pgx.Row {
+	switch {
+	case strings.Contains(sql, "-- name: FindDuplicateStudent"):
+		*d.lookups++
+		if d.duplicateID > 0 {
+			return fakeServiceRow{scan: func(dest ...interface{}) error {
+				*(dest[0].(*int64)) = d.duplicateID
+				return nil
+			}}
+		}
+		return fakeServiceRow{err: pgx.ErrNoRows}
+	case strings.Contains(sql, "-- name: GetStudentByID"):
+		return fakeServiceRow{scan: func(dest ...interface{}) error {
+			*(dest[0].(*int64)) = 21
+			*(dest[1].(*string)) = "Jan"
+			*(dest[2].(*string)) = "Kowalski"
+			*(dest[4].(*pgtype.Date)) = pgtype.Date{Time: time.Date(1990, 1, 10, 0, 0, 0, 0, time.UTC), Valid: true}
+			*(dest[5].(*string)) = "Warszawa"
+			return nil
+		}}
+	case strings.Contains(sql, "INSERT INTO students"), strings.Contains(sql, "UPDATE students"):
+		*d.writes++
+		return fakeServiceRow{err: errors.New("write reached the database")}
+	default:
+		return fakeServiceRow{err: errors.New("unexpected query row: " + sql)}
+	}
+}
+
+func studentWriteService(db studentWriteDB) *Service {
+	return &Service{
+		beginTxFn: func(context.Context) (txScope, error) {
+			return txScope{
+				queries:  dbsqlc.New(db),
+				commit:   func(context.Context) error { return nil },
+				rollback: func(context.Context) error { return nil },
+			}, nil
+		},
+	}
+}
+
+func TestServiceCreateRejectsDuplicatePersonBeforeWriting(t *testing.T) {
+	lookups, writes := 0, 0
+	service := studentWriteService(studentWriteDB{duplicateID: 7, lookups: &lookups, writes: &writes})
+
+	_, err := service.Create(context.Background(), CreateStudentRequest{studentPayload: studentPayload{
+		FirstName: "JAN", LastName: "kowalski", BirthDate: "1990-01-10", BirthPlace: "Warszawa",
+	}})
+
+	if !errors.Is(err, ErrDuplicateStudent) {
+		t.Fatalf("expected ErrDuplicateStudent, got %v", err)
+	}
+	if lookups != 1 || writes != 0 {
+		t.Fatalf("expected one lookup and no write, got lookups=%d writes=%d", lookups, writes)
+	}
+}
+
+func TestServiceUpdateSkipsDuplicateCheckWhenPersonIsUnchanged(t *testing.T) {
+	// Istniejący duplikat nie może blokować edycji innych danych, np. telefonu.
+	lookups, writes := 0, 0
+	service := studentWriteService(studentWriteDB{duplicateID: 7, lookups: &lookups, writes: &writes})
+	telephone := "500600700"
+
+	_, _ = service.Update(context.Background(), 21, UpdateStudentRequest{studentPayload: studentPayload{
+		FirstName: "Jan", LastName: "Kowalski", BirthDate: "1990-01-10", BirthPlace: "Warszawa", Telephone: &telephone,
+	}})
+
+	if lookups != 0 {
+		t.Fatalf("expected no duplicate lookup when name and birth date are unchanged, got %d", lookups)
+	}
+	if writes != 1 {
+		t.Fatalf("expected the update to reach the database, got %d writes", writes)
+	}
+}
+
+func TestServiceUpdateRejectsRenameIntoDuplicate(t *testing.T) {
+	lookups, writes := 0, 0
+	service := studentWriteService(studentWriteDB{duplicateID: 7, lookups: &lookups, writes: &writes})
+
+	_, err := service.Update(context.Background(), 21, UpdateStudentRequest{studentPayload: studentPayload{
+		FirstName: "Anna", LastName: "Kowalska", BirthDate: "1990-01-10", BirthPlace: "Warszawa",
+	}})
+
+	if !errors.Is(err, ErrDuplicateStudent) {
+		t.Fatalf("expected ErrDuplicateStudent, got %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("expected no write for a duplicate, got %d", writes)
 	}
 }
