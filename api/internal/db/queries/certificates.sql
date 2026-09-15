@@ -185,57 +185,58 @@ WITH updated AS (
         company_id_snapshot = sqlc.arg(company_id_snapshot)
     WHERE c.id = sqlc.arg(certificate_id)
       AND c.deleted_at IS NULL
-    RETURNING c.id
+    -- RETURNING całego wiersza: główne zapytanie widzi migawkę sprzed UPDATE w CTE, więc
+    -- dane zaświadczenia muszą pochodzić z RETURNING, a nie z ponownego odczytu tabeli.
+    RETURNING c.*
 )
 SELECT
-    c.id,
-    c.date,
-    c.student_id,
-    c.student_firstname_snapshot AS student_firstname,
-    c.student_secondname_snapshot AS student_secondname,
-    c.student_lastname_snapshot AS student_lastname,
-    c.student_birthdate_snapshot AS student_birthdate,
-    c.student_birthplace_snapshot AS student_birthplace,
-    c.student_pesel_snapshot AS student_pesel,
-    c.company_name_snapshot AS company_name,
-    c.coursedatestart AS course_date_start,
-    c.coursedateend AS course_date_end,
+    u.id,
+    u.date,
+    u.student_id,
+    u.student_firstname_snapshot AS student_firstname,
+    u.student_secondname_snapshot AS student_secondname,
+    u.student_lastname_snapshot AS student_lastname,
+    u.student_birthdate_snapshot AS student_birthdate,
+    u.student_birthplace_snapshot AS student_birthplace,
+    u.student_pesel_snapshot AS student_pesel,
+    u.company_name_snapshot AS company_name,
+    u.coursedatestart AS course_date_start,
+    u.coursedateend AS course_date_end,
     r.id AS registry_id,
     r.year AS registry_year,
     r.number::bigint AS registry_number,
     r.course_id AS course_id,
-    c.course_name_snapshot AS course_name,
-    c.course_symbol_snapshot AS course_symbol,
-    c.course_expiry_time_snapshot AS course_expiry_time,
-    c.course_program_snapshot::text AS course_program,
-    c.cert_front_page_snapshot AS cert_front_page,
-    c.language_code,
+    u.course_name_snapshot AS course_name,
+    u.course_symbol_snapshot AS course_symbol,
+    u.course_expiry_time_snapshot AS course_expiry_time,
+    u.course_program_snapshot::text AS course_program,
+    u.cert_front_page_snapshot AS cert_front_page,
+    u.language_code,
     tja.id AS journal_attendee_id,
     tj.id AS journal_id,
     tj.title AS journal_title,
     tj.status AS journal_status,
     COALESCE(
         CASE
-            WHEN c.coursedateend IS NOT NULL
-                AND c.course_expiry_time_snapshot IS NOT NULL
-                AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
-            THEN TO_CHAR(c.coursedateend + c.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
+            WHEN u.coursedateend IS NOT NULL
+                AND u.course_expiry_time_snapshot IS NOT NULL
+                AND u.course_expiry_time_snapshot ~ '^[0-9]+$'
+            THEN TO_CHAR(u.coursedateend + u.course_expiry_time_snapshot::int * 365, 'YYYY-MM-DD')
             ELSE NULL::text
         END,
         ''
     ) AS expiry_date,
-    c.verification_code,
-    c.revoked_at,
-    c.revoke_reason,
-    c.supersedes_id,
+    u.verification_code,
+    u.revoked_at,
+    u.revoke_reason,
+    u.supersedes_id,
     sup.id AS superseded_by_id,
-    c.duplicate_reason
+    u.duplicate_reason
 FROM updated u
-JOIN certificates c ON c.id = u.id
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
-LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
+LEFT JOIN certificates sup ON sup.supersedes_id = u.id AND sup.deleted_at IS NULL
+LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
-JOIN registries r ON r.id = c.registry_id;
+JOIN registries r ON r.id = u.registry_id;
 
 -- name: SoftDeleteCertificate :one
   UPDATE certificates
