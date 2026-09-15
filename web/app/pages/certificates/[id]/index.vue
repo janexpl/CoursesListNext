@@ -14,6 +14,11 @@ const showDeleteConfirmation = ref(false)
 const deleteReason = ref('')
 const deletePending = ref(false)
 const deleteError = ref('')
+type LifecycleAction = 'revoke' | 'duplicate'
+const lifecycleAction = ref<LifecycleAction | null>(null)
+const lifecycleReason = ref('')
+const lifecyclePending = ref(false)
+const lifecycleError = ref('')
 
 const certificateId = computed(() => Number.parseInt(`${route.params.id}`, 10))
 
@@ -626,6 +631,44 @@ async function onDeleteCertificate() {
   }
 }
 
+function openLifecycleAction(action: LifecycleAction) {
+  lifecycleAction.value = lifecycleAction.value === action ? null : action
+  lifecycleReason.value = ''
+  lifecycleError.value = ''
+}
+
+async function onConfirmLifecycleAction() {
+  const action = lifecycleAction.value
+  const reason = lifecycleReason.value.trim()
+  if (!action) {
+    return
+  }
+  if (!reason) {
+    lifecycleError.value = 'Podaj powód.'
+    return
+  }
+
+  lifecycleError.value = ''
+  lifecyclePending.value = true
+  try {
+    if (action === 'revoke') {
+      await api.revokeCertificate(certificateId.value, { reason })
+      lifecycleAction.value = null
+      await refreshAll()
+    } else {
+      const response = await api.duplicateCertificate(certificateId.value, { reason })
+      await navigateTo(`/certificates/${response.data.id}`)
+    }
+  } catch (apiError) {
+    lifecycleError.value = getApiErrorMessage(
+      apiError,
+      action === 'revoke' ? 'Nie udało się unieważnić zaświadczenia.' : 'Nie udało się wystawić duplikatu.'
+    )
+  } finally {
+    lifecyclePending.value = false
+  }
+}
+
 async function refreshAll() {
   await Promise.all([
     refresh(),
@@ -679,11 +722,30 @@ useSeoMeta({
         </NuxtLink>
 
         <NuxtLink
+          v-if="!certificate?.revokedAt"
           :to="editCertificateLink"
           class="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
         >
           Edytuj zaświadczenie
         </NuxtLink>
+
+        <button
+          v-if="certificate && !certificate.revokedAt && !certificate.supersededById"
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+          @click="openLifecycleAction('duplicate')"
+        >
+          Wystaw duplikat
+        </button>
+
+        <button
+          v-if="certificate && !certificate.revokedAt"
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:border-amber-300 hover:bg-amber-100"
+          @click="openLifecycleAction('revoke')"
+        >
+          Unieważnij
+        </button>
 
         <button
           v-if="isAdmin"
@@ -718,6 +780,7 @@ useSeoMeta({
         </label>
 
         <a
+          v-if="!certificate?.revokedAt"
           :href="pdfDownloadUrl"
           class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
         >
@@ -725,6 +788,7 @@ useSeoMeta({
         </a>
 
         <button
+          v-if="!certificate?.revokedAt"
           type="button"
           class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
           @click="printCertificatePreview"
@@ -749,6 +813,100 @@ useSeoMeta({
     </div>
 
     <template v-else>
+      <div
+        v-if="certificate.revokedAt"
+        class="rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-sm text-red-800"
+      >
+        <p class="text-base font-semibold text-red-900">
+          Zaświadczenie unieważnione {{ certificate.revokedAt }}
+        </p>
+        <p class="mt-1">
+          Powód: {{ certificate.revokeReason }}. Numer w rejestrze pozostaje zajęty, a wydruk jest niedostępny.
+        </p>
+      </div>
+
+      <div
+        v-if="certificate.supersededById || certificate.supersedesId"
+        class="rounded-xl border border-sky-200 bg-sky-50 px-6 py-5 text-sm text-sky-900"
+      >
+        <p v-if="certificate.supersededById">
+          Zastąpione duplikatem:
+          <NuxtLink
+            :to="`/certificates/${certificate.supersededById}`"
+            class="font-semibold underline"
+          >
+            przejdź do duplikatu
+          </NuxtLink>
+        </p>
+        <p v-if="certificate.supersedesId">
+          Duplikat zaświadczenia
+          <NuxtLink
+            :to="`/certificates/${certificate.supersedesId}`"
+            class="font-semibold underline"
+          >
+            przejdź do oryginału
+          </NuxtLink>
+          <span v-if="certificate.duplicateReason">— powód: {{ certificate.duplicateReason }}</span>
+        </p>
+      </div>
+
+      <div
+        v-if="lifecycleAction"
+        class="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5"
+      >
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-lg font-semibold text-amber-900">
+              {{ lifecycleAction === 'revoke' ? 'Unieważnij zaświadczenie' : 'Wystaw duplikat zaświadczenia' }}
+            </h2>
+            <p class="text-sm leading-6 text-amber-900">
+              {{
+                lifecycleAction === 'revoke'
+                  ? 'Dokument pozostanie w rejestrze jako unieważniony, a jego numer nie zostanie użyty ponownie. Operacji nie można cofnąć.'
+                  : 'Powstanie nowy dokument z tymi samymi danymi, dzisiejszą datą i kolejnym numerem w rejestrze. Ten dokument zostanie oznaczony jako zastąpiony.'
+              }}
+            </p>
+          </div>
+
+          <label class="block space-y-2">
+            <span class="text-sm font-medium text-amber-900">Powód</span>
+            <textarea
+              v-model="lifecycleReason"
+              rows="3"
+              :placeholder="lifecycleAction === 'revoke' ? 'Np. błędne dane kursanta' : 'Np. utrata oryginału'"
+              class="w-full rounded-md border border-amber-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+            />
+          </label>
+
+          <div
+            v-if="lifecycleError"
+            class="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm text-red-700"
+          >
+            {{ lifecycleError }}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300"
+              :disabled="lifecyclePending"
+              @click="onConfirmLifecycleAction"
+            >
+              {{ lifecyclePending ? 'Zapisywanie...' : (lifecycleAction === 'revoke' ? 'Potwierdź unieważnienie' : 'Wystaw duplikat') }}
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-800 transition hover:border-amber-300"
+              :disabled="lifecyclePending"
+              @click="lifecycleAction = null"
+            >
+              Anuluj
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div
         v-if="showDeleteConfirmation && isAdmin"
         class="rounded-xl border border-red-200 bg-red-50 px-6 py-5"
@@ -824,6 +982,9 @@ useSeoMeta({
           <p class="text-sm uppercase tracking-[0.16em] text-sky-300">Numer</p>
           <p class="mt-3 font-mono text-2xl font-semibold tracking-tight break-all">
             {{ certificateNumber }}
+          </p>
+          <p class="mt-2 text-xs text-slate-400">
+            Kod weryfikacyjny: <span class="font-mono text-sm text-white">{{ certificate.verificationCode }}</span>
           </p>
         </div>
       </div>

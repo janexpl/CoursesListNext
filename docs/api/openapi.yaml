@@ -1164,6 +1164,7 @@ paths:
         Pozwala zmienić kursanta i daty. Numer rejestru, kurs i język są niezmienne. Pominięte
         `courseDateEnd` zostanie ustawione na `null`. Zmiana kursanta odświeża kopię jego danych w
         zaświadczeniu. Odpowiedź ma ten sam kształt co GET, łącznie z pełną listą `printVariants`.
+        Unieważnionego zaświadczenia nie można zmieniać (409).
       x-required-scope: certificates:write
       requestBody:
         required: true
@@ -1194,6 +1195,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "Zaświadczenie jest unieważnione (`certificate is revoked`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
     delete:
@@ -1203,7 +1210,9 @@ paths:
       description: >-
         Ciało jest opcjonalne — służy tylko do podania powodu usunięcia.
         Usunięcie jest nieodwracalne przez API: zaświadczenie znika z list, `GET /certificates/{id}` i wydruk
-        zwracają odtąd 404, a jego numer rejestru można wykorzystać ponownie.
+        zwracają odtąd 404, a jego numer rejestru można wykorzystać ponownie — **z wyjątkiem zaświadczeń
+        unieważnionych**, których numer pozostaje zajęty także po usunięciu. Formalne wycofanie dokumentu to
+        `POST /certificates/{id}/revoke`, nie usunięcie.
       x-required-scope: certificates:write
       x-requires-admin: true
       requestBody:
@@ -1242,6 +1251,8 @@ paths:
       description: >-
         Renderowane na serwerze (wkhtmltopdf/Chromium) — może trwać kilka sekund; limit czasu żądania
         to 60 s. Nagłówek `Content-Disposition` zawiera nazwę pliku `zaswiadczenie-<numer>.pdf`.
+        Unieważnione zaświadczenie nie ma wydruku — 409 `certificate is revoked`. Zaświadczenie zastąpione
+        duplikatem można nadal wydrukować.
       x-required-scope: certificates:read
       parameters:
         - name: language
@@ -1273,6 +1284,123 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: "Zaświadczenie jest unieważnione (`certificate is revoked`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /certificates/{id}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [certificates]
+      operationId: revokeCertificate
+      summary: Unieważnienie zaświadczenia
+      description: >-
+        Dokument zostaje w bazie z `revokedAt` i `revokeReason`; nadal jest widoczny w `GET /certificates/{id}`
+        i na listach (pole `revokedAt`). Jego numer rejestru pozostaje zajęty na zawsze — nie nada go ani
+        wystawienie bez numeru, ani jawne podanie numeru, także po `DELETE`. Unieważnionego dokumentu nie można
+        zmienić (`PATCH` → 409), wydrukować (`/pdf` → 409) ani zduplikować. Operacji nie można cofnąć.
+      x-required-scope: certificates:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateLifecycleReason"
+      responses:
+        "200":
+          description: Zaświadczenie po unieważnieniu (kształt jak w GET).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          description: "`invalid certificate ID`, `invalid request body` (brak lub pusty `reason`, pole spoza schematu)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Zaświadczenie nie istnieje lub jest usunięte (`certificate not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "Zaświadczenie jest już unieważnione (`certificate already revoked`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /certificates/{id}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [certificates]
+      operationId: duplicateCertificate
+      summary: Wystawienie duplikatu zaświadczenia
+      description: >-
+        Tworzy **nowy** dokument z danymi skopiowanymi z oryginału (kursant, firma, treść kursu, daty kursu,
+        język) i własnym kodem weryfikacyjnym. Data wystawienia to dzień wykonania operacji. Numer rejestru
+        nadawany jak przy `POST /certificates` bez numeru: rok z `courseDateEnd` (albo `courseDateStart`),
+        numer = największy w kursie i roku + 1. Nowy dokument ma `supersedesId` = id oryginału, a oryginał
+        `supersededById` = id duplikatu; oryginał nie jest unieważniany.
+
+        Dokument może mieć jeden duplikat (kolejny wystawiasz od duplikatu). Operacja jest więc bezpieczna
+        przy ponowieniu: drugie wywołanie dla tego samego oryginału zwraca 409, a id duplikatu odczytasz
+        z `supersededById` oryginału.
+      x-required-scope: certificates:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateLifecycleReason"
+      responses:
+        "201":
+          description: Nowy dokument (kształt jak w GET).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          description: >-
+            `invalid certificate ID`, `invalid request body` (brak lub pusty `reason`), `invalid certificate data`
+            (dzisiejsza data narusza chronologię rejestru — w kursie i roku istnieje zaświadczenie z późniejszą datą).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Oryginał nie istnieje lub jest usunięty (`certificate not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Oryginał jest unieważniony (`certificate is revoked`) albo ma już duplikat
+            (`certificate already superseded`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -2788,7 +2916,7 @@ components:
           description: "`null` = kursant bez firmy."
     StudentCertificate:
       type: object
-      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate]
+      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, revokedAt, supersededById]
       properties:
         id:
           type: integer
@@ -2809,6 +2937,12 @@ components:
           $ref: "#/components/schemas/NullableDate"
         expiryDate:
           $ref: "#/components/schemas/ExpiryDate"
+        revokedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        supersededById:
+          type: [integer, "null"]
+          format: int64
+          description: Id duplikatu, który zastąpił ten dokument; `null`, gdy nie został zastąpiony.
     StudentCertificatesResponse:
       type: object
       required: [data]
@@ -3159,7 +3293,7 @@ components:
         lub okresu ważności.
     CertificateListItem:
       type: object
-      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode]
+      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode, revokedAt, supersededById]
       properties:
         id:
           type: integer
@@ -3189,6 +3323,12 @@ components:
         languageCode:
           type: string
           description: Język, w którym wystawiono zaświadczenie (`pl` lub kod tłumaczenia).
+        revokedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        supersededById:
+          type: [integer, "null"]
+          format: int64
+          description: Id duplikatu, który zastąpił ten dokument; `null`, gdy nie został zastąpiony.
     CertificateListResponse:
       type: object
       required: [data]
@@ -3237,7 +3377,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, supersedesId, supersededById, duplicateReason]
       properties:
         id:
           type: integer
@@ -3301,6 +3441,31 @@ components:
             $ref: "#/components/schemas/CertificatePrintVariant"
         verificationCode:
           $ref: "#/components/schemas/VerificationCode"
+        revokedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        revokeReason:
+          type: [string, "null"]
+          description: Powód unieważnienia; `null`, gdy dokument nie jest unieważniony.
+        supersedesId:
+          type: [integer, "null"]
+          format: int64
+          description: Id oryginału, gdy ten dokument jest duplikatem.
+        supersededById:
+          type: [integer, "null"]
+          format: int64
+          description: Id duplikatu, który zastąpił ten dokument.
+        duplicateReason:
+          type: [string, "null"]
+          description: Powód wystawienia duplikatu (tylko na duplikacie).
+    CertificateLifecycleReason:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: Niepusty po obcięciu białych znaków; zapisywany bez białych znaków na brzegach.
     VerificationCode:
       type: string
       pattern: "^[2-9A-HJ-NP-Z]{12}$"

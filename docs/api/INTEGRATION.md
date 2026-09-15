@@ -235,64 +235,81 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
 1. `studentName` na liście zaświadczeń to imię i nazwisko. W szczegółach dane są rozbite na
    `studentFirstname`, `studentSecondname` i `studentLastname`.
 2. `DELETE /certificates/{id}` wymaga konta administratora. Usunięte zaświadczenie daje później 404 na GET i PDF,
-   a jego numer rejestru można wykorzystać ponownie.
-3. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
+   a jego numer rejestru można wykorzystać ponownie (poza unieważnionym — niżej). **Do formalnego wycofania
+   dokumentu służy unieważnienie, nie usunięcie.**
+3. `POST /certificates/{id}/revoke` `{ "reason": "..." }` unieważnia dokument: zostaje w rejestrze, w GET i na
+   listach z `revokedAt` (w szczegółach też `revokeReason`), a jego numer jest zajęty **na zawsze** — także po
+   `DELETE`. Ponowne unieważnienie → 409 `certificate already revoked`. Unieważnionego dokumentu nie da się
+   zmienić (`PATCH` → 409 `certificate is revoked`) ani zduplikować.
+   **Decyzja dot. PDF:** `GET /certificates/{id}/pdf` dla unieważnionego dokumentu zwraca **409
+   `certificate is revoked`** — API nie generuje wydruku unieważnionego dokumentu (ani ze znakiem wodnym),
+   żeby nie krążył plik wyglądający na ważny. Stan i dane dokumentu są dostępne w `GET /certificates/{id}`.
+4. `POST /certificates/{id}/duplicate` `{ "reason": "..." }` wystawia duplikat: nowy dokument z kopią danych
+   oryginału, **dzisiejszą datą wystawienia**, nowym kodem weryfikacyjnym i kolejnym numerem (jak przy
+   wystawieniu bez numeru, sekcja 6.3). Odpowiedź `201` z pełnym nowym dokumentem (`supersedesId` = oryginał);
+   oryginał dostaje `supersededById` i pozostaje ważny. Dokument ma najwyżej jeden duplikat — ponowienie
+   → 409 `certificate already superseded` (id duplikatu jest w `supersededById` oryginału).
+   Konsekwencja chronologii rejestru: po duplikacie z dzisiejszą datą nowe zaświadczenia w tym kursie i roku
+   nie mogą mieć daty wcześniejszej niż dzisiejsza (400 `invalid certificate data`).
+5. Przypomnienia o wygasaniu (pulpit, `/internal/notifications/expiring-certificates`) pomijają dokumenty
+   unieważnione i zastąpione duplikatem — przypomina się o duplikacie.
+6. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
    i niezmienny. Dostają go wszystkie dokumenty (API, aplikacja webowa, dziennik, także te sprzed wprowadzenia kodu).
    Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
    `GET /certificates/by-verification-code/{code}` (`certificates:read`, wielkość liter bez znaczenia).
    Kod **nie jest drukowany** na PDF generowanym przez API.
-4. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
+7. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
    (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 
 ### Kursy
 
-5. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
+8. `courseProgram` to **string zawierający JSON**, nie zagnieżdżony obiekt:
    `"[{\"Subject\":\"Przepisy BHP\",\"TheoryTime\":\"4\",\"PracticeTime\":\"0\"}]"`.
    Musi być tablicą JSON (inaczej 400 `course program must be a JSON array`); klucze wielką literą, godziny jako stringi.
-6. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy.
+9. Tłumaczenia tylko w językach `en`, `de`, `uk`, `cs`, `sk`, `lt`; `pl` to język bazowy.
    Przy `PATCH /courses/{id}` pominięte `certificateTranslations` zostawia je bez zmian, a `[]` usuwa wszystkie (sekcja 4).
-7. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
+10. `expiryTime` równe `0` to poprawny okres ważności (kończy się z końcem kursu). Kurs bez terminu ważności ma `null` —
    nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
-8. `GET /courses` i `GET /courses/details` przyjmują `updatedSince` i `deliveredByPlatform` (sekcja 6.6).
+11. `GET /courses` i `GET /courses/details` przyjmują `updatedSince` i `deliveredByPlatform` (sekcja 6.6).
    Wartość `deliveredByPlatform` jest na elementach `GET /courses` i pod `GET /courses/{id}/platform-delivery`,
    ale **nie** w `CourseDetails` (także nie w `GET /courses/details`) — kształt `CourseDetails` się nie zmienia.
 
 ### Kursanci i firmy
 
-9. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
+12. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
    `GET /companies/lookup-by-nip`) i zapisywany jako same cyfry — `123-456-32-18` wróci jako `1234563218`.
-10. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-11. Brak operacji usuwania kursantów, firm i kursów.
-12. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
+13. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+14. Brak operacji usuwania kursantów, firm i kursów.
+15. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
     wartościach, także różniących się tylko wielkością liter lub spacjami (409). Przed utworzeniem kursanta
     wyszukaj go (`GET /students?search=...`). Dane sprzed wprowadzenia tej reguły mogą zawierać takie duplikaty;
     edycja rekordu z takiej pary, zmieniająca jego zapis na identyczny z bliźniakiem, też zwróci 409.
     Integracje, które mają własny identyfikator osoby, powinny zamiast tego używać
     `PUT /students/by-external-id/{externalId}` (sekcja 6.2).
-13. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
+16. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
     Jest tylko do odczytu w `StudentDetails`/`CompanyDetails`, nie ma go na listach, a `POST` i `PATCH` go nie
     przyjmują (400) i nie zmieniają. Rekordy zakładane w aplikacji webowej mają `externalId: null`.
-14. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
+17. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
     firm nie ma telefonu).
 
 ### Dzienniki
 
-15. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+18. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
-16. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-17. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+19. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+20. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
     zaświadczeń ani usunięcia całego dziennika.
-18. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+21. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-19. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+22. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
     dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
-20. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+23. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
     to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
@@ -492,7 +509,7 @@ GET /api/v1/courses/details?updatedSince=2026-09-15T08:00:00Z&deliveredByPlatfor
 | 401 | Nie | Klucz nieważny — zatrzymaj integrację i zgłoś potrzebę nowego klucza. |
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
-| 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
+| 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `certificate already revoked` / `certificate already superseded` przy ponowieniu unieważnienia lub duplikatu oznaczają, że pierwsze wywołanie się powiodło — pobierz dokument przez GET. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
 | 500 | Ostrożnie | Błąd serwera. `POST /certificates` z `Idempotency-Key` możesz bezpiecznie ponawiać z opóźnieniem. Pozostałe operacje `POST` nie są idempotentne — ponów najwyżej raz. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany. `POST /certificates` z `Idempotency-Key` ponów z tym samym kluczem i ciałem (dostaniesz `200` z pierwotnym wynikiem, jeśli dokument powstał). Dla pozostałych operacji przed ponowieniem sprawdź, czy obiekt nie powstał. |
 

@@ -33,7 +33,7 @@ const activeRegistryNumberExistsForCourseYear = `-- name: ActiveRegistryNumberEx
    WHERE r.course_id = $1
      AND r.year = $2
      AND r.number = $3
-     AND c.deleted_at IS NULL
+     AND (c.deleted_at IS NULL OR c.revoked_at IS NOT NULL)
   )
 `
 
@@ -72,10 +72,11 @@ func (q *Queries) CreateRegistry(ctx context.Context, arg CreateRegistryParams) 
 }
 
 const getNextRegistryNumber = `-- name: GetNextRegistryNumber :one
+
 SELECT COALESCE(MAX(number), 0) + 1 AS next_number
 FROM registries
 JOIN certificates c ON c.registry_id = registries.id
-WHERE course_id = $1 AND year = $2 AND c.deleted_at IS NULL
+WHERE course_id = $1 AND year = $2 AND (c.deleted_at IS NULL OR c.revoked_at IS NOT NULL)
 `
 
 type GetNextRegistryNumberParams struct {
@@ -83,6 +84,8 @@ type GetNextRegistryNumberParams struct {
 	Year     int64 `json:"year"`
 }
 
+// Numer jest zajęty przez nieusunięte zaświadczenie albo przez unieważnione - to ostatnie
+// także po DELETE (numer unieważnionego dokumentu nie wraca do puli).
 func (q *Queries) GetNextRegistryNumber(ctx context.Context, arg GetNextRegistryNumberParams) (int32, error) {
 	row := q.db.QueryRow(ctx, getNextRegistryNumber, arg.CourseID, arg.Year)
 	var next_number int32
@@ -98,7 +101,7 @@ FROM certificates c
 JOIN registries r ON r.id = c.registry_id
 WHERE r.course_id = $1
   AND r.year = $2
-  AND c.deleted_at IS NULL
+  AND (c.deleted_at IS NULL OR c.revoked_at IS NOT NULL)
 ORDER BY r.number
 `
 

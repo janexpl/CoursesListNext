@@ -49,6 +49,8 @@ type CertificateByStudentDTO struct {
 	CourseDateStart string  `json:"courseDateStart"`
 	CourseDateEnd   *string `json:"courseDateEnd"`
 	ExpiryDate      *string `json:"expiryDate"`
+	RevokedAt       *string `json:"revokedAt"`
+	SupersededByID  *int64  `json:"supersededById"`
 }
 
 type ListCertificatesByStudentResponse struct {

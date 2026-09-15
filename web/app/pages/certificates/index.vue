@@ -286,6 +286,22 @@ function clearFilters() {
             <p class="mt-1 font-mono text-sm break-all text-slate-700">
               {{ certificateNumber(certificate) }}
             </p>
+            <UBadge
+              v-if="certificate.revokedAt"
+              color="error"
+              variant="subtle"
+              class="mt-1"
+            >
+              Unieważnione
+            </UBadge>
+            <UBadge
+              v-else-if="certificate.supersededById"
+              color="neutral"
+              variant="subtle"
+              class="mt-1"
+            >
+              Zastąpione duplikatem
+            </UBadge>
           </div>
 
           <div>

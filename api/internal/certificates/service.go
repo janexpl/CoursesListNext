@@ -459,6 +459,9 @@ func (s *Service) Update(ctx context.Context, certificateID int64, input UpdateC
 	if err != nil {
 		return dbsqlc.UpdateCertificateRow{}, err
 	}
+	if beforeCertificate.RevokedAt.Valid {
+		return dbsqlc.UpdateCertificateRow{}, ErrCertificateRevoked
+	}
 
 	updatedCertificate, err := tx.queries.UpdateCertificate(ctx, toUpdateCertificateParams(
 		certificateID,

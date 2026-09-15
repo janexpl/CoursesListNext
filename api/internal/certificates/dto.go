@@ -13,6 +13,8 @@ type CertificateDTO struct {
 	CourseDateEnd   *string `json:"courseDateEnd"`
 	ExpiryDate      *string `json:"expiryDate"`
 	LanguageCode    string  `json:"languageCode"`
+	RevokedAt       *string `json:"revokedAt"`
+	SupersededByID  *int64  `json:"supersededById"`
 }
 
 type CertificateDetailsDTO struct {
@@ -41,6 +43,16 @@ type CertificateDetailsDTO struct {
 	LanguageCode      string                       `json:"languageCode"`
 	PrintVariants     []CertificatePrintVariantDTO `json:"printVariants"`
 	VerificationCode  string                       `json:"verificationCode"`
+	RevokedAt         *string                      `json:"revokedAt"`
+	RevokeReason      *string                      `json:"revokeReason"`
+	SupersedesID      *int64                       `json:"supersedesId"`
+	SupersededByID    *int64                       `json:"supersededById"`
+	DuplicateReason   *string                      `json:"duplicateReason"`
+}
+
+// LifecycleRequest to ciało POST /certificates/{id}/revoke i /duplicate.
+type LifecycleRequest struct {
+	Reason *string `json:"reason"`
 }
 
 type CertificatePrintVariantDTO struct {

@@ -68,6 +68,11 @@ type Certificate struct {
 	DeleteReason              pgtype.Text        `json:"delete_reason"`
 	CompanyIDSnapshot         pgtype.Int8        `json:"company_id_snapshot"`
 	VerificationCode          string             `json:"verification_code"`
+	RevokedAt                 pgtype.Timestamptz `json:"revoked_at"`
+	RevokeReason              pgtype.Text        `json:"revoke_reason"`
+	RevokedByUserID           pgtype.Int8        `json:"revoked_by_user_id"`
+	SupersedesID              pgtype.Int8        `json:"supersedes_id"`
+	DuplicateReason           pgtype.Text        `json:"duplicate_reason"`
 }
 
 type Company struct {

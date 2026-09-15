@@ -622,6 +622,8 @@ export interface CertificateSummary {
   courseDateStart: string
   courseDateEnd: string | null
   expiryDate: string | null
+  revokedAt?: string | null
+  supersededById?: number | null
 }
 
 export interface CertificatesResponse {
@@ -663,6 +665,16 @@ export interface CertificateDetails {
     certFrontPage: string
     isOriginal: boolean
   }>
+  verificationCode: string
+  revokedAt: string | null
+  revokeReason: string | null
+  supersedesId: number | null
+  supersededById: number | null
+  duplicateReason: string | null
+}
+
+export interface CertificateLifecyclePayload {
+  reason: string
 }
 
 export interface CertificateResponse {
@@ -726,6 +738,11 @@ const apiErrorMessages: Record<string, string> = {
 
   // courses
   'conflict:failed to create course: symbol exist': 'Kurs o podanym symbolu już istnieje.',
+
+  // certificates: unieważnienie i duplikat
+  'conflict:certificate already revoked': 'To zaświadczenie zostało już unieważnione.',
+  'conflict:certificate is revoked': 'Operacja niedostępna dla unieważnionego zaświadczenia.',
+  'conflict:certificate already superseded': 'To zaświadczenie ma już wystawiony duplikat.',
 
   // certificates
   'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',
@@ -1051,6 +1068,14 @@ export function useApi() {
       body: payload
     }),
     createCertificate: async (payload: CreateCertificatePayload) => await request<CreateCertificateResponse>('/api/v1/certificates', {
+      method: 'POST',
+      body: payload
+    }),
+    revokeCertificate: async (id: number, payload: CertificateLifecyclePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}/revoke`, {
+      method: 'POST',
+      body: payload
+    }),
+    duplicateCertificate: async (id: number, payload: CertificateLifecyclePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}/duplicate`, {
       method: 'POST',
       body: payload
     })

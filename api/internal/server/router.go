@@ -124,6 +124,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates/{id}", certificateHandler.Get)
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificates/{id}/pdf", certificateHandler.PDF)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Patch("/certificates/{id}", certificateHandler.Patch)
+			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/revoke", certificateHandler.Revoke)
+			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/duplicate", certificateHandler.Duplicate)
 
 			r.With(auth.RequireScope(auth.ScopeDashboardRead)).Get("/dashboard", dashboardHandler.Get)
 

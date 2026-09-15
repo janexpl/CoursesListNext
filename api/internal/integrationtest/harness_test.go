@@ -38,6 +38,14 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/server"
 )
 
+// notificationsToken to statyczny token tras /internal/notifications w testach.
+const notificationsToken = "integration-notifications-token"
+
+// decodeJSONBody dekoduje ciało odpowiedzi spoza helpera call.
+func decodeJSONBody(resp *http.Response, dest any) error {
+	return json.NewDecoder(resp.Body).Decode(dest)
+}
+
 // baselineMigration to numer ostatniej migracji zawartej w baseline_schema.sql.
 const baselineMigration = 18
 
@@ -131,9 +139,10 @@ func setup(adminURL string) (*testEnv, error) {
 	}
 
 	cfg := &config.Config{
-		SessionTTL:        time.Hour,
-		SessionCookieName: "session_token",
-		LoginRateLimit:    600,
+		SessionTTL:            time.Hour,
+		SessionCookieName:     "session_token",
+		LoginRateLimit:        600,
+		NotificationsAPIToken: notificationsToken,
 	}
 	e.server = httptest.NewServer(server.NewRouter(server.Dependencies{
 		Queries: dbsqlc.New(pool),

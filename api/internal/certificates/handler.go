@@ -106,6 +106,97 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, resp)
 }
 
+// certificateLifecycle obsługuje unieważnienie i duplikat. Osobny interfejs, żeby nie
+// rozszerzać Creator o metody potrzebne tylko tym trasom.
+type certificateLifecycle interface {
+	Revoke(ctx context.Context, certificateID int64, reason string) error
+	Duplicate(ctx context.Context, originalID int64, reason string) (int64, error)
+}
+
+// decodeLifecycleRequest czyta {"reason": "..."}; powód jest wymagany i niepusty.
+func decodeLifecycleRequest(w http.ResponseWriter, r *http.Request) (int64, string, certificateLifecycle, bool) {
+	id, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate ID")
+		return 0, "", nil, false
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	req := LifecycleRequest{}
+	if err := decoder.Decode(&req); err != nil || req.Reason == nil || strings.TrimSpace(*req.Reason) == "" {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return 0, "", nil, false
+	}
+	return id, *req.Reason, nil, true
+}
+
+func (h *Handler) writeLifecycleError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidInput):
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+	case errors.Is(err, ErrInvalidRegistryDate):
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
+	case errors.Is(err, ErrCertificateNotFound):
+		response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "certificate not found")
+	case errors.Is(err, ErrCertificateAlreadyRevoked):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate already revoked")
+	case errors.Is(err, ErrCertificateRevoked):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate is revoked")
+	case errors.Is(err, ErrCertificateAlreadySuperseded):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate already superseded")
+	default:
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to update certificate")
+	}
+}
+
+func (h *Handler) writeCertificateDetails(w http.ResponseWriter, r *http.Request, status int, id int64) {
+	certificate, err := h.querier.GetCertificateByID(r.Context(), id)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+	response.WriteJSON(w, status, CertificateResponse{
+		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
+	})
+}
+
+// Revoke unieważnia zaświadczenie i zwraca je po zmianie.
+func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
+	lifecycle, ok := h.creator.(certificateLifecycle)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to update certificate")
+		return
+	}
+	id, reason, _, ok := decodeLifecycleRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := lifecycle.Revoke(r.Context(), id, reason); err != nil {
+		h.writeLifecycleError(w, err)
+		return
+	}
+	h.writeCertificateDetails(w, r, http.StatusOK, id)
+}
+
+// Duplicate wystawia duplikat zaświadczenia i zwraca nowy dokument (201).
+func (h *Handler) Duplicate(w http.ResponseWriter, r *http.Request) {
+	lifecycle, ok := h.creator.(certificateLifecycle)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create certificate")
+		return
+	}
+	id, reason, _, ok := decodeLifecycleRequest(w, r)
+	if !ok {
+		return
+	}
+	duplicateID, err := lifecycle.Duplicate(r.Context(), id, reason)
+	if err != nil {
+		h.writeLifecycleError(w, err)
+		return
+	}
+	h.writeCertificateDetails(w, r, http.StatusCreated, duplicateID)
+}
+
 // verificationCodeFinder to osobny interfejs, żeby nie rozszerzać Querier o metodę
 // potrzebną tylko jednej trasie.
 type verificationCodeFinder interface {
@@ -151,6 +242,13 @@ func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
 	certificate, err := h.querier.GetCertificateByID(r.Context(), id)
 	if err != nil {
 		response.HandleDBError(w, err, "certificate")
+		return
+	}
+
+	// Decyzja: unieważniony dokument nie ma wydruku (409), żeby nie krążył PDF
+	// wyglądający na ważny. Dane pozostają dostępne w GET /certificates/{id}.
+	if certificate.RevokedAt.Valid {
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate is revoked")
 		return
 	}
 
@@ -388,6 +486,10 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrStudentNotFound) {
 			response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "student not found")
+			return
+		}
+		if errors.Is(err, ErrCertificateRevoked) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate is revoked")
 			return
 		}
 		response.HandleDBError(w, err, "certificate")
@@ -681,6 +783,11 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		LanguageCode:      certificate.LanguageCode,
 		ExpiryDate:        expiryDate,
 		VerificationCode:  certificate.VerificationCode,
+		RevokedAt:         pgutil.NullableTimestampz(certificate.RevokedAt),
+		RevokeReason:      pgutil.NullableString(certificate.RevokeReason),
+		SupersedesID:      pgutil.NullableInt64(certificate.SupersedesID),
+		SupersededByID:    pgutil.NullableInt64(certificate.SupersededByID),
+		DuplicateReason:   pgutil.NullableString(certificate.DuplicateReason),
 		Journal:           journal,
 		PrintVariants:     printVariants,
 	}
@@ -832,6 +939,8 @@ func mapCertificatesResponse(row sqlc.ListCertificatesRow) CertificateDTO {
 		CourseDateEnd:   pgutil.NullableDate(row.CourseDateEnd),
 		LanguageCode:    row.LanguageCode,
 		ExpiryDate:      pgutil.NullableString(row.ExpiryDate),
+		RevokedAt:       pgutil.NullableTimestampz(row.RevokedAt),
+		SupersededByID:  pgutil.NullableInt64(row.SupersededByID),
 	}
 }
 
