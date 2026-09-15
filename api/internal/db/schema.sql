@@ -320,3 +320,13 @@ CREATE INDEX api_keys_user_id_idx ON api_keys (user_id);
 CREATE INDEX api_keys_active_created_idx
     ON api_keys (created_at DESC)
     WHERE revoked_at IS NULL;
+
+CREATE TABLE idempotency_keys (
+    key text PRIMARY KEY,
+    request_hash text NOT NULL,
+    certificate_id bigint NOT NULL REFERENCES certificates(id),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT idempotency_keys_key_length CHECK (char_length(key) BETWEEN 1 AND 255)
+);
+
+CREATE INDEX idempotency_keys_created_at_idx ON idempotency_keys (created_at);

@@ -2,6 +2,9 @@ package certificates
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"math"
@@ -30,6 +33,8 @@ var (
 	// samym pgx.ErrNoRows, który handler mapował na 500 albo mylące "certificate not found".
 	ErrStudentNotFound = errors.New("student not found")
 	ErrCourseNotFound  = errors.New("course not found")
+	// ErrIdempotencyKeyReused - klucz był już użyty z innym ciałem żądania.
+	ErrIdempotencyKeyReused = errors.New("idempotency key reused with different payload")
 )
 
 type CreateCertificateInput struct {
@@ -41,6 +46,12 @@ type CreateCertificateInput struct {
 	RegistryYear    int64
 	RegistryNumber  int32
 	LanguageCode    string
+	// AssignRegistryNumber - numer rejestru nadaje serwer (kolejny w kursie i roku).
+	// RegistryNumber musi wtedy być 0; RegistryYear równe 0 oznacza rok z daty
+	// zakończenia kursu, a bez niej - z daty rozpoczęcia.
+	AssignRegistryNumber bool
+	// IdempotencyKey - wartość nagłówka Idempotency-Key; pusta wyłącza idempotencję.
+	IdempotencyKey string
 }
 
 type UpdateCertificateInput struct {
@@ -51,7 +62,12 @@ type UpdateCertificateInput struct {
 }
 
 type CreateCertificateResult struct {
-	ID int64
+	ID             int64
+	RegistryYear   int64
+	RegistryNumber int32
+	// Replayed - zaświadczenie wystawiło wcześniejsze żądanie z tym samym kluczem
+	// idempotencji; nic nie zostało utworzone.
+	Replayed bool
 }
 
 type txScope struct {
@@ -100,6 +116,17 @@ func NewService(pool *pgxpool.Pool, queries *dbsqlc.Queries, recorder *auditlog.
 }
 
 func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {
+	var requestHash string
+	if input.IdempotencyKey != "" {
+		requestHash = idempotencyRequestHash(input)
+		// Ponowienie zwraca pierwotny wynik, zanim cokolwiek zostanie ponownie
+		// zwalidowane - kursant lub kurs mogły się w międzyczasie zmienić.
+		result, found, err := replayIdempotentCreate(ctx, s.queries, input.IdempotencyKey, requestHash)
+		if err != nil || found {
+			return result, err
+		}
+	}
+
 	if err := validateCreateInput(input); err != nil {
 		return CreateCertificateResult{}, err
 	}
@@ -161,6 +188,14 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 
 	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
 
+	registryYear := input.RegistryYear
+	if input.AssignRegistryNumber && registryYear == 0 {
+		registryYear = int64(courseDateStart.Time.Year())
+		if courseDateEnd.Valid {
+			registryYear = int64(courseDateEnd.Time.Year())
+		}
+	}
+
 	tx, err := s.beginTx(ctx)
 	if err != nil {
 		return CreateCertificateResult{}, err
@@ -174,28 +209,51 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 			}
 		}
 	}()
+	if input.IdempotencyKey != "" {
+		// Blokada klucza przed blokadą rejestru - stała kolejność wyklucza zakleszczenie.
+		if err = tx.queries.AcquireIdempotencyKeyLock(ctx, input.IdempotencyKey); err != nil {
+			return CreateCertificateResult{}, err
+		}
+		result, found, err := replayIdempotentCreate(ctx, tx.queries, input.IdempotencyKey, requestHash)
+		if err != nil || found {
+			return result, err
+		}
+	}
 	if err = tx.queries.AcquireRegistryLock(ctx, dbsqlc.AcquireRegistryLockParams{
 		CourseID: strconv.FormatInt(input.CourseID, 10),
-		Year:     strconv.FormatInt(input.RegistryYear, 10),
+		Year:     strconv.FormatInt(registryYear, 10),
 	}); err != nil {
 		return CreateCertificateResult{}, err
 	}
+
+	registryNumber := input.RegistryNumber
+	if input.AssignRegistryNumber {
+		// Pod blokadą rejestru (kurs, rok) - równoległe żądania dostają kolejne numery.
+		registryNumber, err = tx.queries.GetNextRegistryNumber(ctx, dbsqlc.GetNextRegistryNumberParams{
+			CourseID: input.CourseID,
+			Year:     registryYear,
+		})
+		if err != nil {
+			return CreateCertificateResult{}, err
+		}
+	}
+
 	rows, err := tx.queries.ListRegistryDatesForCourseYear(ctx, dbsqlc.ListRegistryDatesForCourseYearParams{
 		CourseID: input.CourseID,
-		Year:     input.RegistryYear,
+		Year:     registryYear,
 	})
 	if err != nil {
 		return CreateCertificateResult{}, err
 	}
 
-	if err := validateRegistryChronology(rows, input.RegistryNumber, certificateDate); err != nil {
+	if err := validateRegistryChronology(rows, registryNumber, certificateDate); err != nil {
 		return CreateCertificateResult{}, err
 	}
 
 	exists, err := tx.queries.ActiveRegistryNumberExistsForCourseYear(ctx, dbsqlc.ActiveRegistryNumberExistsForCourseYearParams{
 		CourseID: input.CourseID,
-		Year:     input.RegistryYear,
-		Number:   input.RegistryNumber,
+		Year:     registryYear,
+		Number:   registryNumber,
 	})
 	if err != nil {
 		return CreateCertificateResult{}, err
@@ -206,8 +264,8 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 
 	registryID, err := tx.queries.CreateRegistry(ctx, dbsqlc.CreateRegistryParams{
 		CourseID: input.CourseID,
-		Year:     input.RegistryYear,
-		Number:   input.RegistryNumber,
+		Year:     registryYear,
+		Number:   registryNumber,
 	})
 	if err != nil {
 		return CreateCertificateResult{}, err
@@ -234,6 +292,16 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		return CreateCertificateResult{}, err
 	}
 
+	if input.IdempotencyKey != "" {
+		if err := tx.queries.CreateIdempotencyKey(ctx, dbsqlc.CreateIdempotencyKeyParams{
+			Key:           input.IdempotencyKey,
+			RequestHash:   requestHash,
+			CertificateID: certificateID,
+		}); err != nil {
+			return CreateCertificateResult{}, err
+		}
+	}
+
 	if s.recorder != nil {
 		createdCertificate, err := tx.queries.GetCertificateByID(ctx, certificateID)
 		if err != nil {
@@ -257,7 +325,73 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 	}
 	committed = true
 
-	return CreateCertificateResult{ID: certificateID}, nil
+	return CreateCertificateResult{
+		ID:             certificateID,
+		RegistryYear:   registryYear,
+		RegistryNumber: registryNumber,
+	}, nil
+}
+
+type idempotencyKeyReader interface {
+	GetIdempotencyKey(ctx context.Context, key string) (dbsqlc.GetIdempotencyKeyRow, error)
+}
+
+// replayIdempotentCreate zwraca wynik wcześniejszego wystawienia pod tym kluczem.
+// found=false oznacza klucz nieznany - żądanie trzeba wykonać.
+func replayIdempotentCreate(ctx context.Context, q idempotencyKeyReader, key, requestHash string) (CreateCertificateResult, bool, error) {
+	stored, err := q.GetIdempotencyKey(ctx, key)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CreateCertificateResult{}, false, nil
+		}
+		return CreateCertificateResult{}, false, err
+	}
+	if stored.RequestHash != requestHash {
+		return CreateCertificateResult{}, true, ErrIdempotencyKeyReused
+	}
+	return CreateCertificateResult{
+		ID:             stored.CertificateID,
+		RegistryYear:   stored.RegistryYear,
+		RegistryNumber: stored.RegistryNumber,
+		Replayed:       true,
+	}, true, nil
+}
+
+// idempotencyRequestHash to odcisk ciała żądania po normalizacji, więc różnice bez
+// znaczenia (kolejność pól, białe znaki w JSON, pominięty languageCode zamiast "pl")
+// nie są traktowane jako "inne ciało".
+func idempotencyRequestHash(input CreateCertificateInput) string {
+	normalized := struct {
+		StudentID            int64   `json:"studentId"`
+		CourseID             int64   `json:"courseId"`
+		CertificateDate      string  `json:"certificateDate"`
+		CourseDateStart      string  `json:"courseDateStart"`
+		CourseDateEnd        *string `json:"courseDateEnd"`
+		RegistryYear         int64   `json:"registryYear"`
+		RegistryNumber       int32   `json:"registryNumber"`
+		AssignRegistryNumber bool    `json:"assignRegistryNumber"`
+		LanguageCode         string  `json:"languageCode"`
+	}{
+		StudentID:            input.StudentID,
+		CourseID:             input.CourseID,
+		CertificateDate:      strings.TrimSpace(input.CertificateDate),
+		CourseDateStart:      strings.TrimSpace(input.CourseDateStart),
+		RegistryYear:         input.RegistryYear,
+		RegistryNumber:       input.RegistryNumber,
+		AssignRegistryNumber: input.AssignRegistryNumber,
+		LanguageCode:         normalizeLanguageCode(input.LanguageCode),
+	}
+	if input.CourseDateEnd != nil {
+		end := strings.TrimSpace(*input.CourseDateEnd)
+		normalized.CourseDateEnd = &end
+	}
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		// Struktura zawiera wyłącznie typy proste - Marshal nie może zawieść.
+		panic(err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) Update(ctx context.Context, certificateID int64, input UpdateCertificateInput) (dbsqlc.UpdateCertificateRow, error) {
@@ -388,10 +522,17 @@ func parseOptionalDate(value *string) (pgtype.Date, error) {
 func validateCreateInput(input CreateCertificateInput) error {
 	if input.StudentID <= 0 ||
 		input.CourseID <= 0 ||
-		input.RegistryYear <= 0 ||
-		input.RegistryNumber <= 0 ||
 		strings.TrimSpace(input.CertificateDate) == "" ||
 		strings.TrimSpace(input.CourseDateStart) == "" {
+		return ErrInvalidInput
+	}
+	if input.AssignRegistryNumber {
+		if input.RegistryNumber != 0 || input.RegistryYear < 0 {
+			return ErrInvalidInput
+		}
+		return nil
+	}
+	if input.RegistryYear <= 0 || input.RegistryNumber <= 0 {
 		return ErrInvalidInput
 	}
 	return nil

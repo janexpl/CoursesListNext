@@ -803,11 +803,22 @@ paths:
         Reguły (patrz też INTEGRATION.md, sekcja o zaświadczeniach):
         - `certificateDate` nie może być wcześniejsza niż koniec kursu (`courseDateEnd`, a gdy brak — `courseDateStart`).
         - `courseDateEnd`, jeśli podana, nie może być wcześniejsza niż `courseDateStart`.
-        - Numer rejestru musi być wolny w obrębie (kurs, rok) i zachowywać chronologię: data zaświadczenia
-          musi mieścić się między datami zaświadczeń o sąsiednich numerach w tym samym kursie i roku.
-          Kolejny wolny numer pobierzesz z `GET /registries/next-number`.
+        - Numer rejestru: pomiń `registryNumber`, a serwer nada kolejny numer w obrębie (kurs, rok) atomowo —
+          równoległe żądania dostają różne, kolejne numery. Bez `registryYear` rok to rok `courseDateEnd`,
+          a gdy jej brak — `courseDateStart`. Nadany rok i numer zwraca odpowiedź.
+        - Podany jawnie `registryNumber` (wymaga `registryYear`) działa jak dotąd: musi być wolny w obrębie
+          (kurs, rok).
+        - W obu przypadkach numer musi zachowywać chronologię: data zaświadczenia musi mieścić się między datami
+          zaświadczeń o sąsiednich numerach w tym samym kursie i roku (inaczej 400).
         - `languageCode` inny niż `pl` wymaga istniejącego tłumaczenia kursu w tym języku.
+
+        Idempotencja: z nagłówkiem `Idempotency-Key` ponowienie żądania nie wystawi drugiego dokumentu.
+        Nieznany klucz — zaświadczenie powstaje, a klucz jest zapisywany w tej samej transakcji. Znany klucz
+        i to samo ciało — `200` z tym samym ciałem co pierwotne `201`. Znany klucz i inne ciało — `409`.
+        Klucz jest pamiętany co najmniej 30 dni.
       x-required-scope: certificates:write
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -815,17 +826,26 @@ paths:
             schema:
               $ref: "#/components/schemas/CertificateCreate"
       responses:
-        "201":
-          description: Wystawione zaświadczenie (tylko id — szczegóły pobierz przez GET).
+        "200":
+          description: >-
+            Ponowienie z tym samym `Idempotency-Key` i tym samym ciałem. Nic nie zostało utworzone; ciało jest
+            identyczne z pierwotną odpowiedzią `201`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IdResponse"
+                $ref: "#/components/schemas/CertificateCreatedResponse"
+        "201":
+          description: Wystawione zaświadczenie (id i numer rejestru — szczegóły pobierz przez GET).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateCreatedResponse"
         "400":
           description: >-
-            `invalid request body`, `invalid certificate data` (brak/niepoprawne pola, zła kolejność
-            dat kursu albo naruszona chronologia rejestru), `certificate date cannot be before course
-            end date`, `certificate translation not found`.
+            `invalid request body`, `invalid certificate data` (brak/niepoprawne pola, `registryNumber` bez
+            `registryYear`, zła kolejność dat kursu albo naruszona chronologia rejestru), `certificate date
+            cannot be before course end date`, `certificate translation not found`, `invalid Idempotency-Key
+            header`.
           content:
             application/json:
               schema:
@@ -841,7 +861,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: "Numer rejestru zajęty (`registry number already taken for the given year`)."
+          description: >-
+            Jawnie podany numer rejestru zajęty (`registry number already taken for the given year`) albo
+            `Idempotency-Key` użyty wcześniej z innym ciałem (`idempotency key reused with different payload`) —
+            w tym drugim przypadku nic nie zostało utworzone.
           content:
             application/json:
               schema:
@@ -2141,6 +2164,23 @@ components:
       description: "Data `YYYY-MM-DD`, włącznie."
       schema:
         $ref: "#/components/schemas/Date"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Klucz idempotencji wybrany przez klienta (np. UUID albo id zdarzenia po stronie platformy). Jeden
+        nagłówek, 1–255 widocznych znaków ASCII (bez spacji), porównywany bajt w bajt. Niepoprawny → 400
+        `invalid Idempotency-Key header`. "To samo ciało" oznacza te same wartości pól po normalizacji
+        (kolejność pól i białe znaki JSON nie mają znaczenia; pominięty `languageCode` = `pl`). Klucz jest
+        pamiętany co najmniej 30 dni od wystawienia; potem może zostać usunięty i ponowne użycie wystawi nowe
+        zaświadczenie.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: "^[\\x21-\\x7E]+$"
+        examples: ["platform-enrollment-8812-attempt"]
 
   requestBodies:
     ScanUpload:
@@ -2924,7 +2964,9 @@ components:
     CertificateCreate:
       type: object
       additionalProperties: false
-      required: [studentId, courseId, certificateDate, courseDateStart, registryYear, registryNumber]
+      required: [studentId, courseId, certificateDate, courseDateStart]
+      dependentRequired:
+        registryNumber: [registryYear]
       properties:
         studentId:
           type: integer
@@ -2945,14 +2987,38 @@ components:
           type: integer
           minimum: 1
           examples: [2026]
+          description: >-
+            Opcjonalny. Pominięty — rok z `courseDateEnd`, a gdy jej brak — z `courseDateStart`. Wymagany, gdy
+            podajesz `registryNumber`.
         registryNumber:
           type: integer
           format: int32
           minimum: 1
+          description: >-
+            Opcjonalny. Pominięty — serwer nadaje kolejny numer (największy w kursie i roku + 1) atomowo.
+            Podany — musi być wolny.
         languageCode:
           type: string
           default: pl
           description: "`pl` (domyślnie) albo kod istniejącego tłumaczenia kursu."
+    CertificateCreatedResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, registryYear, registryNumber]
+          properties:
+            id:
+              type: integer
+              format: int64
+            registryYear:
+              type: integer
+              examples: [2026]
+            registryNumber:
+              type: integer
+              format: int32
+              description: Numer nadany przez serwer albo podany w żądaniu.
     CertificateUpdate:
       type: object
       additionalProperties: false

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/janexpl/CoursesListNext/api/internal/config"
 	"github.com/janexpl/CoursesListNext/api/internal/db"
 	dbsql "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
@@ -17,6 +18,15 @@ import (
 // expiredSessionPurger deletes expired session rows; *dbsql.Queries satisfies it.
 type expiredSessionPurger interface {
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
+}
+
+// idempotencyKeyRetention - jak długo ponowienie z tym samym kluczem idempotencji
+// zwraca pierwotne zaświadczenie. Kontrakt API gwarantuje co najmniej 30 dni.
+const idempotencyKeyRetention = 30 * 24 * time.Hour
+
+// staleIdempotencyKeyPurger deletes idempotency keys past retention; *dbsql.Queries satisfies it.
+type staleIdempotencyKeyPurger interface {
+	DeleteIdempotencyKeysOlderThan(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error)
 }
 
 func main() {
@@ -37,6 +47,7 @@ func main() {
 	defer stop()
 
 	go startSessionCleanup(ctx, queries, cfg.SessionCleanupInterval)
+	go startIdempotencyKeyCleanup(ctx, queries, cfg.SessionCleanupInterval)
 
 	go func() {
 		log.Printf("api listening on :%s", cfg.Port)
@@ -79,5 +90,36 @@ func purgeExpiredSessions(ctx context.Context, purger expiredSessionPurger) {
 	}
 	if deleted > 0 {
 		log.Printf("deleted %d expired sessions", deleted)
+	}
+}
+
+// startIdempotencyKeyCleanup periodically removes idempotency keys older than
+// idempotencyKeyRetention until ctx is done, running once promptly at startup.
+func startIdempotencyKeyCleanup(ctx context.Context, purger staleIdempotencyKeyPurger, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	purgeStaleIdempotencyKeys(ctx, purger, time.Now())
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			purgeStaleIdempotencyKeys(ctx, purger, now)
+		}
+	}
+}
+
+func purgeStaleIdempotencyKeys(ctx context.Context, purger staleIdempotencyKeyPurger, now time.Time) {
+	deleted, err := purger.DeleteIdempotencyKeysOlderThan(ctx, pgtype.Timestamptz{
+		Time:  now.Add(-idempotencyKeyRetention),
+		Valid: true,
+	})
+	if err != nil {
+		log.Printf("failed to delete stale idempotency keys: %v", err)
+		return
+	}
+	if deleted > 0 {
+		log.Printf("deleted %d stale idempotency keys", deleted)
 	}
 }

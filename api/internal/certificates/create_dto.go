@@ -6,9 +6,10 @@ type CreateCertificateRequest struct {
 	CertificateDate string  `json:"certificateDate"`
 	CourseDateStart string  `json:"courseDateStart"`
 	CourseDateEnd   *string `json:"courseDateEnd"`
-	RegistryYear    int64   `json:"registryYear"`
-	RegistryNumber  int32   `json:"registryNumber"`
-	LanguageCode    string  `json:"languageCode,omitempty"`
+	// RegistryYear i RegistryNumber są opcjonalne: pominięty numer nadaje serwer.
+	RegistryYear   *int64 `json:"registryYear"`
+	RegistryNumber *int32 `json:"registryNumber"`
+	LanguageCode   string `json:"languageCode,omitempty"`
 }
 
 type CreateCertificateResponse struct {
@@ -16,5 +17,7 @@ type CreateCertificateResponse struct {
 }
 
 type CreateCertificateResponseData struct {
-	ID int64 `json:"id"`
+	ID             int64 `json:"id"`
+	RegistryYear   int64 `json:"registryYear"`
+	RegistryNumber int32 `json:"registryNumber"`
 }

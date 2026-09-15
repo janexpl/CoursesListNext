@@ -105,6 +105,13 @@ type CourseCertificateTranslation struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type IdempotencyKey struct {
+	Key           string             `json:"key"`
+	RequestHash   string             `json:"request_hash"`
+	CertificateID int64              `json:"certificate_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Registry struct {
 	ID       int64 `json:"id"`
 	CourseID int64 `json:"course_id"`

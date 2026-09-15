@@ -298,26 +298,54 @@ POST /api/v1/companies                                         # companies:write
 409 = firma już istnieje → znajdź ją przez `GET /companies?search=1234563218`. 400 `nip validation error: …` = niepoprawny NIP;
 `lookup-by-nip` stosuje tę samą walidację, więc NIP, który przeszedł wyszukiwanie w GUS, przejdzie też zapis.
 
-### 6.2. Wystawienie zaświadczenia ręcznie
+### 6.2. Wystawienie zaświadczenia
+
+Zalecany sposób dla integracji: **bez numeru rejestru i z kluczem idempotencji**.
 
 ```http
 GET  /api/v1/courses/{courseId}                                # courses:read    — dostępne tłumaczenia
-GET  /api/v1/registries/next-number?courseId={courseId}&year=2026   # registries:read
 POST /api/v1/certificates                                      # certificates:write
+Idempotency-Key: enrollment-8812
 {
   "studentId": 15,
   "courseId": 128,
   "certificateDate": "2026-09-14",
   "courseDateStart": "2026-09-10",
   "courseDateEnd": "2026-09-12",
-  "registryYear": 2026,
-  "registryNumber": 43,
   "languageCode": "pl"
 }
-→ 201 { "data": { "id": 9812 } }
+→ 201 { "data": { "id": 9812, "registryYear": 2026, "registryNumber": 43 } }
 GET  /api/v1/certificates/9812                                 # certificates:read
 GET  /api/v1/certificates/9812/pdf                             # plik PDF
 ```
+
+Numer rejestru:
+
+- **Pominięty `registryNumber`** — serwer nadaje kolejny numer w obrębie (kurs, rok): największy istniejący + 1.
+  Nadanie jest atomowe: równoległe żądania w tym samym kursie i roku dostają różne, kolejne numery, bez 409.
+  Rok: `registryYear`, jeśli podany; inaczej rok `courseDateEnd`, a gdy jej brak — rok `courseDateStart`.
+  Nadany rok i numer są w odpowiedzi.
+- **Podany `registryNumber`** — zachowanie jak dotychczas: wymaga `registryYear`, musi być wolny (inaczej 409),
+  numer bez roku → 400 `invalid certificate data`. Kolejny wolny numer podpowiada
+  `GET /registries/next-number?courseId={courseId}&year=2026` (`registries:read`) — to podpowiedź, nie rezerwacja.
+
+Szkolenie zdalne (e-learning): `courseDateStart` = dzień rozpoczęcia nauki, `courseDateEnd` = `certificateDate` =
+dzień zaliczenia. API nie ma dla tego trybu osobnych reguł.
+
+Idempotencja (`Idempotency-Key`, opcjonalny):
+
+- Nieznany klucz → zaświadczenie powstaje, a klucz zapisywany jest w tej samej transakcji (`201`).
+- Znany klucz i to samo ciało → nic nie powstaje, `200` z **tym samym ciałem** co pierwotne `201`.
+  Dotyczy też żądań równoległych: drugie czeka na zakończenie pierwszego.
+- Znany klucz i inne ciało → `409 idempotency key reused with different payload`, nic nie powstaje.
+- „To samo ciało" = te same wartości pól; kolejność pól i białe znaki JSON nie mają znaczenia, pominięty
+  `languageCode` to `pl`. Pominięty `registryNumber` i jawnie podany to **różne** ciała.
+- Klucz: jeden nagłówek, 1–255 widocznych znaków ASCII bez spacji, inaczej 400 `invalid Idempotency-Key header`.
+  Użyj identyfikatora zdarzenia po swojej stronie (np. id zapisu na kurs) — **ten sam przy każdym ponowieniu**.
+- Klucz jest pamiętany co najmniej **30 dni**. Później może zostać usunięty; ponowienie po tym czasie wystawi
+  nowe zaświadczenie.
+- Żądanie zakończone błędem (400, 404, 409 numeru, 500) nie zapisuje klucza — poprawione żądanie możesz
+  wysłać z tym samym kluczem.
 
 Reguły walidacji:
 
@@ -327,8 +355,9 @@ Reguły walidacji:
 - **Chronologia rejestru**: data zaświadczenia musi mieścić się między datami zaświadczeń o sąsiednich
   numerach w tym kursie i roku. Nadanie numeru 43 z datą wcześniejszą niż zaświadczenie nr 42 → 400
   `invalid certificate data`. Najbezpieczniej: zawsze kolejny numer i data nie wcześniejsza niż ostatnie zaświadczenie.
-- Numer zajęty → 409. `next-number` to podpowiedź, nie rezerwacja — przy 409 pobierz numer ponownie i powtórz,
-  z ograniczoną liczbą prób.
+- Jawnie podany numer zajęty → 409. Przy 409 pobierz numer ponownie i powtórz z ograniczoną liczbą prób —
+  albo pomiń numer i pozwól go nadać serwerowi. Chronologia rejestru obowiązuje także przy numerze nadanym
+  przez serwer: data wcześniejsza niż data ostatniego zaświadczenia w kursie i roku → 400.
 - `languageCode` ≠ `pl` wymaga tłumaczenia kursu w tym języku, inaczej 400 `certificate translation not found`.
 - Nieistniejący kursant lub kurs → 404 `student not found` / `course not found`.
 
@@ -375,11 +404,12 @@ Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) 
 | 401 | Nie | Klucz nieważny — zatrzymaj integrację i zgłoś potrzebę nowego klucza. |
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
-| 409 | Zależy | Konflikt stanu. Dla numeru rejestru: pobierz nowy numer i ponów. |
-| 500 | Ostrożnie | Błąd serwera. Ponów najwyżej raz, z opóźnieniem; operacje `POST` nie są idempotentne. |
-| Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany — przed ponowieniem sprawdź, czy obiekt nie powstał. |
+| 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
+| 500 | Ostrożnie | Błąd serwera. `POST /certificates` z `Idempotency-Key` możesz bezpiecznie ponawiać z opóźnieniem. Pozostałe operacje `POST` nie są idempotentne — ponów najwyżej raz. |
+| Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany. `POST /certificates` z `Idempotency-Key` ponów z tym samym kluczem i ciałem (dostaniesz `200` z pierwotnym wynikiem, jeśli dokument powstał). Dla pozostałych operacji przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
-API nie obsługuje kluczy idempotencji.
+Klucze idempotencji obsługuje wyłącznie `POST /certificates` (sekcja 6.2). Pozostałe operacje zapisu ich nie
+obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
 
 ---
 

@@ -145,17 +145,34 @@ func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	idempotencyKey, err := parseIdempotencyKey(r)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid Idempotency-Key header")
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	certReq := CreateCertificateRequest{}
-	err := decoder.Decode(&certReq)
+	err = decoder.Decode(&certReq)
 	if err != nil {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
 
-	certID, err := h.creator.Create(r.Context(), mapCertificateRequest(certReq))
+	input, err := mapCertificateRequest(certReq)
 	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
+		return
+	}
+	input.IdempotencyKey = idempotencyKey
+
+	result, err := h.creator.Create(r.Context(), input)
+	if err != nil {
+		if errors.Is(err, ErrIdempotencyKeyReused) {
+			response.WriteError(w, http.StatusConflict, response.CodeConflict, "idempotency key reused with different payload")
+			return
+		}
 		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidRegistryDate) {
 			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
 			return
@@ -183,9 +200,46 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create certificate")
 		return
 	}
-	response.WriteJSON(w, http.StatusCreated, CreateCertificateResponse{
-		Data: CreateCertificateResponseData(certID),
+	status := http.StatusCreated
+	if result.Replayed {
+		// Ponowienie z tym samym kluczem i ciałem: to samo ciało co pierwotne 201.
+		status = http.StatusOK
+	}
+	response.WriteJSON(w, status, CreateCertificateResponse{
+		Data: CreateCertificateResponseData{
+			ID:             result.ID,
+			RegistryYear:   result.RegistryYear,
+			RegistryNumber: result.RegistryNumber,
+		},
 	})
+}
+
+const maxIdempotencyKeyLength = 255
+
+var errInvalidIdempotencyKey = errors.New("invalid idempotency key")
+
+// parseIdempotencyKey zwraca pusty klucz, gdy nagłówka nie ma. Obecny nagłówek musi
+// być pojedynczy, niepusty, do 255 znaków i złożony z widocznych znaków ASCII -
+// klucz porównywany jest bajt w bajt, więc spacje czy znaki narodowe byłyby
+// źródłem trudnych do wykrycia rozbieżności między ponowieniami.
+func parseIdempotencyKey(r *http.Request) (string, error) {
+	values, present := r.Header[http.CanonicalHeaderKey("Idempotency-Key")]
+	if !present {
+		return "", nil
+	}
+	if len(values) != 1 {
+		return "", errInvalidIdempotencyKey
+	}
+	key := values[0]
+	if key == "" || len(key) > maxIdempotencyKeyLength {
+		return "", errInvalidIdempotencyKey
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < 0x21 || key[i] > 0x7e {
+			return "", errInvalidIdempotencyKey
+		}
+	}
+	return key, nil
 }
 
 func (h *Handler) ListExpiringNotificationCandidates(w http.ResponseWriter, r *http.Request) {
@@ -519,8 +573,33 @@ func optionalDate(value time.Time) pgtype.Date {
 	}
 }
 
-func mapCertificateRequest(cert CreateCertificateRequest) CreateCertificateInput {
-	return CreateCertificateInput(cert)
+// mapCertificateRequest rozstrzyga, czy numer rejestru podał klient, czy nada go serwer.
+// Jawne 0 lub wartość ujemna pozostają błędem jak dotąd; numer bez roku jest
+// niejednoznaczny i też jest odrzucany.
+func mapCertificateRequest(cert CreateCertificateRequest) (CreateCertificateInput, error) {
+	input := CreateCertificateInput{
+		StudentID:       cert.StudentID,
+		CourseID:        cert.CourseID,
+		CertificateDate: cert.CertificateDate,
+		CourseDateStart: cert.CourseDateStart,
+		CourseDateEnd:   cert.CourseDateEnd,
+		LanguageCode:    cert.LanguageCode,
+	}
+	if cert.RegistryYear != nil {
+		if *cert.RegistryYear <= 0 {
+			return CreateCertificateInput{}, ErrInvalidInput
+		}
+		input.RegistryYear = *cert.RegistryYear
+	}
+	if cert.RegistryNumber == nil {
+		input.AssignRegistryNumber = true
+		return input, nil
+	}
+	if cert.RegistryYear == nil {
+		return CreateCertificateInput{}, ErrInvalidInput
+	}
+	input.RegistryNumber = *cert.RegistryNumber
+	return input, nil
 }
 
 func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, printVariants []CertificatePrintVariantDTO) CertificateDetailsDTO {
