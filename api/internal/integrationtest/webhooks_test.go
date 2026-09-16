@@ -373,6 +373,46 @@ func TestWebhookRevokeDuplicateValidityAndOrdering(t *testing.T) {
 	}
 }
 
+// Zlecenie, sekcja 12: duplikat niesie klucz idempotencji oryginału, więc odbiorca musi
+// dostać jawny sygnał, że ma utworzyć powiązany dokument, a nie nadpisać znaleziony.
+func TestWebhookDuplicateCarriesOriginalCertificateNumber(t *testing.T) {
+	e := requireEnv(t)
+	receiver := newWebhookReceiver(t, e)
+	course := e.seedCourse(t)
+	key := fmt.Sprintf("wh-supersedes-%d", nextSeed())
+
+	original, _ := e.issueWithKey(t, course.ID, key)
+	originalNumber := fmt.Sprintf("%d/%s/%d", original.RegistryNumber, course.Symbol, original.RegistryYear)
+
+	// Duplikat wystawiany przez pracownika w aplikacji webowej (ciasteczko sesji, bez klucza API).
+	duplicateResp := e.callWithSession(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", original.ID),
+		map[string]any{"reason": "Kursant zgubił oryginał"})
+	if duplicateResp.Status != http.StatusCreated {
+		t.Fatalf("duplicate from web session: expected 201, got %d: %s", duplicateResp.Status, duplicateResp.Body)
+	}
+	duplicate := decodeCertificateState(t, duplicateResp)
+	duplicateNumber := fmt.Sprintf("%d/%s/%d", duplicate.RegistryNumber, course.Symbol, duplicate.RegistryYear)
+
+	events := receiver.waitFor(t, "certificate.issued for the original and the duplicate", func(ev []receivedWebhook) bool {
+		return len(filterEvents(ev, "certificate.issued", originalNumber)) == 1 &&
+			len(filterEvents(ev, "certificate.issued", duplicateNumber)) == 1
+	})
+
+	duplicateEvent := filterEvents(events, "certificate.issued", duplicateNumber)[0].Event
+	if duplicateEvent["supersedes_certificate_number"] != originalNumber {
+		t.Fatalf("duplicate event must carry the original number %q, got %v", originalNumber, duplicateEvent["supersedes_certificate_number"])
+	}
+	if duplicateEvent["idempotency_key"] != key {
+		t.Fatalf("duplicate event must keep the original idempotency key, got %v", duplicateEvent["idempotency_key"])
+	}
+
+	// Zwykłe wydanie nie ma tego klucza w ogóle - sama obecność pola jest sygnałem.
+	originalEvent := filterEvents(events, "certificate.issued", originalNumber)[0].Event
+	if _, present := originalEvent["supersedes_certificate_number"]; present {
+		t.Fatalf("plain issuance must not carry supersedes_certificate_number: %s", filterEvents(events, "certificate.issued", originalNumber)[0].RawBody)
+	}
+}
+
 func TestWebhookNotSentForCertificatesWithoutIdempotencyKeyOrFailedWrites(t *testing.T) {
 	e := requireEnv(t)
 	receiver := newWebhookReceiver(t, e)

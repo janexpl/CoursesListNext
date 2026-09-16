@@ -533,7 +533,7 @@ ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToStri
 
 | `event` | Kiedy | Pola |
 |---|---|---|
-| `certificate.issued` | `POST /certificates` z `Idempotency-Key`; duplikat takiego zaświadczenia | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code` |
+| `certificate.issued` | `POST /certificates` z `Idempotency-Key`; duplikat takiego zaświadczenia | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code`, `supersedes_certificate_number` (**tylko przy duplikacie**) |
 | `certificate.revoked` | unieważnienie (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `reason` |
 | `certificate.validity_changed` | `PATCH /certificates/{id}` zmienił termin ważności | `timestamp`, `certificate_number`, `valid_until` (`null` = bez terminu) |
 | `program.updated` | zmiana nazwy, programu lub okresu ważności kursu z `deliveredByPlatform` | `timestamp`, `external_program_id` (= `id` kursu) |
@@ -544,9 +544,26 @@ ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToStri
  "pdf_url":"https://courseslist.example.pl/api/v1/certificates/9812/pdf","verification_code":"K7QM4XPA9TZC"}
 ```
 
+Duplikat tego samego zaświadczenia (ten sam `idempotency_key`, nowy numer i kod):
+
+```json
+{"event":"certificate.issued","timestamp":"2026-10-02T08:41:12.004918Z","idempotency_key":"enrollment-8812",
+ "certificate_number":"37/BHP/2026","issued_at":"2026-10-02","valid_until":"2031-09-14",
+ "pdf_url":"https://courseslist.example.pl/api/v1/certificates/9994/pdf","verification_code":"R4TX8MHQ2WDN",
+ "supersedes_certificate_number":"12/BHP/2026"}
+```
+
 - **Zdarzenia o zaświadczeniach dotyczą wyłącznie dokumentów wystawionych z `Idempotency-Key`** i ich duplikatów
   (duplikat niesie `idempotency_key` oryginału i własny `certificate_number`). Dokumenty z aplikacji webowej
   i dzienników nie generują zdarzeń — odbiorca nie miałby ich z czym powiązać.
+- **Duplikat poznajesz po polu `supersedes_certificate_number`** z numerem oryginału. Duplikat ma klucz
+  idempotencji oryginału, więc bez tego pola dokument odnaleziony po kluczu zostałby nadpisany numerem, kodem
+  weryfikacyjnym i adresem PDF duplikatu, a oryginał straciłby tożsamość. Obecność pola znaczy: **utwórz nowy
+  dokument powiązany z tym o podanym numerze**, nie nadpisuj znalezionego. Duplikat bywa wystawiany w aplikacji
+  webowej (kursant zgubił oryginał), więc zdarzenie przychodzi też bez udziału platformy.
+  Przy zwykłym wystawieniu pola **nie ma w ciele w ogóle** — nie przychodzi jako `null`, więc rozpoznanie sprowadza
+  się do sprawdzenia obecności klucza. Decyzja: zostajemy przy jednym zdarzeniu `certificate.issued` z tym polem,
+  bez osobnego `certificate.superseded` — odbiorca obsługuje duplikat tą samą ścieżką co wystawienie.
 - `pdf_url` wymaga klucza API z `certificates:read`; dla unieważnionego dokumentu zwraca 409.
 - `timestamp` to ISO 8601 w UTC z `Z` i mikrosekundami. Rośnie ściśle w obrębie zaświadczenia (i kursu).
 

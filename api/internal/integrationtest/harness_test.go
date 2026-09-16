@@ -263,6 +263,31 @@ func applyMigration(ctx context.Context, connConfig *pgx.ConnConfig, file string
 	return tx.Commit(ctx)
 }
 
+// callWithSession wysyła żądanie ciasteczkiem sesji, tak jak aplikacja webowa - bez klucza API.
+func (e *testEnv) callWithSession(t *testing.T, method, path string, body any) apiResponse {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(method, e.server.URL+"/api/v1"+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(e.seedSessionCookie(t))
+	resp, err := e.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return apiResponse{Status: resp.StatusCode, Body: data, Header: resp.Header}
+}
+
 // callWithKey wysyła żądanie innym kluczem API - do sprawdzania wymaganych zakresów.
 func (e *testEnv) callWithKey(t *testing.T, key, method, path string, body any) apiResponse {
 	t.Helper()

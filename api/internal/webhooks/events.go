@@ -50,6 +50,11 @@ type certificateIssuedPayload struct {
 	ValidUntil        *string `json:"valid_until,omitempty"`
 	PDFURL            string  `json:"pdf_url,omitempty"`
 	VerificationCode  string  `json:"verification_code,omitempty"`
+	// SupersedesCertificateNumber występuje wyłącznie przy duplikacie i niesie numer
+	// oryginału. Duplikat ma klucz idempotencji oryginału, więc bez tego pola odbiorca
+	// odnalazłby po kluczu oryginał i nadpisałby mu numer, kod i adres PDF danymi
+	// duplikatu. Obecność pola mówi: utwórz dokument powiązany, nie nadpisuj znalezionego.
+	SupersedesCertificateNumber string `json:"supersedes_certificate_number,omitempty"`
 }
 
 type certificateRevokedPayload struct {
@@ -84,6 +89,14 @@ func (p *Publisher) CertificateIssued(ctx context.Context, q *dbsqlc.Queries, ce
 	if !IsPlatformCertificate(cert) {
 		return nil
 	}
+	supersedesNumber := ""
+	if cert.SupersedesID.Valid {
+		original, err := q.GetCertificateNumberByID(ctx, cert.SupersedesID.Int64)
+		if err != nil {
+			return err
+		}
+		supersedesNumber = fmt.Sprintf("%d/%s/%d", original.RegistryNumber, original.CourseSymbol, original.RegistryYear)
+	}
 	return p.enqueue(ctx, q, EventCertificateIssued, certificateSubject(cert.ID), func(timestamp string) any {
 		payload := certificateIssuedPayload{
 			Event:             EventCertificateIssued,
@@ -93,6 +106,8 @@ func (p *Publisher) CertificateIssued(ctx context.Context, q *dbsqlc.Queries, ce
 			IssuedAt:          cert.Date.Time.Format(time.DateOnly),
 			ValidUntil:        validUntil(cert),
 			VerificationCode:  cert.VerificationCode,
+
+			SupersedesCertificateNumber: supersedesNumber,
 		}
 		if p.PublicBaseURL != "" {
 			payload.PDFURL = fmt.Sprintf("%s/api/v1/certificates/%d/pdf", p.PublicBaseURL, cert.ID)

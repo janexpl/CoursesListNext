@@ -399,6 +399,30 @@ func (q *Queries) GetCertificateLifecycleState(ctx context.Context, id int64) (G
 	return i, err
 }
 
+const getCertificateNumberByID = `-- name: GetCertificateNumberByID :one
+SELECT
+    r.number::bigint AS registry_number,
+    r.year AS registry_year,
+    c.course_symbol_snapshot AS course_symbol
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE c.id = $1
+`
+
+type GetCertificateNumberByIDRow struct {
+	RegistryNumber int64  `json:"registry_number"`
+	RegistryYear   int64  `json:"registry_year"`
+	CourseSymbol   string `json:"course_symbol"`
+}
+
+// Sam numer rejestru dokumentu (bez migawek treści) - webhook duplikatu podaje numer oryginału.
+func (q *Queries) GetCertificateNumberByID(ctx context.Context, id int64) (GetCertificateNumberByIDRow, error) {
+	row := q.db.QueryRow(ctx, getCertificateNumberByID, id)
+	var i GetCertificateNumberByIDRow
+	err := row.Scan(&i.RegistryNumber, &i.RegistryYear, &i.CourseSymbol)
+	return i, err
+}
+
 const listCertificates = `-- name: ListCertificates :many
 SELECT
     c.id,

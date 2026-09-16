@@ -63,6 +63,9 @@ webhooks:
         Wysyłane po wystawieniu zaświadczenia z `Idempotency-Key` (`POST /certificates`) oraz po wystawieniu
         duplikatu takiego zaświadczenia (duplikat niesie `idempotency_key` oryginału i własny numer).
         Dokumenty wystawione bez klucza (aplikacja webowa, dzienniki) nie generują zdarzeń.
+
+        **Duplikat rozpoznajesz po obecności `supersedes_certificate_number`** — wtedy utwórz nowy dokument
+        powiązany z tym o podanym numerze, zamiast nadpisywać dokument znaleziony po `idempotency_key`.
       x-signature-header: X-Az-Signature
       parameters:
         - name: X-Az-Signature
@@ -2931,6 +2934,9 @@ components:
     WebhookCertificateIssued:
       type: object
       additionalProperties: false
+      description: >-
+        Wystawienie zaświadczenia albo jego duplikatu. Duplikat ma `idempotency_key` oryginału (to po nim
+        odbiorca odnajduje sprawę), własny `certificate_number` i dodatkowo `supersedes_certificate_number`.
       required: [event, timestamp, idempotency_key, certificate_number, issued_at]
       properties:
         event:
@@ -2954,6 +2960,14 @@ components:
             Pomijane, gdy serwer nie ma skonfigurowanego adresu publicznego.
         verification_code:
           $ref: "#/components/schemas/VerificationCode"
+        supersedes_certificate_number:
+          allOf:
+            - $ref: "#/components/schemas/WebhookCertificateNumber"
+          description: >-
+            Numer rejestru **oryginału**. Pole występuje **wyłącznie** przy duplikacie i nigdy nie jest `null` —
+            sama jego obecność oznacza, że to duplikat dokumentu o tym numerze, a nie ponowne wydanie dokumentu
+            znalezionego po `idempotency_key` (duplikat niesie klucz oryginału). Przy zwykłym wystawieniu pola
+            nie ma w ciele w ogóle.
     WebhookCertificateRevoked:
       type: object
       additionalProperties: false

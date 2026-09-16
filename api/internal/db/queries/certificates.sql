@@ -484,3 +484,13 @@ SELECT
 FROM certificates o
 WHERE o.id = sqlc.arg(original_id)
 RETURNING id;
+
+-- name: GetCertificateNumberByID :one
+-- Sam numer rejestru dokumentu (bez migawek treści) - webhook duplikatu podaje numer oryginału.
+SELECT
+    r.number::bigint AS registry_number,
+    r.year AS registry_year,
+    c.course_symbol_snapshot AS course_symbol
+FROM certificates c
+JOIN registries r ON r.id = c.registry_id
+WHERE c.id = $1;
