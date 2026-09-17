@@ -413,3 +413,63 @@ Te przypadki są obowiązkowe, bo każdy z nich to błąd cichy i kosztowny:
 
 Na koniec zaktualizuj `openapi.yaml` i `INTEGRATION.md`, w tym sekcję 8
 „Czego API nie oferuje", z której część pozycji przestaje być prawdą.
+
+---
+
+## 12. Poprawka po przeglądzie wdrożenia
+
+Zlecenie zostało zrealizowane w całości i zgodnie z intencją. Przegląd gotowej
+specyfikacji wykazał **jedną rzeczę do poprawienia**. Jest mała, ale jej brak
+niszczy dane po drugiej stronie.
+
+### Problem
+
+Zrezygnowałeś z osobnego zdarzenia dla duplikatu i wysyłasz przy nim zwykłe
+`certificate.issued`, niosące — zgodnie z sekcją 6.7 `INTEGRATION.md` —
+`idempotency_key` **oryginału** i `certificate_number` **duplikatu**.
+
+Odbiorca kojarzy zdarzenie `certificate.issued` po kluczu idempotencji, bo to
+jedyny identyfikator, jaki zna w chwili wydania. Dostając duplikat, odnajdzie
+więc **oryginał** i nadpisze mu numer rejestru, kod weryfikacyjny i adres PDF
+danymi duplikatu. Oryginalny dokument traci tożsamość, a kursant widzi numer
+należący do innego zaświadczenia.
+
+Znacznik czasu nie chroni: duplikat jest nowszy, więc przechodzi każdą kontrolę
+świeżości. Z samego ciała zdarzenia **nie da się odróżnić** duplikatu od
+ponownego doręczenia oryginału inaczej niż zgadywaniem po tym, że numer się
+zmienił — a to jest wnioskowanie, nie kontrakt.
+
+Scenariusz jest codzienny, nie teoretyczny: pracownik wystawia duplikat
+w aplikacji webowej, bo kursant zgubił oryginał.
+
+### Poprawka
+
+Do ciała `certificate.issued` **wysyłanego dla duplikatu** dołóż pole:
+
+```json
+"supersedes_certificate_number": "12/BHP/2026"
+```
+
+- pole występuje **wyłącznie** przy duplikacie i zawiera numer rejestru
+  oryginału (tego, którego `supersedesId` wskazuje nowy dokument);
+- przy zwykłym wydaniu pola nie ma w ogóle — nie wysyłaj `null`, żeby sama
+  obecność klucza była sygnałem;
+- reszta zdarzenia bez zmian, w tym `idempotency_key` oryginału. On jest
+  potrzebny: odbiorca po nim odnajduje właściwy dokument, a nowe pole mówi mu,
+  że ma **utworzyć powiązany dokument**, a nie nadpisać znaleziony.
+
+Zaktualizuj `openapi.yaml` (sekcja `webhooks`) i tabelę zdarzeń w sekcji 6.7
+`INTEGRATION.md`, dopisując pole jako opcjonalne z wyjaśnieniem, że jego
+obecność oznacza duplikat.
+
+Alternatywa równie dobra, jeśli wolisz: przywróć osobne zdarzenie
+`certificate.superseded` z polami `timestamp`, `idempotency_key` (oryginału),
+`certificate_number` (duplikatu) i `supersedes_certificate_number`. Wybierz
+jedno i zapisz decyzję — odbiorca obsłuży każdy z tych wariantów, byle był
+jawny.
+
+### Test odbioru
+
+Duplikat zaświadczenia wystawionego z `Idempotency-Key`, zrobiony **z aplikacji
+webowej**, wysyła zdarzenie zawierające numer oryginału w nowym polu; zwykłe
+wydanie nie zawiera tego klucza w ogóle.
