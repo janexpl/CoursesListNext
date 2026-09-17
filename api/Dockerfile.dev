@@ -1,0 +1,30 @@
+# Obraz deweloperski API.
+#
+# Powód istnienia: renderowanie PDF. Produkcja drukuje zaświadczenia przez Chromium
+# z Debiana i fonty Liberation; na macOS markowy Google Chrome zapisuje plik, ale nie
+# kończy procesu (updater i crashpad żyją dalej), więc wywołanie kończy się timeoutem,
+# a wkhtmltopdf z Homebrew to binarka x86. Ten obraz daje lokalnie ten sam render,
+# co serwer - te same fonty, te same łamania stron.
+#
+# Kod jest montowany z hosta i uruchamiany przez `go run`, więc obrazu nie trzeba
+# przebudowywać po każdej zmianie - wystarczy restart kontenera.
+FROM golang:1.26.1-bookworm
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    chromium \
+    fonts-liberation \
+    tzdata \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV CHROME_BIN=/usr/bin/chromium \
+    PDF_RENDERER=chrome \
+    GOCACHE=/go-cache \
+    GOFLAGS=-buildvcs=false
+
+WORKDIR /src/api
+
+EXPOSE 8081
+
+CMD ["go", "run", "./cmd/api"]

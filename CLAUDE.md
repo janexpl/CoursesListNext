@@ -116,6 +116,20 @@ cd api && sqlc generate    # Regenerate after editing db/queries/*.sql or db/sch
 docker-compose up     # Start db + api + web
 ```
 
+### Dev environment with working PDF rendering
+
+PDF generation does not work on macOS hosts (branded Chrome writes the file but never exits;
+the Homebrew wkhtmltopdf binary is x86). Run the API in a container that carries the same
+Chromium and fonts as production — frontend, tests and database stay on the host:
+
+```bash
+docker compose -f docker-compose.dev.yml up api                    # API on :8081, host database
+DEV_DB_HOST=db docker compose -f docker-compose.dev.yml --profile db up   # plus a throwaway Postgres
+docker compose -f docker-compose.dev.yml restart api               # after changing Go code
+```
+
+See `docs/DEVELOPMENT.md` (Polish) for the one-time Postgres change needed by the first variant.
+
 ## Code Style
 
 ### Frontend

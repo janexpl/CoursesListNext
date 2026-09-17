@@ -1,0 +1,81 @@
+# Środowisko deweloperskie dla API.
+#
+# API działa w kontenerze wyłącznie po to, żeby PDF-y renderowały się tym samym
+# Chromium i tymi samymi fontami co na produkcji (patrz api/Dockerfile.dev).
+# Frontend zostaje na hoście (`cd web && pnpm dev`) - Nuxt w Dockerze na macOS ma
+# wolne wykrywanie zmian w plikach. Testy Go też uruchamiasz jak dotąd, na hoście.
+#
+# Baza - dwa warianty:
+#
+#   1. Postgres na hoście (domyślnie). Wymaga jednorazowego dopuszczenia połączeń
+#      z Dockera w postgresql.conf i pg_hba.conf - instrukcja w docs/DEVELOPMENT.md.
+#
+#        docker compose -f docker-compose.dev.yml up api
+#
+#   2. Postgres w kontenerze (profil `db`), bez dotykania bazy na hoście. Przy
+#      pierwszym starcie zakłada pusty schemat zgodny z kodem (api/dev/init-dev-db.sh).
+#      Port 55432 na hoście, żeby nie kolidował z lokalnym Postgresem.
+#
+#        DEV_DB_HOST=db docker compose -f docker-compose.dev.yml --profile db up
+#
+# Po zmianie kodu Go: docker compose -f docker-compose.dev.yml restart api
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Sekrety (GUS, token powiadomień) i DB_USER bierzemy z tego samego pliku,
+    # z którego korzysta uruchomienie na hoście.
+    env_file:
+      - api/.env
+    environment:
+      - PORT=8081
+      - DB_HOST=${DEV_DB_HOST:-host.docker.internal}
+      - DB_PORT=${DEV_DB_PORT:-5432}
+      - DB_NAME=${DEV_DB_NAME:-courselist}
+      - DB_SSLMODE=disable
+      # Render jak na produkcji.
+      - PDF_RENDERER=chrome
+      - CHROME_BIN=/usr/bin/chromium
+      # Znaczniki czasu w API są w czasie lokalnym serwera - bez tego kontener
+      # pisałby UTC i daty rozjechałyby się z tym, co widzisz na hoście.
+      - TZ=${TZ:-Europe/Warsaw}
+      - CORS_ALLOWED_ORIGINS=${DEV_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./api:/src/api
+      # Cache modułów i kompilacji, żeby restart kontenera trwał sekundy.
+      - dev-go-mod:/go/pkg/mod
+      - dev-go-build:/go-cache
+    stop_grace_period: 5s
+
+  db:
+    profiles: ["db"]
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${DEV_DB_USER:-janusz}
+      - POSTGRES_DB=${DEV_DB_NAME:-courselist}
+      # Baza deweloperska, dostępna tylko z pętli lokalnej i z sieci compose.
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+      # Pusty schemat zgodny z kodem (tylko przy pierwszym starcie): zrzut schematu
+      # produkcyjnego plus nowsze migracje, jak w testach integracyjnych.
+      - ./api/dev/init-dev-db.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - ./api/internal/integrationtest/testdata:/dev-schema:ro
+      - ./api/migrations:/dev-migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DEV_DB_USER:-janusz} -d ${DEV_DB_NAME:-courselist}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  dev-go-mod:
+  dev-go-build:
+  dev-db-data:
