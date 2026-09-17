@@ -155,80 +155,6 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 	return i, err
 }
 
-const duplicateCertificate = `-- name: DuplicateCertificate :one
-INSERT INTO certificates (
-    date,
-    student_id,
-    coursedatestart,
-    coursedateend,
-    registry_id,
-    language_code,
-    student_firstname_snapshot,
-    student_secondname_snapshot,
-    student_lastname_snapshot,
-    student_birthdate_snapshot,
-    student_birthplace_snapshot,
-    student_pesel_snapshot,
-    company_name_snapshot,
-    company_id_snapshot,
-    course_name_snapshot,
-    course_symbol_snapshot,
-    course_expiry_time_snapshot,
-    course_program_snapshot,
-    cert_front_page_snapshot,
-    supersedes_id,
-    duplicate_reason,
-    idempotency_key
-)
-SELECT
-    $1::date,
-    o.student_id,
-    o.coursedatestart,
-    o.coursedateend,
-    $2::bigint,
-    o.language_code,
-    o.student_firstname_snapshot,
-    o.student_secondname_snapshot,
-    o.student_lastname_snapshot,
-    o.student_birthdate_snapshot,
-    o.student_birthplace_snapshot,
-    o.student_pesel_snapshot,
-    o.company_name_snapshot,
-    o.company_id_snapshot,
-    o.course_name_snapshot,
-    o.course_symbol_snapshot,
-    o.course_expiry_time_snapshot,
-    o.course_program_snapshot,
-    o.cert_front_page_snapshot,
-    o.id,
-    $3::text,
-    o.idempotency_key
-FROM certificates o
-WHERE o.id = $4
-RETURNING id
-`
-
-type DuplicateCertificateParams struct {
-	Date       pgtype.Date `json:"date"`
-	RegistryID int64       `json:"registry_id"`
-	Reason     string      `json:"reason"`
-	OriginalID int64       `json:"original_id"`
-}
-
-// Nowy dokument z kopią danych oryginału (kursant, firma, treść kursu, daty kursu, język),
-// z nową datą wystawienia i nowym wierszem rejestru.
-func (q *Queries) DuplicateCertificate(ctx context.Context, arg DuplicateCertificateParams) (int64, error) {
-	row := q.db.QueryRow(ctx, duplicateCertificate,
-		arg.Date,
-		arg.RegistryID,
-		arg.Reason,
-		arg.OriginalID,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const getCertificateByID = `-- name: GetCertificateByID :one
 SELECT
     c.id,
@@ -270,12 +196,10 @@ SELECT
     c.verification_code,
     c.revoked_at,
     c.revoke_reason,
-    c.supersedes_id,
-    sup.id AS superseded_by_id,
     c.duplicate_reason,
+    c.duplicate_issued_at,
     c.idempotency_key
 FROM certificates c
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
@@ -314,9 +238,8 @@ type GetCertificateByIDRow struct {
 	VerificationCode  string             `json:"verification_code"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	RevokeReason      pgtype.Text        `json:"revoke_reason"`
-	SupersedesID      pgtype.Int8        `json:"supersedes_id"`
-	SupersededByID    pgtype.Int8        `json:"superseded_by_id"`
 	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
 }
 
@@ -354,9 +277,8 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.VerificationCode,
 		&i.RevokedAt,
 		&i.RevokeReason,
-		&i.SupersedesID,
-		&i.SupersededByID,
 		&i.DuplicateReason,
+		&i.DuplicateIssuedAt,
 		&i.IdempotencyKey,
 	)
 	return i, err
@@ -377,50 +299,16 @@ func (q *Queries) GetCertificateIDByVerificationCode(ctx context.Context, verifi
 }
 
 const getCertificateLifecycleState = `-- name: GetCertificateLifecycleState :one
-SELECT
-    (c.revoked_at IS NOT NULL)::boolean AS revoked,
-    EXISTS (
-        SELECT 1 FROM certificates sup
-        WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL
-    ) AS superseded
-FROM certificates c
-WHERE c.id = $1
+SELECT (revoked_at IS NOT NULL)::boolean AS revoked
+FROM certificates
+WHERE id = $1
 `
 
-type GetCertificateLifecycleStateRow struct {
-	Revoked    bool `json:"revoked"`
-	Superseded bool `json:"superseded"`
-}
-
-func (q *Queries) GetCertificateLifecycleState(ctx context.Context, id int64) (GetCertificateLifecycleStateRow, error) {
+func (q *Queries) GetCertificateLifecycleState(ctx context.Context, id int64) (bool, error) {
 	row := q.db.QueryRow(ctx, getCertificateLifecycleState, id)
-	var i GetCertificateLifecycleStateRow
-	err := row.Scan(&i.Revoked, &i.Superseded)
-	return i, err
-}
-
-const getCertificateNumberByID = `-- name: GetCertificateNumberByID :one
-SELECT
-    r.number::bigint AS registry_number,
-    r.year AS registry_year,
-    c.course_symbol_snapshot AS course_symbol
-FROM certificates c
-JOIN registries r ON r.id = c.registry_id
-WHERE c.id = $1
-`
-
-type GetCertificateNumberByIDRow struct {
-	RegistryNumber int64  `json:"registry_number"`
-	RegistryYear   int64  `json:"registry_year"`
-	CourseSymbol   string `json:"course_symbol"`
-}
-
-// Sam numer rejestru dokumentu (bez migawek treści) - webhook duplikatu podaje numer oryginału.
-func (q *Queries) GetCertificateNumberByID(ctx context.Context, id int64) (GetCertificateNumberByIDRow, error) {
-	row := q.db.QueryRow(ctx, getCertificateNumberByID, id)
-	var i GetCertificateNumberByIDRow
-	err := row.Scan(&i.RegistryNumber, &i.RegistryYear, &i.CourseSymbol)
-	return i, err
+	var revoked bool
+	err := row.Scan(&revoked)
+	return revoked, err
 }
 
 const listCertificates = `-- name: ListCertificates :many
@@ -448,10 +336,9 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    sup.id AS superseded_by_id
+    c.duplicate_issued_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 WHERE
     (
         $1::text IS NULL
@@ -479,21 +366,21 @@ type ListCertificatesParams struct {
 }
 
 type ListCertificatesRow struct {
-	ID               int64              `json:"id"`
-	Date             pgtype.Date        `json:"date"`
-	StudentFirstname string             `json:"student_firstname"`
-	StudentLastname  string             `json:"student_lastname"`
-	CompanyName      pgtype.Text        `json:"company_name"`
-	CourseName       string             `json:"course_name"`
-	CourseSymbol     string             `json:"course_symbol"`
-	RegistryYear     int64              `json:"registry_year"`
-	RegistryNumber   int64              `json:"registry_number"`
-	CourseDateStart  pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd    pgtype.Date        `json:"course_date_end"`
-	LanguageCode     string             `json:"language_code"`
-	ExpiryDate       interface{}        `json:"expiry_date"`
-	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
-	SupersededByID   pgtype.Int8        `json:"superseded_by_id"`
+	ID                int64              `json:"id"`
+	Date              pgtype.Date        `json:"date"`
+	StudentFirstname  string             `json:"student_firstname"`
+	StudentLastname   string             `json:"student_lastname"`
+	CompanyName       pgtype.Text        `json:"company_name"`
+	CourseName        string             `json:"course_name"`
+	CourseSymbol      string             `json:"course_symbol"`
+	RegistryYear      int64              `json:"registry_year"`
+	RegistryNumber    int64              `json:"registry_number"`
+	CourseDateStart   pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
+	LanguageCode      string             `json:"language_code"`
+	ExpiryDate        interface{}        `json:"expiry_date"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 }
 
 func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesParams) ([]ListCertificatesRow, error) {
@@ -525,7 +412,7 @@ func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesPara
 			&i.LanguageCode,
 			&i.ExpiryDate,
 			&i.RevokedAt,
-			&i.SupersededByID,
+			&i.DuplicateIssuedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -562,10 +449,9 @@ const listCertificatesByCompanyID = `-- name: ListCertificatesByCompanyID :many
           ''
       ) AS expiry_date,
       c.revoked_at,
-      sup.id AS superseded_by_id
+      c.duplicate_issued_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
-  LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
   WHERE c.company_id_snapshot = $1
     AND ($2::date IS NULL OR c.date >= $2::date)
     AND ($3::date IS NULL OR c.date <= $3::date)
@@ -584,21 +470,21 @@ type ListCertificatesByCompanyIDParams struct {
 }
 
 type ListCertificatesByCompanyIDRow struct {
-	ID               int64              `json:"id"`
-	Date             pgtype.Date        `json:"date"`
-	StudentFirstname string             `json:"student_firstname"`
-	StudentLastname  string             `json:"student_lastname"`
-	CompanyName      pgtype.Text        `json:"company_name"`
-	CourseName       string             `json:"course_name"`
-	CourseSymbol     string             `json:"course_symbol"`
-	RegistryYear     int64              `json:"registry_year"`
-	RegistryNumber   int64              `json:"registry_number"`
-	CourseDateStart  pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd    pgtype.Date        `json:"course_date_end"`
-	LanguageCode     string             `json:"language_code"`
-	ExpiryDate       interface{}        `json:"expiry_date"`
-	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
-	SupersededByID   pgtype.Int8        `json:"superseded_by_id"`
+	ID                int64              `json:"id"`
+	Date              pgtype.Date        `json:"date"`
+	StudentFirstname  string             `json:"student_firstname"`
+	StudentLastname   string             `json:"student_lastname"`
+	CompanyName       pgtype.Text        `json:"company_name"`
+	CourseName        string             `json:"course_name"`
+	CourseSymbol      string             `json:"course_symbol"`
+	RegistryYear      int64              `json:"registry_year"`
+	RegistryNumber    int64              `json:"registry_number"`
+	CourseDateStart   pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
+	LanguageCode      string             `json:"language_code"`
+	ExpiryDate        interface{}        `json:"expiry_date"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 }
 
 func (q *Queries) ListCertificatesByCompanyID(ctx context.Context, arg ListCertificatesByCompanyIDParams) ([]ListCertificatesByCompanyIDRow, error) {
@@ -631,7 +517,7 @@ func (q *Queries) ListCertificatesByCompanyID(ctx context.Context, arg ListCerti
 			&i.LanguageCode,
 			&i.ExpiryDate,
 			&i.RevokedAt,
-			&i.SupersededByID,
+			&i.DuplicateIssuedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -668,10 +554,9 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    sup.id AS superseded_by_id
+    c.duplicate_issued_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 WHERE r.course_id = $1
   AND ($2::date IS NULL OR c.date >= $2::date)
   AND ($3::date IS NULL OR c.date <= $3::date)
@@ -690,21 +575,21 @@ type ListCertificatesByCourseIDParams struct {
 }
 
 type ListCertificatesByCourseIDRow struct {
-	ID               int64              `json:"id"`
-	Date             pgtype.Date        `json:"date"`
-	StudentFirstname string             `json:"student_firstname"`
-	StudentLastname  string             `json:"student_lastname"`
-	CompanyName      pgtype.Text        `json:"company_name"`
-	CourseName       string             `json:"course_name"`
-	CourseSymbol     string             `json:"course_symbol"`
-	RegistryYear     int64              `json:"registry_year"`
-	RegistryNumber   int64              `json:"registry_number"`
-	CourseDateStart  pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd    pgtype.Date        `json:"course_date_end"`
-	LanguageCode     string             `json:"language_code"`
-	ExpiryDate       interface{}        `json:"expiry_date"`
-	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
-	SupersededByID   pgtype.Int8        `json:"superseded_by_id"`
+	ID                int64              `json:"id"`
+	Date              pgtype.Date        `json:"date"`
+	StudentFirstname  string             `json:"student_firstname"`
+	StudentLastname   string             `json:"student_lastname"`
+	CompanyName       pgtype.Text        `json:"company_name"`
+	CourseName        string             `json:"course_name"`
+	CourseSymbol      string             `json:"course_symbol"`
+	RegistryYear      int64              `json:"registry_year"`
+	RegistryNumber    int64              `json:"registry_number"`
+	CourseDateStart   pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
+	LanguageCode      string             `json:"language_code"`
+	ExpiryDate        interface{}        `json:"expiry_date"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 }
 
 func (q *Queries) ListCertificatesByCourseID(ctx context.Context, arg ListCertificatesByCourseIDParams) ([]ListCertificatesByCourseIDRow, error) {
@@ -737,7 +622,7 @@ func (q *Queries) ListCertificatesByCourseID(ctx context.Context, arg ListCertif
 			&i.LanguageCode,
 			&i.ExpiryDate,
 			&i.RevokedAt,
-			&i.SupersededByID,
+			&i.DuplicateIssuedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -767,27 +652,26 @@ const listCertificatesByStudentID = `-- name: ListCertificatesByStudentID :many
           ELSE NULL::text
       END, '') AS expiry_date,
       c.revoked_at,
-      sup.id AS superseded_by_id
+      c.duplicate_issued_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
-  LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
   WHERE c.student_id = $1
   AND c.deleted_at IS NULL
   ORDER BY c.date DESC, c.id DESC
 `
 
 type ListCertificatesByStudentIDRow struct {
-	ID              int64              `json:"id"`
-	Date            pgtype.Date        `json:"date"`
-	CourseName      string             `json:"course_name"`
-	CourseSymbol    string             `json:"course_symbol"`
-	RegistryYear    int64              `json:"registry_year"`
-	RegistryNumber  int64              `json:"registry_number"`
-	CourseDateStart pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd   pgtype.Date        `json:"course_date_end"`
-	ExpiryDate      interface{}        `json:"expiry_date"`
-	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
-	SupersededByID  pgtype.Int8        `json:"superseded_by_id"`
+	ID                int64              `json:"id"`
+	Date              pgtype.Date        `json:"date"`
+	CourseName        string             `json:"course_name"`
+	CourseSymbol      string             `json:"course_symbol"`
+	RegistryYear      int64              `json:"registry_year"`
+	RegistryNumber    int64              `json:"registry_number"`
+	CourseDateStart   pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
+	ExpiryDate        interface{}        `json:"expiry_date"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 }
 
 func (q *Queries) ListCertificatesByStudentID(ctx context.Context, studentID int32) ([]ListCertificatesByStudentIDRow, error) {
@@ -810,7 +694,7 @@ func (q *Queries) ListCertificatesByStudentID(ctx context.Context, studentID int
 			&i.CourseDateEnd,
 			&i.ExpiryDate,
 			&i.RevokedAt,
-			&i.SupersededByID,
+			&i.DuplicateIssuedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -847,12 +731,8 @@ const listExpiringCertificateNotificationCandidates = `-- name: ListExpiringCert
     JOIN companies comp ON comp.id = c.company_id_snapshot
     JOIN registries r ON r.id = c.registry_id
     WHERE c.deleted_at IS NULL
-      -- Unieważniony dokument nie wygasa, a zastąpiony ma własny duplikat z tą samą ważnością.
+      -- Unieważniony dokument nie wygasa.
       AND c.revoked_at IS NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM certificates sup
-          WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL
-      )
       AND comp.expiry_notifications_enabled = true
       AND c.coursedateend IS NOT NULL
       AND c.course_expiry_time_snapshot IS NOT NULL
@@ -984,6 +864,27 @@ func (q *Queries) LockCertificateForLifecycle(ctx context.Context, id int64) (Lo
 	return i, err
 }
 
+const markCertificateDuplicateIssued = `-- name: MarkCertificateDuplicateIssued :exec
+UPDATE certificates
+SET duplicate_issued_at = now(),
+    duplicate_reason = $1::text,
+    duplicate_issued_by_user_id = $2
+WHERE id = $3
+`
+
+type MarkCertificateDuplicateIssuedParams struct {
+	Reason                  string      `json:"reason"`
+	DuplicateIssuedByUserID pgtype.Int8 `json:"duplicate_issued_by_user_id"`
+	ID                      int64       `json:"id"`
+}
+
+// Duplikat nie tworzy nowego dokumentu: ten sam wiersz dostaje datę i powód wystawienia
+// wtórnika, a wydruk adnotację "DUPLIKAT". Kolejne wystawienie nadpisuje datę.
+func (q *Queries) MarkCertificateDuplicateIssued(ctx context.Context, arg MarkCertificateDuplicateIssuedParams) error {
+	_, err := q.db.Exec(ctx, markCertificateDuplicateIssued, arg.Reason, arg.DuplicateIssuedByUserID, arg.ID)
+	return err
+}
+
 const revokeCertificate = `-- name: RevokeCertificate :exec
 UPDATE certificates
 SET revoked_at = now(),
@@ -1047,7 +948,7 @@ WITH updated AS (
       AND c.deleted_at IS NULL
     -- RETURNING całego wiersza: główne zapytanie widzi migawkę sprzed UPDATE w CTE, więc
     -- dane zaświadczenia muszą pochodzić z RETURNING, a nie z ponownego odczytu tabeli.
-    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.supersedes_id, c.duplicate_reason, c.idempotency_key
+    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.duplicate_reason, c.duplicate_issued_at, c.duplicate_issued_by_user_id, c.idempotency_key
 )
 SELECT
     u.id,
@@ -1089,12 +990,10 @@ SELECT
     u.verification_code,
     u.revoked_at,
     u.revoke_reason,
-    u.supersedes_id,
-    sup.id AS superseded_by_id,
     u.duplicate_reason,
+    u.duplicate_issued_at,
     u.idempotency_key
 FROM updated u
-LEFT JOIN certificates sup ON sup.supersedes_id = u.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id
@@ -1147,9 +1046,8 @@ type UpdateCertificateRow struct {
 	VerificationCode  string             `json:"verification_code"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	RevokeReason      pgtype.Text        `json:"revoke_reason"`
-	SupersedesID      pgtype.Int8        `json:"supersedes_id"`
-	SupersededByID    pgtype.Int8        `json:"superseded_by_id"`
 	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
+	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
 	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
 }
 
@@ -1201,9 +1099,8 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.VerificationCode,
 		&i.RevokedAt,
 		&i.RevokeReason,
-		&i.SupersedesID,
-		&i.SupersededByID,
 		&i.DuplicateReason,
+		&i.DuplicateIssuedAt,
 		&i.IdempotencyKey,
 	)
 	return i, err

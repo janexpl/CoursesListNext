@@ -32,7 +32,7 @@ var certificatePlaceholderPattern = regexp.MustCompile(`{{(.*?)}}`)
 var renderCertificatePDF = pdfutil.RenderHTMLToPDF
 
 func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
-	front := substituteCertificateTemplate(certificate)
+	front := buildDuplicateAnnotation(certificate) + substituteCertificateTemplate(certificate)
 	back := buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode)
 	labels := getCourseProgramPageLabels(certificate.LanguageCode)
 
@@ -74,6 +74,23 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
 
     .spacer {
       height: 25mm;
+    }
+
+    .duplicate {
+      text-align: right;
+      margin-bottom: 8mm;
+    }
+
+    .duplicate-label {
+      display: block;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+    }
+
+    .duplicate-date {
+      display: block;
+      font-size: 12px;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -154,6 +171,22 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
 </head>
 <body>` + front + back + `</body>
 </html>`
+}
+
+// buildDuplicateAnnotation drukuje adnotację wtórnika. Duplikat to ten sam dokument
+// o tym samym numerze rejestru, więc odróżnia go od oryginału wyłącznie ta adnotacja:
+// słowo DUPLIKAT i data jego wystawienia. Napis jest po polsku także na wydrukach
+// w innych językach - to adnotacja na polskim dokumencie.
+func buildDuplicateAnnotation(certificate sqlc.GetCertificateByIDRow) string {
+	if !certificate.DuplicateIssuedAt.Valid {
+		return ""
+	}
+
+	return `<div class="duplicate">` +
+		`<span class="duplicate-label">DUPLIKAT</span>` +
+		`<span class="duplicate-date">Data wystawienia duplikatu: ` +
+		html.EscapeString(certificate.DuplicateIssuedAt.Time.Format("02.01.2006")) +
+		`</span></div>`
 }
 
 func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) string {

@@ -27,7 +27,6 @@ WITH expiring AS (
     FROM certificates c
     WHERE c.deleted_at IS NULL
       AND c.revoked_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM certificates sup WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL)
 )
 SELECT
     e.id,
@@ -53,7 +52,6 @@ SELECT COUNT(*)
 FROM certificates c
 WHERE c.deleted_at IS NULL
   AND c.revoked_at IS NULL
-  AND NOT EXISTS (SELECT 1 FROM certificates sup WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL)
   AND (
       CASE
           WHEN c.coursedateend IS NOT NULL AND c.course_expiry_time_snapshot ~ '^[0-9]+$'

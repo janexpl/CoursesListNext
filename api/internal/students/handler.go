@@ -406,17 +406,17 @@ func mapStudentsByCompanyRow(row dbsqlc.ListStudentsByCompanyIDRow) ListStudents
 
 func mapCertByStudentsRow(row dbsqlc.ListCertificatesByStudentIDRow) CertificateByStudentDTO {
 	dto := CertificateByStudentDTO{
-		ID:              row.ID,
-		Date:            row.Date.Time.Format(response.DateFormat),
-		CourseName:      row.CourseName,
-		CourseSymbol:    row.CourseSymbol,
-		RegistryYear:    row.RegistryYear,
-		RegistryNumber:  row.RegistryNumber,
-		CourseDateStart: row.CourseDateStart.Time.Format(response.DateFormat),
-		CourseDateEnd:   pgutil.NullableDate(row.CourseDateEnd),
-		ExpiryDate:      pgutil.NullableString(row.ExpiryDate),
-		RevokedAt:       pgutil.NullableTimestampz(row.RevokedAt),
-		SupersededByID:  pgutil.NullableInt64(row.SupersededByID),
+		ID:                row.ID,
+		Date:              row.Date.Time.Format(response.DateFormat),
+		CourseName:        row.CourseName,
+		CourseSymbol:      row.CourseSymbol,
+		RegistryYear:      row.RegistryYear,
+		RegistryNumber:    row.RegistryNumber,
+		CourseDateStart:   row.CourseDateStart.Time.Format(response.DateFormat),
+		CourseDateEnd:     pgutil.NullableDate(row.CourseDateEnd),
+		ExpiryDate:        pgutil.NullableString(row.ExpiryDate),
+		RevokedAt:         pgutil.NullableTimestampz(row.RevokedAt),
+		DuplicateIssuedAt: pgutil.NullableTimestampz(row.DuplicateIssuedAt),
 	}
 	return dto
 }

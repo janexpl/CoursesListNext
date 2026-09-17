@@ -1,20 +1,20 @@
 package certificates
 
 type CertificateDTO struct {
-	ID              int64   `json:"id"`
-	Date            string  `json:"date"`
-	StudentName     string  `json:"studentName"`
-	CompanyName     string  `json:"companyName"`
-	CourseName      string  `json:"courseName"`
-	CourseSymbol    string  `json:"courseSymbol"`
-	RegistryYear    int     `json:"registryYear"`
-	RegistryNumber  int     `json:"registryNumber"`
-	CourseDateStart string  `json:"courseDateStart"`
-	CourseDateEnd   *string `json:"courseDateEnd"`
-	ExpiryDate      *string `json:"expiryDate"`
-	LanguageCode    string  `json:"languageCode"`
-	RevokedAt       *string `json:"revokedAt"`
-	SupersededByID  *int64  `json:"supersededById"`
+	ID                int64   `json:"id"`
+	Date              string  `json:"date"`
+	StudentName       string  `json:"studentName"`
+	CompanyName       string  `json:"companyName"`
+	CourseName        string  `json:"courseName"`
+	CourseSymbol      string  `json:"courseSymbol"`
+	RegistryYear      int     `json:"registryYear"`
+	RegistryNumber    int     `json:"registryNumber"`
+	CourseDateStart   string  `json:"courseDateStart"`
+	CourseDateEnd     *string `json:"courseDateEnd"`
+	ExpiryDate        *string `json:"expiryDate"`
+	LanguageCode      string  `json:"languageCode"`
+	RevokedAt         *string `json:"revokedAt"`
+	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
 }
 
 type CertificateDetailsDTO struct {
@@ -45,8 +45,7 @@ type CertificateDetailsDTO struct {
 	VerificationCode  string                       `json:"verificationCode"`
 	RevokedAt         *string                      `json:"revokedAt"`
 	RevokeReason      *string                      `json:"revokeReason"`
-	SupersedesID      *int64                       `json:"supersedesId"`
-	SupersededByID    *int64                       `json:"supersededById"`
+	DuplicateIssuedAt *string                      `json:"duplicateIssuedAt"`
 	DuplicateReason   *string                      `json:"duplicateReason"`
 }
 

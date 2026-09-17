@@ -295,12 +295,12 @@ function clearFilters() {
               Unieważnione
             </UBadge>
             <UBadge
-              v-else-if="certificate.supersededById"
+              v-else-if="certificate.duplicateIssuedAt"
               color="neutral"
               variant="subtle"
               class="mt-1"
             >
-              Zastąpione duplikatem
+              Duplikat
             </UBadge>
           </div>
 

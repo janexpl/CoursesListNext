@@ -71,8 +71,9 @@ type Certificate struct {
 	RevokedAt                 pgtype.Timestamptz `json:"revoked_at"`
 	RevokeReason              pgtype.Text        `json:"revoke_reason"`
 	RevokedByUserID           pgtype.Int8        `json:"revoked_by_user_id"`
-	SupersedesID              pgtype.Int8        `json:"supersedes_id"`
 	DuplicateReason           pgtype.Text        `json:"duplicate_reason"`
+	DuplicateIssuedAt         pgtype.Timestamptz `json:"duplicate_issued_at"`
+	DuplicateIssuedByUserID   pgtype.Int8        `json:"duplicate_issued_by_user_id"`
 	IdempotencyKey            pgtype.Text        `json:"idempotency_key"`
 }
 

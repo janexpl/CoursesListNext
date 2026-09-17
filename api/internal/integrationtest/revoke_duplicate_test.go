@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,8 +27,7 @@ type certificateState struct {
 	VerificationCode  string  `json:"verificationCode"`
 	RevokedAt         *string `json:"revokedAt"`
 	RevokeReason      *string `json:"revokeReason"`
-	SupersedesID      *int64  `json:"supersedesId"`
-	SupersededByID    *int64  `json:"supersededById"`
+	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
 	DuplicateReason   *string `json:"duplicateReason"`
 	PrintVariantCount int
 }
@@ -165,95 +165,113 @@ func TestRevokeValidationAndEffects(t *testing.T) {
 	}
 }
 
-func TestDuplicateCertificateGetsNewNumberAndSupersedesOriginal(t *testing.T) {
+// Duplikat (wtórnik) to ten sam dokument: ten sam numer rejestru, ta sama treść,
+// dołożona adnotacja z datą wystawienia duplikatu.
+func TestDuplicateMarksTheSameCertificate(t *testing.T) {
 	e := requireEnv(t)
 	course := e.seedCourse(t)
-	student := e.seedStudent(t)
-	original := e.issueCertificate(t, course.ID, student, "2026-03-15")
-	e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-16")
-	originalDetails := decodeCertificateState(t, e.mustCall(t, http.MethodGet, fmt.Sprintf("/certificates/%d", original.ID), nil, nil))
+	original := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-15")
+	before := decodeCertificateState(t, e.mustCall(t, http.MethodGet, fmt.Sprintf("/certificates/%d", original.ID), nil, nil))
+	certificatesInCourse := func() int {
+		return e.countRows(t, `
+			SELECT count(*) FROM certificates c JOIN registries r ON r.id = c.registry_id
+			WHERE r.course_id = $1`, course.ID)
+	}
+	if n := certificatesInCourse(); n != 1 {
+		t.Fatalf("expected 1 certificate before the duplicate, found %d", n)
+	}
 
 	resp := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", original.ID), map[string]any{"reason": "Utrata oryginału"}, nil)
-	if resp.Status != http.StatusCreated {
-		t.Fatalf("duplicate: expected 201, got %d: %s", resp.Status, resp.Body)
+	if resp.Status != http.StatusOK {
+		t.Fatalf("duplicate: expected 200, got %d: %s", resp.Status, resp.Body)
 	}
 	duplicate := decodeCertificateState(t, resp)
-	if duplicate.ID == original.ID || duplicate.SupersedesID == nil || *duplicate.SupersedesID != original.ID {
-		t.Fatalf("duplicate must be a new document with supersedesId=%d: %s", original.ID, resp.Body)
+
+	if duplicate.ID != original.ID || duplicate.RegistryNumber != original.RegistryNumber || duplicate.RegistryYear != original.RegistryYear {
+		t.Fatalf("duplicate must stay the same document %d (%d/%d), got %+v", original.ID, original.RegistryYear, original.RegistryNumber, duplicate)
 	}
-	if duplicate.RegistryYear != 2026 || duplicate.RegistryNumber != 3 {
-		t.Fatalf("duplicate must get the next number 2026/3, got %d/%d", duplicate.RegistryYear, duplicate.RegistryNumber)
+	if duplicate.VerificationCode != before.VerificationCode || duplicate.Date != before.Date {
+		t.Fatalf("duplicate must keep the verification code and the issue date: %+v", duplicate)
+	}
+	if duplicate.DuplicateIssuedAt == nil || *duplicate.DuplicateIssuedAt == "" {
+		t.Fatalf("duplicate must carry duplicateIssuedAt: %s", resp.Body)
 	}
 	if duplicate.DuplicateReason == nil || *duplicate.DuplicateReason != "Utrata oryginału" {
 		t.Fatalf("duplicate must carry the reason: %s", resp.Body)
 	}
-	if duplicate.StudentID != originalDetails.StudentID || duplicate.CourseID != originalDetails.CourseID ||
-		duplicate.StudentFirstname != originalDetails.StudentFirstname || duplicate.StudentLastname != originalDetails.StudentLastname ||
-		duplicate.StudentBirthdate != originalDetails.StudentBirthdate || duplicate.CourseName != originalDetails.CourseName ||
-		duplicate.CourseDateStart != originalDetails.CourseDateStart || deref(duplicate.CourseDateEnd) != deref(originalDetails.CourseDateEnd) {
-		t.Fatalf("duplicate must copy the original data:\noriginal:  %+v\nduplicate: %+v", originalDetails, duplicate)
+	if today := time.Now().Format("2006-01-02"); !strings.HasPrefix(*duplicate.DuplicateIssuedAt, today) {
+		t.Fatalf("duplicateIssuedAt must be today (%s), got %s", today, *duplicate.DuplicateIssuedAt)
 	}
-	if today := time.Now().Format("2006-01-02"); duplicate.Date != today {
-		t.Fatalf("duplicate must be issued today (%s), got %s", today, duplicate.Date)
-	}
-	if duplicate.VerificationCode == "" || duplicate.VerificationCode == originalDetails.VerificationCode {
-		t.Fatalf("duplicate needs its own verification code, got %q (original %q)", duplicate.VerificationCode, originalDetails.VerificationCode)
+	if n := certificatesInCourse(); n != 1 {
+		t.Fatalf("duplicate must not create a second certificate, found %d", n)
 	}
 
-	after := decodeCertificateState(t, e.mustCall(t, http.MethodGet, fmt.Sprintf("/certificates/%d", original.ID), nil, nil))
-	if after.SupersededByID == nil || *after.SupersededByID != duplicate.ID || after.RevokedAt != nil {
-		t.Fatalf("original must point to its duplicate and stay not revoked: %+v", after)
+	stored := decodeCertificateState(t, e.mustCall(t, http.MethodGet, fmt.Sprintf("/certificates/%d", original.ID), nil, nil))
+	if stored.DuplicateIssuedAt == nil {
+		t.Fatalf("GET must report the duplicate: %+v", stored)
 	}
 
-	again := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", original.ID), map[string]any{"reason": "Znowu"}, nil)
-	if again.Status != http.StatusConflict || again.errorMessage(t) != "certificate already superseded" {
-		t.Fatalf("second duplicate of the same original: expected 409, got %d: %s", again.Status, again.Body)
-	}
-
-	// Po duplikacie z dzisiejszą datą kolejny numer nie może mieć daty wcześniejszej (chronologia rejestru).
-	revokedCert := e.issueCertificate(t, course.ID, e.seedStudent(t), time.Now().Format("2006-01-02"))
-	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/revoke", revokedCert.ID), map[string]any{"reason": "x"}, nil); r.Status != http.StatusOK {
-		t.Fatalf("revoke: %d %s", r.Status, r.Body)
-	}
-	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", revokedCert.ID), map[string]any{"reason": "x"}, nil); r.Status != http.StatusConflict || r.errorMessage(t) != "certificate is revoked" {
-		t.Fatalf("duplicate of revoked: expected 409 certificate is revoked, got %d: %s", r.Status, r.Body)
-	}
-	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", duplicate.ID), map[string]any{}, nil); r.Status != http.StatusBadRequest {
-		t.Fatalf("duplicate without reason: expected 400, got %d: %s", r.Status, r.Body)
-	}
-	readOnly := e.seedScopedAPIKey(t, "certificates:read")
-	if r := e.callWithKey(t, readOnly, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", duplicate.ID), map[string]any{"reason": "x"}); r.Status != http.StatusForbidden {
-		t.Fatalf("duplicate without certificates:write: expected 403, got %d: %s", r.Status, r.Body)
+	// Duplikat nie zużywa kolejnego numeru w rejestrze.
+	next := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-16")
+	if next.RegistryNumber != original.RegistryNumber+1 {
+		t.Fatalf("expected the next number %d, got %d", original.RegistryNumber+1, next.RegistryNumber)
 	}
 }
 
-func TestConcurrentDuplicatesOfOneCertificateCreateOne(t *testing.T) {
+// Kursant może zgubić dokument ponownie - liczy się data ostatniego wystawienia.
+func TestDuplicateCanBeIssuedAgain(t *testing.T) {
 	e := requireEnv(t)
 	course := e.seedCourse(t)
-	original := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-15")
+	cert := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-15")
+	path := fmt.Sprintf("/certificates/%d/duplicate", cert.ID)
 
-	responses := runConcurrently(t, 6, func(int) (apiResponse, error) {
-		return e.call(http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", original.ID), map[string]any{"reason": "Utrata"}, nil)
-	})
-	created := 0
-	for _, resp := range responses {
-		switch resp.Status {
-		case http.StatusCreated:
-			created++
-		case http.StatusConflict:
-		default:
-			t.Fatalf("unexpected status %d: %s", resp.Status, resp.Body)
-		}
+	first := decodeCertificateState(t, e.mustCall(t, http.MethodPost, path, map[string]any{"reason": "Pierwsza utrata"}, nil))
+	time.Sleep(10 * time.Millisecond)
+	second := e.mustCall(t, http.MethodPost, path, map[string]any{"reason": "Druga utrata"}, nil)
+	if second.Status != http.StatusOK {
+		t.Fatalf("second duplicate: expected 200, got %d: %s", second.Status, second.Body)
 	}
-	if created != 1 {
-		t.Fatalf("expected exactly one duplicate, got %d", created)
+	again := decodeCertificateState(t, second)
+	if again.DuplicateReason == nil || *again.DuplicateReason != "Druga utrata" {
+		t.Fatalf("second duplicate must overwrite the reason: %s", second.Body)
 	}
-	if n := e.countRows(t, `SELECT count(*) FROM certificates WHERE supersedes_id = $1`, original.ID); n != 1 {
-		t.Fatalf("expected one superseding certificate in database, found %d", n)
+	if first.DuplicateIssuedAt == nil || again.DuplicateIssuedAt == nil || *again.DuplicateIssuedAt < *first.DuplicateIssuedAt {
+		t.Fatalf("second duplicate must not move the date backwards: %v -> %v", first.DuplicateIssuedAt, again.DuplicateIssuedAt)
+	}
+	if n := e.countRows(t, `SELECT count(*) FROM audit_log WHERE entity_type = 'certificate' AND entity_id = $1 AND metadata->>'operation' = 'duplicate'`, cert.ID); n != 2 {
+		t.Fatalf("expected both duplicates in the audit log, found %d", n)
 	}
 }
 
-func TestExpiryNotificationsSkipRevokedAndSupersededCertificates(t *testing.T) {
+func TestDuplicateValidation(t *testing.T) {
+	e := requireEnv(t)
+	course := e.seedCourse(t)
+	cert := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-15")
+	path := fmt.Sprintf("/certificates/%d/duplicate", cert.ID)
+
+	for _, body := range []any{map[string]any{}, map[string]any{"reason": "  "}, map[string]any{"reason": "x", "extra": 1}} {
+		if resp := e.mustCall(t, http.MethodPost, path, body, nil); resp.Status != http.StatusBadRequest {
+			t.Fatalf("duplicate body %v: expected 400, got %d: %s", body, resp.Status, resp.Body)
+		}
+	}
+	if resp := e.mustCall(t, http.MethodPost, "/certificates/999999999/duplicate", map[string]any{"reason": "x"}, nil); resp.Status != http.StatusNotFound {
+		t.Fatalf("unknown certificate: expected 404, got %d: %s", resp.Status, resp.Body)
+	}
+	readOnly := e.seedScopedAPIKey(t, "certificates:read")
+	if resp := e.callWithKey(t, readOnly, http.MethodPost, path, map[string]any{"reason": "x"}); resp.Status != http.StatusForbidden {
+		t.Fatalf("duplicate without certificates:write: expected 403, got %d: %s", resp.Status, resp.Body)
+	}
+
+	revoked := e.issueCertificate(t, course.ID, e.seedStudent(t), "2026-03-16")
+	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/revoke", revoked.ID), map[string]any{"reason": "x"}, nil); r.Status != http.StatusOK {
+		t.Fatalf("revoke: %d %s", r.Status, r.Body)
+	}
+	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", revoked.ID), map[string]any{"reason": "x"}, nil); r.Status != http.StatusConflict || r.errorMessage(t) != "certificate is revoked" {
+		t.Fatalf("duplicate of revoked: expected 409 certificate is revoked, got %d: %s", r.Status, r.Body)
+	}
+}
+
+func TestExpiryNotificationsSkipRevokedCertificates(t *testing.T) {
 	e := requireEnv(t)
 	course := e.seedCourse(t)
 	var companyID int64
@@ -286,15 +304,15 @@ func TestExpiryNotificationsSkipRevokedAndSupersededCertificates(t *testing.T) {
 	}
 	active := issue()
 	revoked := issue()
-	superseded := issue()
+	duplicated := issue()
 	if r := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/revoke", revoked), map[string]any{"reason": "x"}, nil); r.Status != http.StatusOK {
 		t.Fatalf("revoke: %d %s", r.Status, r.Body)
 	}
-	dup := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", superseded), map[string]any{"reason": "x"}, nil)
-	if dup.Status != http.StatusCreated {
+	// Wtórnik nie zmienia ważności dokumentu - przypomnienie ma nadal przyjść.
+	dup := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", duplicated), map[string]any{"reason": "x"}, nil)
+	if dup.Status != http.StatusOK {
 		t.Fatalf("duplicate: %d %s", dup.Status, dup.Body)
 	}
-	duplicateID := decodeCertificateState(t, dup).ID
 
 	query := url.Values{
 		"dateFrom": {time.Now().Format("2006-01-02")},
@@ -326,11 +344,11 @@ func TestExpiryNotificationsSkipRevokedAndSupersededCertificates(t *testing.T) {
 	for _, item := range body.Data {
 		got[item.CertificateID] = true
 	}
-	if !got[active] || !got[duplicateID] {
-		t.Fatalf("active certificate %d and duplicate %d must be notified, got %v", active, duplicateID, got)
+	if !got[active] || !got[duplicated] {
+		t.Fatalf("active certificate %d and the one with a duplicate %d must be notified, got %v", active, duplicated, got)
 	}
-	if got[revoked] || got[superseded] {
-		t.Fatalf("revoked %d and superseded %d must not be notified, got %v", revoked, superseded, got)
+	if got[revoked] {
+		t.Fatalf("revoked certificate %d must not be notified, got %v", revoked, got)
 	}
 }
 

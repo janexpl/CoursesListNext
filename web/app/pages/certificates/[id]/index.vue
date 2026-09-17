@@ -656,8 +656,10 @@ async function onConfirmLifecycleAction() {
       lifecycleAction.value = null
       await refreshAll()
     } else {
-      const response = await api.duplicateCertificate(certificateId.value, { reason })
-      await navigateTo(`/certificates/${response.data.id}`)
+      // Duplikat to ten sam dokument - odświeżamy widok, nie przechodzimy nigdzie indziej.
+      await api.duplicateCertificate(certificateId.value, { reason })
+      lifecycleAction.value = null
+      await refreshAll()
     }
   } catch (apiError) {
     lifecycleError.value = getApiErrorMessage(
@@ -730,7 +732,7 @@ useSeoMeta({
         </NuxtLink>
 
         <button
-          v-if="certificate && !certificate.revokedAt && !certificate.supersededById"
+          v-if="certificate && !certificate.revokedAt"
           type="button"
           class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
           @click="openLifecycleAction('duplicate')"
@@ -826,27 +828,15 @@ useSeoMeta({
       </div>
 
       <div
-        v-if="certificate.supersededById || certificate.supersedesId"
+        v-if="certificate.duplicateIssuedAt"
         class="rounded-xl border border-sky-200 bg-sky-50 px-6 py-5 text-sm text-sky-900"
       >
-        <p v-if="certificate.supersededById">
-          Zastąpione duplikatem:
-          <NuxtLink
-            :to="`/certificates/${certificate.supersededById}`"
-            class="font-semibold underline"
-          >
-            przejdź do duplikatu
-          </NuxtLink>
+        <p class="text-base font-semibold text-sky-950">
+          Duplikat wystawiony {{ certificate.duplicateIssuedAt }}
         </p>
-        <p v-if="certificate.supersedesId">
-          Duplikat zaświadczenia
-          <NuxtLink
-            :to="`/certificates/${certificate.supersedesId}`"
-            class="font-semibold underline"
-          >
-            przejdź do oryginału
-          </NuxtLink>
-          <span v-if="certificate.duplicateReason">— powód: {{ certificate.duplicateReason }}</span>
+        <p class="mt-1">
+          <span v-if="certificate.duplicateReason">Powód: {{ certificate.duplicateReason }}. </span>
+          To ten sam dokument o tym samym numerze — wydruk nosi adnotację „DUPLIKAT" z datą wystawienia.
         </p>
       </div>
 
@@ -863,7 +853,7 @@ useSeoMeta({
               {{
                 lifecycleAction === 'revoke'
                   ? 'Dokument pozostanie w rejestrze jako unieważniony, a jego numer nie zostanie użyty ponownie. Operacji nie można cofnąć.'
-                  : 'Powstanie nowy dokument z tymi samymi danymi, dzisiejszą datą i kolejnym numerem w rejestrze. Ten dokument zostanie oznaczony jako zastąpiony.'
+                  : 'Zaświadczenie zachowa numer i treść, a na wydruku pojawi się adnotacja „DUPLIKAT" z dzisiejszą datą. Kolejne wystawienie duplikatu nadpisuje tę datę.'
               }}
             </p>
           </div>

@@ -110,7 +110,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // rozszerzać Creator o metody potrzebne tylko tym trasom.
 type certificateLifecycle interface {
 	Revoke(ctx context.Context, certificateID int64, reason string) error
-	Duplicate(ctx context.Context, originalID int64, reason string) (int64, error)
+	Duplicate(ctx context.Context, certificateID int64, reason string) error
 }
 
 // decodeLifecycleRequest czyta {"reason": "..."}; powód jest wymagany i niepusty.
@@ -142,8 +142,6 @@ func (h *Handler) writeLifecycleError(w http.ResponseWriter, err error) {
 		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate already revoked")
 	case errors.Is(err, ErrCertificateRevoked):
 		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate is revoked")
-	case errors.Is(err, ErrCertificateAlreadySuperseded):
-		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate already superseded")
 	default:
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to update certificate")
 	}
@@ -178,23 +176,23 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	h.writeCertificateDetails(w, r, http.StatusOK, id)
 }
 
-// Duplicate wystawia duplikat zaświadczenia i zwraca nowy dokument (201).
+// Duplicate odnotowuje wystawienie duplikatu na istniejącym zaświadczeniu i zwraca je
+// po zmianie. Duplikat nie jest nowym dokumentem - to ten sam numer z adnotacją na wydruku.
 func (h *Handler) Duplicate(w http.ResponseWriter, r *http.Request) {
 	lifecycle, ok := h.creator.(certificateLifecycle)
 	if !ok {
-		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to create certificate")
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to update certificate")
 		return
 	}
 	id, reason, _, ok := decodeLifecycleRequest(w, r)
 	if !ok {
 		return
 	}
-	duplicateID, err := lifecycle.Duplicate(r.Context(), id, reason)
-	if err != nil {
+	if err := lifecycle.Duplicate(r.Context(), id, reason); err != nil {
 		h.writeLifecycleError(w, err)
 		return
 	}
-	h.writeCertificateDetails(w, r, http.StatusCreated, duplicateID)
+	h.writeCertificateDetails(w, r, http.StatusOK, id)
 }
 
 // verificationCodeFinder to osobny interfejs, żeby nie rozszerzać Querier o metodę
@@ -785,8 +783,7 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		VerificationCode:  certificate.VerificationCode,
 		RevokedAt:         pgutil.NullableTimestampz(certificate.RevokedAt),
 		RevokeReason:      pgutil.NullableString(certificate.RevokeReason),
-		SupersedesID:      pgutil.NullableInt64(certificate.SupersedesID),
-		SupersededByID:    pgutil.NullableInt64(certificate.SupersededByID),
+		DuplicateIssuedAt: pgutil.NullableTimestampz(certificate.DuplicateIssuedAt),
 		DuplicateReason:   pgutil.NullableString(certificate.DuplicateReason),
 		Journal:           journal,
 		PrintVariants:     printVariants,
@@ -927,20 +924,20 @@ func mapCertificatesResponse(row sqlc.ListCertificatesRow) CertificateDTO {
 	studentName := row.StudentFirstname + " " + row.StudentLastname
 
 	return CertificateDTO{
-		ID:              row.ID,
-		Date:            row.Date.Time.Format(response.DateFormat),
-		StudentName:     studentName,
-		CompanyName:     row.CompanyName.String,
-		CourseName:      row.CourseName,
-		CourseSymbol:    row.CourseSymbol,
-		RegistryYear:    int(row.RegistryYear),
-		RegistryNumber:  int(row.RegistryNumber),
-		CourseDateStart: row.CourseDateStart.Time.Format(response.DateFormat),
-		CourseDateEnd:   pgutil.NullableDate(row.CourseDateEnd),
-		LanguageCode:    row.LanguageCode,
-		ExpiryDate:      pgutil.NullableString(row.ExpiryDate),
-		RevokedAt:       pgutil.NullableTimestampz(row.RevokedAt),
-		SupersededByID:  pgutil.NullableInt64(row.SupersededByID),
+		ID:                row.ID,
+		Date:              row.Date.Time.Format(response.DateFormat),
+		StudentName:       studentName,
+		CompanyName:       row.CompanyName.String,
+		CourseName:        row.CourseName,
+		CourseSymbol:      row.CourseSymbol,
+		RegistryYear:      int(row.RegistryYear),
+		RegistryNumber:    int(row.RegistryNumber),
+		CourseDateStart:   row.CourseDateStart.Time.Format(response.DateFormat),
+		CourseDateEnd:     pgutil.NullableDate(row.CourseDateEnd),
+		LanguageCode:      row.LanguageCode,
+		ExpiryDate:        pgutil.NullableString(row.ExpiryDate),
+		RevokedAt:         pgutil.NullableTimestampz(row.RevokedAt),
+		DuplicateIssuedAt: pgutil.NullableTimestampz(row.DuplicateIssuedAt),
 	}
 }
 

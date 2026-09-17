@@ -142,18 +142,18 @@ CREATE TABLE certificates (
     revoked_at timestamptz,
     revoke_reason text,
     revoked_by_user_id bigint REFERENCES users(id) ON DELETE SET NULL,
-    supersedes_id bigint REFERENCES certificates(id) ON DELETE RESTRICT,
     duplicate_reason text,
+    duplicate_issued_at timestamptz,
+    duplicate_issued_by_user_id bigint REFERENCES users(id) ON DELETE SET NULL,
     idempotency_key text,
     CONSTRAINT certificates_revoke_consistency CHECK (
         (revoked_at IS NULL AND revoke_reason IS NULL)
         OR (revoked_at IS NOT NULL AND revoke_reason IS NOT NULL AND btrim(revoke_reason) <> '')
     ),
     CONSTRAINT certificates_duplicate_consistency CHECK (
-        (supersedes_id IS NULL AND duplicate_reason IS NULL)
-        OR (supersedes_id IS NOT NULL AND duplicate_reason IS NOT NULL AND btrim(duplicate_reason) <> '')
+        (duplicate_issued_at IS NULL AND duplicate_reason IS NULL)
+        OR (duplicate_issued_at IS NOT NULL AND duplicate_reason IS NOT NULL AND btrim(duplicate_reason) <> '')
     ),
-    CONSTRAINT certificates_supersedes_not_self CHECK (supersedes_id <> id),
     CONSTRAINT certificates_language_code_check
         CHECK (
             language_code = lower(btrim(language_code))
@@ -192,7 +192,6 @@ ALTER TABLE certificates
 
 CREATE UNIQUE INDEX certificates_verification_code_uidx ON certificates (verification_code);
 
-CREATE UNIQUE INDEX certificates_supersedes_id_uidx ON certificates (supersedes_id) WHERE supersedes_id IS NOT NULL AND deleted_at IS NULL;
 
 CREATE FUNCTION certificates_verification_code_immutable() RETURNS trigger
     LANGUAGE plpgsql

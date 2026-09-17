@@ -623,7 +623,7 @@ export interface CertificateSummary {
   courseDateEnd: string | null
   expiryDate: string | null
   revokedAt?: string | null
-  supersededById?: number | null
+  duplicateIssuedAt?: string | null
 }
 
 export interface CertificatesResponse {
@@ -668,8 +668,7 @@ export interface CertificateDetails {
   verificationCode: string
   revokedAt: string | null
   revokeReason: string | null
-  supersedesId: number | null
-  supersededById: number | null
+  duplicateIssuedAt: string | null
   duplicateReason: string | null
 }
 
@@ -742,7 +741,6 @@ const apiErrorMessages: Record<string, string> = {
   // certificates: unieważnienie i duplikat
   'conflict:certificate already revoked': 'To zaświadczenie zostało już unieważnione.',
   'conflict:certificate is revoked': 'Operacja niedostępna dla unieważnionego zaświadczenia.',
-  'conflict:certificate already superseded': 'To zaświadczenie ma już wystawiony duplikat.',
 
   // certificates
   'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',

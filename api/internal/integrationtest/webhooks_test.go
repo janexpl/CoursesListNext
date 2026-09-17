@@ -321,20 +321,17 @@ func TestWebhookRevokeDuplicateValidityAndOrdering(t *testing.T) {
 		t.Fatalf("PATCH: %d %s", resp.Status, resp.Body)
 	}
 	dup := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", cert.ID), map[string]any{"reason": "Utrata"}, nil)
-	if dup.Status != http.StatusCreated {
+	if dup.Status != http.StatusOK {
 		t.Fatalf("duplicate: %d %s", dup.Status, dup.Body)
 	}
-	duplicate := decodeCertificateState(t, dup)
-	dupNumber := fmt.Sprintf("%d/%s/%d", duplicate.RegistryNumber, course.Symbol, duplicate.RegistryYear)
 	if resp := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/revoke", cert.ID), map[string]any{"reason": "Błędne dane"}, nil); resp.Status != http.StatusOK {
 		t.Fatalf("revoke: %d %s", resp.Status, resp.Body)
 	}
 
-	events := receiver.waitFor(t, "issued, validity_changed, revoked and duplicate issued", func(ev []receivedWebhook) bool {
+	events := receiver.waitFor(t, "issued, validity_changed, duplicate_issued and revoked", func(ev []receivedWebhook) bool {
 		return len(filterEvents(ev, "certificate.revoked", number)) == 1 &&
 			len(filterEvents(ev, "certificate.validity_changed", number)) == 1 &&
-			// Duplikat też przechodzi przez jedno 503, więc przychodzi dwukrotnie.
-			len(filterEvents(ev, "certificate.issued", dupNumber)) == 2
+			len(filterEvents(ev, "certificate.duplicate_issued", number)) == 1
 	})
 
 	// Kolejność dla oryginału: issued (po ponowieniu) -> validity_changed -> revoked, rosnące znaczniki.
@@ -350,12 +347,14 @@ func TestWebhookRevokeDuplicateValidityAndOrdering(t *testing.T) {
 		sequence = append(sequence, fmt.Sprint(ev.Event["event"]))
 		timestamps = append(timestamps, fmt.Sprint(ev.Event["timestamp"]))
 	}
-	want := []string{"certificate.issued", "certificate.validity_changed", "certificate.revoked"}
+	want := []string{"certificate.issued", "certificate.validity_changed", "certificate.duplicate_issued", "certificate.revoked"}
 	if !slices.Equal(sequence, want) {
 		t.Fatalf("delivery order for %s: got %v, want %v\n%s", number, sequence, want, describeWebhooks(events))
 	}
-	if !slices.IsSorted(timestamps) || timestamps[0] == timestamps[1] || timestamps[1] == timestamps[2] {
-		t.Fatalf("timestamps must strictly increase per certificate: %v", timestamps)
+	for i := 1; i < len(timestamps); i++ {
+		if timestamps[i] <= timestamps[i-1] {
+			t.Fatalf("timestamps must strictly increase per certificate: %v", timestamps)
+		}
 	}
 
 	revoked := filterEvents(events, "certificate.revoked", number)[0].Event
@@ -367,49 +366,48 @@ func TestWebhookRevokeDuplicateValidityAndOrdering(t *testing.T) {
 	if validity["valid_until"] != wantValidUntil.AddDate(0, 0, 5*365).Format("2006-01-02") || len(validity) != 4 {
 		t.Fatalf("unexpected certificate.validity_changed payload: %v", validity)
 	}
-	duplicateIssued := filterEvents(events, "certificate.issued", dupNumber)[0].Event
-	if duplicateIssued["idempotency_key"] != key || duplicateIssued["verification_code"] != duplicate.VerificationCode {
-		t.Fatalf("duplicate must be announced with the original idempotency key: %v", duplicateIssued)
-	}
 }
 
-// Zlecenie, sekcja 12: duplikat niesie klucz idempotencji oryginału, więc odbiorca musi
-// dostać jawny sygnał, że ma utworzyć powiązany dokument, a nie nadpisać znaleziony.
-func TestWebhookDuplicateCarriesOriginalCertificateNumber(t *testing.T) {
+// Duplikat to ten sam dokument, więc odbiorca dostaje osobne zdarzenie o wystawieniu
+// wtórnika, a nie drugie certificate.issued, które nadpisałoby mu dokument.
+func TestWebhookDuplicateIssuedForTheSameCertificate(t *testing.T) {
 	e := requireEnv(t)
 	receiver := newWebhookReceiver(t, e)
 	course := e.seedCourse(t)
-	key := fmt.Sprintf("wh-supersedes-%d", nextSeed())
+	key := fmt.Sprintf("wh-duplicate-%d", nextSeed())
 
-	original, _ := e.issueWithKey(t, course.ID, key)
-	originalNumber := fmt.Sprintf("%d/%s/%d", original.RegistryNumber, course.Symbol, original.RegistryYear)
+	cert, _ := e.issueWithKey(t, course.ID, key)
+	number := fmt.Sprintf("%d/%s/%d", cert.RegistryNumber, course.Symbol, cert.RegistryYear)
 
 	// Duplikat wystawiany przez pracownika w aplikacji webowej (ciasteczko sesji, bez klucza API).
-	duplicateResp := e.callWithSession(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", original.ID),
+	duplicateResp := e.callWithSession(t, http.MethodPost, fmt.Sprintf("/certificates/%d/duplicate", cert.ID),
 		map[string]any{"reason": "Kursant zgubił oryginał"})
-	if duplicateResp.Status != http.StatusCreated {
-		t.Fatalf("duplicate from web session: expected 201, got %d: %s", duplicateResp.Status, duplicateResp.Body)
+	if duplicateResp.Status != http.StatusOK {
+		t.Fatalf("duplicate from web session: expected 200, got %d: %s", duplicateResp.Status, duplicateResp.Body)
 	}
-	duplicate := decodeCertificateState(t, duplicateResp)
-	duplicateNumber := fmt.Sprintf("%d/%s/%d", duplicate.RegistryNumber, course.Symbol, duplicate.RegistryYear)
 
-	events := receiver.waitFor(t, "certificate.issued for the original and the duplicate", func(ev []receivedWebhook) bool {
-		return len(filterEvents(ev, "certificate.issued", originalNumber)) == 1 &&
-			len(filterEvents(ev, "certificate.issued", duplicateNumber)) == 1
+	events := receiver.waitFor(t, "certificate.duplicate_issued", func(ev []receivedWebhook) bool {
+		return len(filterEvents(ev, "certificate.duplicate_issued", number)) == 1
 	})
-
-	duplicateEvent := filterEvents(events, "certificate.issued", duplicateNumber)[0].Event
-	if duplicateEvent["supersedes_certificate_number"] != originalNumber {
-		t.Fatalf("duplicate event must carry the original number %q, got %v", originalNumber, duplicateEvent["supersedes_certificate_number"])
+	duplicateEvent := filterEvents(events, "certificate.duplicate_issued", number)[0].Event
+	if duplicateEvent["duplicate_issued_at"] != time.Now().Format("2006-01-02") {
+		t.Fatalf("duplicate_issued_at must be today, got %v", duplicateEvent["duplicate_issued_at"])
 	}
-	if duplicateEvent["idempotency_key"] != key {
-		t.Fatalf("duplicate event must keep the original idempotency key, got %v", duplicateEvent["idempotency_key"])
+	if duplicateEvent["reason"] != "Kursant zgubił oryginał" {
+		t.Fatalf("unexpected reason: %v", duplicateEvent["reason"])
+	}
+	if len(duplicateEvent) != 5 {
+		t.Fatalf("unexpected fields in certificate.duplicate_issued: %s", filterEvents(events, "certificate.duplicate_issued", number)[0].RawBody)
 	}
 
-	// Zwykłe wydanie nie ma tego klucza w ogóle - sama obecność pola jest sygnałem.
-	originalEvent := filterEvents(events, "certificate.issued", originalNumber)[0].Event
-	if _, present := originalEvent["supersedes_certificate_number"]; present {
-		t.Fatalf("plain issuance must not carry supersedes_certificate_number: %s", filterEvents(events, "certificate.issued", originalNumber)[0].RawBody)
+	// Numer, kod i ważność się nie zmieniają, więc drugiego certificate.issued być nie może.
+	if n := len(filterEvents(events, "certificate.issued", number)); n != 1 {
+		t.Fatalf("expected exactly one certificate.issued for %s, got %d", number, n)
+	}
+	// Zdarzenie o duplikacie jest późniejsze niż wystawienie - odbiorca stosuje je po kolei.
+	issuedAt := fmt.Sprint(filterEvents(events, "certificate.issued", number)[0].Event["timestamp"])
+	if fmt.Sprint(duplicateEvent["timestamp"]) <= issuedAt {
+		t.Fatalf("duplicate timestamp %v must be later than issued %v", duplicateEvent["timestamp"], issuedAt)
 	}
 }
 

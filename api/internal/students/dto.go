@@ -40,17 +40,17 @@ type StudentDetailsResponse struct {
 }
 
 type CertificateByStudentDTO struct {
-	ID              int64   `json:"id"`
-	Date            string  `json:"date"`
-	CourseName      string  `json:"courseName"`
-	CourseSymbol    string  `json:"courseSymbol"`
-	RegistryYear    int64   `json:"registryYear"`
-	RegistryNumber  int64   `json:"registryNumber"`
-	CourseDateStart string  `json:"courseDateStart"`
-	CourseDateEnd   *string `json:"courseDateEnd"`
-	ExpiryDate      *string `json:"expiryDate"`
-	RevokedAt       *string `json:"revokedAt"`
-	SupersededByID  *int64  `json:"supersededById"`
+	ID                int64   `json:"id"`
+	Date              string  `json:"date"`
+	CourseName        string  `json:"courseName"`
+	CourseSymbol      string  `json:"courseSymbol"`
+	RegistryYear      int64   `json:"registryYear"`
+	RegistryNumber    int64   `json:"registryNumber"`
+	CourseDateStart   string  `json:"courseDateStart"`
+	CourseDateEnd     *string `json:"courseDateEnd"`
+	ExpiryDate        *string `json:"expiryDate"`
+	RevokedAt         *string `json:"revokedAt"`
+	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
 }
 
 type ListCertificatesByStudentResponse struct {

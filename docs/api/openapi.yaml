@@ -60,12 +60,9 @@ webhooks:
       operationId: webhookWebhookCertificateIssued
       summary: Wystawiono zaświadczenie (także duplikat)
       description: >-
-        Wysyłane po wystawieniu zaświadczenia z `Idempotency-Key` (`POST /certificates`) oraz po wystawieniu
-        duplikatu takiego zaświadczenia (duplikat niesie `idempotency_key` oryginału i własny numer).
-        Dokumenty wystawione bez klucza (aplikacja webowa, dzienniki) nie generują zdarzeń.
-
-        **Duplikat rozpoznajesz po obecności `supersedes_certificate_number`** — wtedy utwórz nowy dokument
-        powiązany z tym o podanym numerze, zamiast nadpisywać dokument znaleziony po `idempotency_key`.
+        Wysyłane po wystawieniu zaświadczenia z `Idempotency-Key` (`POST /certificates`). Dokumenty wystawione
+        bez klucza (aplikacja webowa, dzienniki) nie generują zdarzeń. Wystawienie duplikatu **nie** wysyła
+        tego zdarzenia — duplikat to ten sam dokument i ma własne `certificate.duplicate_issued`.
       x-signature-header: X-Az-Signature
       parameters:
         - name: X-Az-Signature
@@ -94,6 +91,44 @@ webhooks:
           description: Nieznany dokument lub program — błąd trwały, bez ponowień.
         "5XX":
           description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+  certificate.duplicate_issued:
+    post:
+      tags: [webhooks]
+      operationId: webhookCertificateDuplicateIssued
+      summary: Wystawiono duplikat (wtórnik) zaświadczenia
+      description: >-
+        Wysyłane po `POST /certificates/{id}/duplicate` — z API i z aplikacji webowej — dla zaświadczeń
+        wystawionych z `Idempotency-Key`. Dokument zachowuje numer, kod weryfikacyjny i ważność, więc
+        odbiorca tylko odnotowuje fakt i datę wystawienia wtórnika; **nie tworzy drugiego dokumentu**.
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookCertificateDuplicateIssued"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+
   certificate.revoked:
     post:
       tags: [webhooks]
@@ -1505,18 +1540,16 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [certificates]
-      operationId: duplicateCertificate
-      summary: Wystawienie duplikatu zaświadczenia
+      operationId: issueCertificateDuplicate
+      summary: Wystawienie duplikatu (wtórnika) zaświadczenia
       description: >-
-        Tworzy **nowy** dokument z danymi skopiowanymi z oryginału (kursant, firma, treść kursu, daty kursu,
-        język) i własnym kodem weryfikacyjnym. Data wystawienia to dzień wykonania operacji. Numer rejestru
-        nadawany jak przy `POST /certificates` bez numeru: rok z `courseDateEnd` (albo `courseDateStart`),
-        numer = największy w kursie i roku + 1. Nowy dokument ma `supersedesId` = id oryginału, a oryginał
-        `supersededById` = id duplikatu; oryginał nie jest unieważniany.
+        **Duplikat to ten sam dokument, nie nowy.** Zaświadczenie zachowuje numer rejestru, kod weryfikacyjny,
+        datę wystawienia i całą treść; dostaje jedynie `duplicateIssuedAt` i `duplicateReason`, a wydruk PDF
+        adnotację „DUPLIKAT" z datą wystawienia wtórnika. Nie powstaje drugi dokument i nie jest zajmowany
+        kolejny numer w rejestrze.
 
-        Dokument może mieć jeden duplikat (kolejny wystawiasz od duplikatu). Operacja jest więc bezpieczna
-        przy ponowieniu: drugie wywołanie dla tego samego oryginału zwraca 409, a id duplikatu odczytasz
-        z `supersededById` oryginału.
+        Operację można powtórzyć (kursant może zgubić dokument ponownie) — liczy się data ostatniego
+        wystawienia, a każde odnotowuje się w historii zmian. Unieważnionego dokumentu nie da się zduplikować.
       x-required-scope: certificates:write
       requestBody:
         required: true
@@ -1525,16 +1558,14 @@ paths:
             schema:
               $ref: "#/components/schemas/CertificateLifecycleReason"
       responses:
-        "201":
-          description: Nowy dokument (kształt jak w GET).
+        "200":
+          description: Zaświadczenie po odnotowaniu duplikatu (kształt jak w GET).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CertificateDetailsResponse"
         "400":
-          description: >-
-            `invalid certificate ID`, `invalid request body` (brak lub pusty `reason`), `invalid certificate data`
-            (dzisiejsza data narusza chronologię rejestru — w kursie i roku istnieje zaświadczenie z późniejszą datą).
+          description: "`invalid certificate ID`, `invalid request body` (brak lub pusty `reason`, pole spoza schematu)."
           content:
             application/json:
               schema:
@@ -1544,15 +1575,13 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: "Oryginał nie istnieje lub jest usunięty (`certificate not found`)."
+          description: "Zaświadczenie nie istnieje lub jest usunięte (`certificate not found`)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: >-
-            Oryginał jest unieważniony (`certificate is revoked`) albo ma już duplikat
-            (`certificate already superseded`).
+          description: "Zaświadczenie jest unieważnione (`certificate is revoked`)."
           content:
             application/json:
               schema:
@@ -2934,9 +2963,6 @@ components:
     WebhookCertificateIssued:
       type: object
       additionalProperties: false
-      description: >-
-        Wystawienie zaświadczenia albo jego duplikatu. Duplikat ma `idempotency_key` oryginału (to po nim
-        odbiorca odnajduje sprawę), własny `certificate_number` i dodatkowo `supersedes_certificate_number`.
       required: [event, timestamp, idempotency_key, certificate_number, issued_at]
       properties:
         event:
@@ -2960,14 +2986,24 @@ components:
             Pomijane, gdy serwer nie ma skonfigurowanego adresu publicznego.
         verification_code:
           $ref: "#/components/schemas/VerificationCode"
-        supersedes_certificate_number:
-          allOf:
-            - $ref: "#/components/schemas/WebhookCertificateNumber"
-          description: >-
-            Numer rejestru **oryginału**. Pole występuje **wyłącznie** przy duplikacie i nigdy nie jest `null` —
-            sama jego obecność oznacza, że to duplikat dokumentu o tym numerze, a nie ponowne wydanie dokumentu
-            znalezionego po `idempotency_key` (duplikat niesie klucz oryginału). Przy zwykłym wystawieniu pola
-            nie ma w ciele w ogóle.
+    WebhookCertificateDuplicateIssued:
+      type: object
+      additionalProperties: false
+      description: >-
+        Wtórnik tego samego dokumentu. Numer rejestru, kod weryfikacyjny i ważność się nie zmieniają —
+        nie twórz drugiego dokumentu, tylko odnotuj datę wystawienia duplikatu.
+      required: [event, timestamp, certificate_number, duplicate_issued_at, reason]
+      properties:
+        event:
+          const: certificate.duplicate_issued
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        duplicate_issued_at:
+          $ref: "#/components/schemas/Date"
+        reason:
+          type: string
     WebhookCertificateRevoked:
       type: object
       additionalProperties: false
@@ -3161,7 +3197,7 @@ components:
           description: "`null` = kursant bez firmy."
     StudentCertificate:
       type: object
-      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, revokedAt, supersededById]
+      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, revokedAt, duplicateIssuedAt]
       properties:
         id:
           type: integer
@@ -3184,10 +3220,8 @@ components:
           $ref: "#/components/schemas/ExpiryDate"
         revokedAt:
           $ref: "#/components/schemas/NullableLocalTimestamp"
-        supersededById:
-          type: [integer, "null"]
-          format: int64
-          description: Id duplikatu, który zastąpił ten dokument; `null`, gdy nie został zastąpiony.
+        duplicateIssuedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
     StudentCertificatesResponse:
       type: object
       required: [data]
@@ -3538,7 +3572,7 @@ components:
         lub okresu ważności.
     CertificateListItem:
       type: object
-      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode, revokedAt, supersededById]
+      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode, revokedAt, duplicateIssuedAt]
       properties:
         id:
           type: integer
@@ -3570,10 +3604,8 @@ components:
           description: Język, w którym wystawiono zaświadczenie (`pl` lub kod tłumaczenia).
         revokedAt:
           $ref: "#/components/schemas/NullableLocalTimestamp"
-        supersededById:
-          type: [integer, "null"]
-          format: int64
-          description: Id duplikatu, który zastąpił ten dokument; `null`, gdy nie został zastąpiony.
+        duplicateIssuedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
     CertificateListResponse:
       type: object
       required: [data]
@@ -3622,7 +3654,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, supersedesId, supersededById, duplicateReason]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, duplicateIssuedAt, duplicateReason]
       properties:
         id:
           type: integer
@@ -3691,17 +3723,13 @@ components:
         revokeReason:
           type: [string, "null"]
           description: Powód unieważnienia; `null`, gdy dokument nie jest unieważniony.
-        supersedesId:
-          type: [integer, "null"]
-          format: int64
-          description: Id oryginału, gdy ten dokument jest duplikatem.
-        supersededById:
-          type: [integer, "null"]
-          format: int64
-          description: Id duplikatu, który zastąpił ten dokument.
+        duplicateIssuedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
         duplicateReason:
           type: [string, "null"]
-          description: Powód wystawienia duplikatu (tylko na duplikacie).
+          description: >-
+            Powód ostatniego wystawienia duplikatu; `null`, dopóki wtórnika nie wystawiono. Razem
+            z `duplicateIssuedAt` trafia na wydruk jako adnotacja „DUPLIKAT".
     CertificateLifecycleReason:
       type: object
       additionalProperties: false

@@ -23,10 +23,9 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    sup.id AS superseded_by_id
+    c.duplicate_issued_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 WHERE
     (
         sqlc.narg(search)::text IS NULL
@@ -86,12 +85,10 @@ SELECT
     c.verification_code,
     c.revoked_at,
     c.revoke_reason,
-    c.supersedes_id,
-    sup.id AS superseded_by_id,
     c.duplicate_reason,
+    c.duplicate_issued_at,
     c.idempotency_key
 FROM certificates c
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
@@ -160,10 +157,9 @@ RETURNING id, verification_code;
           ELSE NULL::text
       END, '') AS expiry_date,
       c.revoked_at,
-      sup.id AS superseded_by_id
+      c.duplicate_issued_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
-  LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
   WHERE c.student_id = $1
   AND c.deleted_at IS NULL
   ORDER BY c.date DESC, c.id DESC;
@@ -230,12 +226,10 @@ SELECT
     u.verification_code,
     u.revoked_at,
     u.revoke_reason,
-    u.supersedes_id,
-    sup.id AS superseded_by_id,
     u.duplicate_reason,
+    u.duplicate_issued_at,
     u.idempotency_key
 FROM updated u
-LEFT JOIN certificates sup ON sup.supersedes_id = u.id AND sup.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id;
@@ -284,10 +278,9 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    sup.id AS superseded_by_id
+    c.duplicate_issued_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
-LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
 WHERE r.course_id = sqlc.arg(course_id)
   AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
@@ -329,10 +322,9 @@ OFFSET sqlc.arg(offset_count);
           ''
       ) AS expiry_date,
       c.revoked_at,
-      sup.id AS superseded_by_id
+      c.duplicate_issued_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
-  LEFT JOIN certificates sup ON sup.supersedes_id = c.id AND sup.deleted_at IS NULL
   WHERE c.company_id_snapshot = sqlc.arg(company_id)
     AND (sqlc.narg(date_from)::date IS NULL OR c.date >= sqlc.narg(date_from)::date)
     AND (sqlc.narg(date_to)::date IS NULL OR c.date <= sqlc.narg(date_to)::date)
@@ -366,12 +358,8 @@ OFFSET sqlc.arg(offset_count);
     JOIN companies comp ON comp.id = c.company_id_snapshot
     JOIN registries r ON r.id = c.registry_id
     WHERE c.deleted_at IS NULL
-      -- Unieważniony dokument nie wygasa, a zastąpiony ma własny duplikat z tą samą ważnością.
+      -- Unieważniony dokument nie wygasa.
       AND c.revoked_at IS NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM certificates sup
-          WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL
-      )
       AND comp.expiry_notifications_enabled = true
       AND c.coursedateend IS NOT NULL
       AND c.course_expiry_time_snapshot IS NOT NULL
@@ -415,14 +403,9 @@ WHERE c.id = $1
 FOR UPDATE OF c;
 
 -- name: GetCertificateLifecycleState :one
-SELECT
-    (c.revoked_at IS NOT NULL)::boolean AS revoked,
-    EXISTS (
-        SELECT 1 FROM certificates sup
-        WHERE sup.supersedes_id = c.id AND sup.deleted_at IS NULL
-    ) AS superseded
-FROM certificates c
-WHERE c.id = $1;
+SELECT (revoked_at IS NOT NULL)::boolean AS revoked
+FROM certificates
+WHERE id = $1;
 
 -- name: RevokeCertificate :exec
 UPDATE certificates
@@ -431,66 +414,11 @@ SET revoked_at = now(),
     revoked_by_user_id = sqlc.narg(revoked_by_user_id)
 WHERE id = sqlc.arg(id);
 
--- name: DuplicateCertificate :one
--- Nowy dokument z kopią danych oryginału (kursant, firma, treść kursu, daty kursu, język),
--- z nową datą wystawienia i nowym wierszem rejestru.
-INSERT INTO certificates (
-    date,
-    student_id,
-    coursedatestart,
-    coursedateend,
-    registry_id,
-    language_code,
-    student_firstname_snapshot,
-    student_secondname_snapshot,
-    student_lastname_snapshot,
-    student_birthdate_snapshot,
-    student_birthplace_snapshot,
-    student_pesel_snapshot,
-    company_name_snapshot,
-    company_id_snapshot,
-    course_name_snapshot,
-    course_symbol_snapshot,
-    course_expiry_time_snapshot,
-    course_program_snapshot,
-    cert_front_page_snapshot,
-    supersedes_id,
-    duplicate_reason,
-    idempotency_key
-)
-SELECT
-    sqlc.arg(date)::date,
-    o.student_id,
-    o.coursedatestart,
-    o.coursedateend,
-    sqlc.arg(registry_id)::bigint,
-    o.language_code,
-    o.student_firstname_snapshot,
-    o.student_secondname_snapshot,
-    o.student_lastname_snapshot,
-    o.student_birthdate_snapshot,
-    o.student_birthplace_snapshot,
-    o.student_pesel_snapshot,
-    o.company_name_snapshot,
-    o.company_id_snapshot,
-    o.course_name_snapshot,
-    o.course_symbol_snapshot,
-    o.course_expiry_time_snapshot,
-    o.course_program_snapshot,
-    o.cert_front_page_snapshot,
-    o.id,
-    sqlc.arg(reason)::text,
-    o.idempotency_key
-FROM certificates o
-WHERE o.id = sqlc.arg(original_id)
-RETURNING id;
-
--- name: GetCertificateNumberByID :one
--- Sam numer rejestru dokumentu (bez migawek treści) - webhook duplikatu podaje numer oryginału.
-SELECT
-    r.number::bigint AS registry_number,
-    r.year AS registry_year,
-    c.course_symbol_snapshot AS course_symbol
-FROM certificates c
-JOIN registries r ON r.id = c.registry_id
-WHERE c.id = $1;
+-- name: MarkCertificateDuplicateIssued :exec
+-- Duplikat nie tworzy nowego dokumentu: ten sam wiersz dostaje datę i powód wystawienia
+-- wtórnika, a wydruk adnotację "DUPLIKAT". Kolejne wystawienie nadpisuje datę.
+UPDATE certificates
+SET duplicate_issued_at = now(),
+    duplicate_reason = sqlc.arg(reason)::text,
+    duplicate_issued_by_user_id = sqlc.narg(duplicate_issued_by_user_id)
+WHERE id = sqlc.arg(id);

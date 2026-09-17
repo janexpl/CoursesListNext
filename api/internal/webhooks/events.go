@@ -22,6 +22,7 @@ import (
 
 const (
 	EventCertificateIssued          = "certificate.issued"
+	EventCertificateDuplicateIssued = "certificate.duplicate_issued"
 	EventCertificateRevoked         = "certificate.revoked"
 	EventCertificateValidityChanged = "certificate.validity_changed"
 	EventProgramUpdated             = "program.updated"
@@ -50,11 +51,17 @@ type certificateIssuedPayload struct {
 	ValidUntil        *string `json:"valid_until,omitempty"`
 	PDFURL            string  `json:"pdf_url,omitempty"`
 	VerificationCode  string  `json:"verification_code,omitempty"`
-	// SupersedesCertificateNumber występuje wyłącznie przy duplikacie i niesie numer
-	// oryginału. Duplikat ma klucz idempotencji oryginału, więc bez tego pola odbiorca
-	// odnalazłby po kluczu oryginał i nadpisałby mu numer, kod i adres PDF danymi
-	// duplikatu. Obecność pola mówi: utwórz dokument powiązany, nie nadpisuj znalezionego.
-	SupersedesCertificateNumber string `json:"supersedes_certificate_number,omitempty"`
+}
+
+// certificateDuplicateIssuedPayload - wtórnik tego samego dokumentu. Numer rejestru,
+// kod weryfikacyjny i ważność się nie zmieniają, więc odbiorca tylko odnotowuje fakt
+// i datę wystawienia duplikatu.
+type certificateDuplicateIssuedPayload struct {
+	Event             string `json:"event"`
+	Timestamp         string `json:"timestamp"`
+	CertificateNumber string `json:"certificate_number"`
+	DuplicateIssuedAt string `json:"duplicate_issued_at"`
+	Reason            string `json:"reason"`
 }
 
 type certificateRevokedPayload struct {
@@ -89,14 +96,6 @@ func (p *Publisher) CertificateIssued(ctx context.Context, q *dbsqlc.Queries, ce
 	if !IsPlatformCertificate(cert) {
 		return nil
 	}
-	supersedesNumber := ""
-	if cert.SupersedesID.Valid {
-		original, err := q.GetCertificateNumberByID(ctx, cert.SupersedesID.Int64)
-		if err != nil {
-			return err
-		}
-		supersedesNumber = fmt.Sprintf("%d/%s/%d", original.RegistryNumber, original.CourseSymbol, original.RegistryYear)
-	}
 	return p.enqueue(ctx, q, EventCertificateIssued, certificateSubject(cert.ID), func(timestamp string) any {
 		payload := certificateIssuedPayload{
 			Event:             EventCertificateIssued,
@@ -106,8 +105,6 @@ func (p *Publisher) CertificateIssued(ctx context.Context, q *dbsqlc.Queries, ce
 			IssuedAt:          cert.Date.Time.Format(time.DateOnly),
 			ValidUntil:        validUntil(cert),
 			VerificationCode:  cert.VerificationCode,
-
-			SupersedesCertificateNumber: supersedesNumber,
 		}
 		if p.PublicBaseURL != "" {
 			payload.PDFURL = fmt.Sprintf("%s/api/v1/certificates/%d/pdf", p.PublicBaseURL, cert.ID)
@@ -126,6 +123,23 @@ func (p *Publisher) CertificateRevoked(ctx context.Context, q *dbsqlc.Queries, c
 			Event:             EventCertificateRevoked,
 			Timestamp:         timestamp,
 			CertificateNumber: CertificateNumber(cert),
+			Reason:            reason,
+		}
+	})
+}
+
+// CertificateDuplicateIssued zapisuje certificate.duplicate_issued: na dokumencie
+// wystawiono wtórnik. Dokument zachowuje numer, kod weryfikacyjny i ważność.
+func (p *Publisher) CertificateDuplicateIssued(ctx context.Context, q *dbsqlc.Queries, cert dbsqlc.GetCertificateByIDRow, reason string) error {
+	if !IsPlatformCertificate(cert) {
+		return nil
+	}
+	return p.enqueue(ctx, q, EventCertificateDuplicateIssued, certificateSubject(cert.ID), func(timestamp string) any {
+		return certificateDuplicateIssuedPayload{
+			Event:             EventCertificateDuplicateIssued,
+			Timestamp:         timestamp,
+			CertificateNumber: CertificateNumber(cert),
+			DuplicateIssuedAt: cert.DuplicateIssuedAt.Time.Format(time.DateOnly),
 			Reason:            reason,
 		}
 	})

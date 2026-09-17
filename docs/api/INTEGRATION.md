@@ -26,7 +26,7 @@ Firma ──< Kursant ──< Zaświadczenie >── Kurs ──< Tłumaczenie k
 | Firma | `companies` | Pracodawca kursantów. NIP unikalny. Może mieć `externalId` platformy. Może dostawać e-maile o wygasających zaświadczeniach. |
 | Kursant | `students` | Opcjonalnie przypisany do jednej firmy. Może mieć `externalId` platformy. |
 | Kurs | `courses` | Symbol unikalny. Zawiera program szkolenia i szablon HTML zaświadczenia (+ tłumaczenia). Flaga `deliveredByPlatform` wyznacza katalog platformy. |
-| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok), i kod weryfikacyjny. Może zostać unieważnione albo zastąpione duplikatem. |
+| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok), i kod weryfikacyjny. Może zostać unieważnione; wtórnik to ten sam dokument z adnotacją „DUPLIKAT". |
 | Dziennik szkolenia | `journals` | Dokumentacja jednej edycji kursu: sesje, uczestnicy, obecność, skany. Status `draft` → `closed`. |
 | Uczestnik | `journals/{id}/attendees` | Kursant dodany do dziennika. **Ma własne `id`, różne od `studentId`.** |
 
@@ -39,8 +39,8 @@ Zaświadczenie i uczestnik dziennika zapisują **kopię** danych z chwili utworz
 - uczestnik — imię i nazwisko, datę urodzenia i nazwę firmy.
 
 Późniejsza zmiana kursanta, firmy lub kursu **nie zmienia** wystawionych zaświadczeń ani uczestników.
-Wyjątek: `PATCH /certificates/{id}` odświeża kopię danych kursanta. Duplikat (`POST /certificates/{id}/duplicate`) kopiuje
-dane z oryginału, nie z aktualnego kursanta i kursu.
+Wyjątek: `PATCH /certificates/{id}` odświeża kopię danych kursanta. Wystawienie duplikatu
+(`POST /certificates/{id}/duplicate`) nie zmienia treści dokumentu — dokłada tylko adnotację o wtórniku.
 
 ---
 
@@ -246,15 +246,15 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    **Decyzja dot. PDF:** `GET /certificates/{id}/pdf` dla unieważnionego dokumentu zwraca **409
    `certificate is revoked`** — API nie generuje wydruku unieważnionego dokumentu (ani ze znakiem wodnym),
    żeby nie krążył plik wyglądający na ważny. Stan i dane dokumentu są dostępne w `GET /certificates/{id}`.
-4. `POST /certificates/{id}/duplicate` `{ "reason": "..." }` wystawia duplikat: nowy dokument z kopią danych
-   oryginału, **dzisiejszą datą wystawienia**, nowym kodem weryfikacyjnym i kolejnym numerem (jak przy
-   wystawieniu bez numeru, sekcja 6.3). Odpowiedź `201` z pełnym nowym dokumentem (`supersedesId` = oryginał);
-   oryginał dostaje `supersededById` i pozostaje ważny. Dokument ma najwyżej jeden duplikat — ponowienie
-   → 409 `certificate already superseded` (id duplikatu jest w `supersededById` oryginału).
-   Konsekwencja chronologii rejestru: po duplikacie z dzisiejszą datą nowe zaświadczenia w tym kursie i roku
-   nie mogą mieć daty wcześniejszej niż dzisiejsza (400 `invalid certificate data`).
+4. `POST /certificates/{id}/duplicate` `{ "reason": "..." }` odnotowuje wystawienie duplikatu (wtórnika).
+   **To ten sam dokument, nie nowy**: numer rejestru, kod weryfikacyjny, data wystawienia i treść zostają bez
+   zmian, dochodzą tylko `duplicateIssuedAt` i `duplicateReason`, a wydruk PDF dostaje adnotację „DUPLIKAT"
+   z datą wystawienia wtórnika. Odpowiedź `200` z tym samym dokumentem. Duplikat nie zajmuje kolejnego numeru
+   w rejestrze i nie wpływa na ważność.
+   Operację można powtórzyć (kursant może zgubić dokument ponownie) — liczy się data ostatniego wystawienia,
+   a każde zostaje w historii zmian. Unieważnionego dokumentu nie da się zduplikować (409 `certificate is revoked`).
 5. Przypomnienia o wygasaniu (pulpit, `/internal/notifications/expiring-certificates`) pomijają dokumenty
-   unieważnione i zastąpione duplikatem — przypomina się o duplikacie.
+   unieważnione. Wystawienie wtórnika niczego tu nie zmienia — to nadal ten sam dokument.
 6. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
    i niezmienny. Dostają go wszystkie dokumenty (API, aplikacja webowa, dziennik, także te sprzed wprowadzenia kodu).
    Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
@@ -533,7 +533,8 @@ ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToStri
 
 | `event` | Kiedy | Pola |
 |---|---|---|
-| `certificate.issued` | `POST /certificates` z `Idempotency-Key`; duplikat takiego zaświadczenia | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code`, `supersedes_certificate_number` (**tylko przy duplikacie**) |
+| `certificate.issued` | `POST /certificates` z `Idempotency-Key` | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code` |
+| `certificate.duplicate_issued` | wystawienie wtórnika (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `duplicate_issued_at`, `reason` |
 | `certificate.revoked` | unieważnienie (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `reason` |
 | `certificate.validity_changed` | `PATCH /certificates/{id}` zmienił termin ważności | `timestamp`, `certificate_number`, `valid_until` (`null` = bez terminu) |
 | `program.updated` | zmiana nazwy, programu lub okresu ważności kursu z `deliveredByPlatform` | `timestamp`, `external_program_id` (= `id` kursu) |
@@ -544,26 +545,20 @@ ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToStri
  "pdf_url":"https://courseslist.example.pl/api/v1/certificates/9812/pdf","verification_code":"K7QM4XPA9TZC"}
 ```
 
-Duplikat tego samego zaświadczenia (ten sam `idempotency_key`, nowy numer i kod):
+Wystawienie wtórnika tego samego zaświadczenia:
 
 ```json
-{"event":"certificate.issued","timestamp":"2026-10-02T08:41:12.004918Z","idempotency_key":"enrollment-8812",
- "certificate_number":"37/BHP/2026","issued_at":"2026-10-02","valid_until":"2031-09-14",
- "pdf_url":"https://courseslist.example.pl/api/v1/certificates/9994/pdf","verification_code":"R4TX8MHQ2WDN",
- "supersedes_certificate_number":"12/BHP/2026"}
+{"event":"certificate.duplicate_issued","timestamp":"2026-10-02T08:41:12.004918Z",
+ "certificate_number":"12/BHP/2026","duplicate_issued_at":"2026-10-02","reason":"Kursant zgubił oryginał"}
 ```
 
-- **Zdarzenia o zaświadczeniach dotyczą wyłącznie dokumentów wystawionych z `Idempotency-Key`** i ich duplikatów
-  (duplikat niesie `idempotency_key` oryginału i własny `certificate_number`). Dokumenty z aplikacji webowej
-  i dzienników nie generują zdarzeń — odbiorca nie miałby ich z czym powiązać.
-- **Duplikat poznajesz po polu `supersedes_certificate_number`** z numerem oryginału. Duplikat ma klucz
-  idempotencji oryginału, więc bez tego pola dokument odnaleziony po kluczu zostałby nadpisany numerem, kodem
-  weryfikacyjnym i adresem PDF duplikatu, a oryginał straciłby tożsamość. Obecność pola znaczy: **utwórz nowy
-  dokument powiązany z tym o podanym numerze**, nie nadpisuj znalezionego. Duplikat bywa wystawiany w aplikacji
-  webowej (kursant zgubił oryginał), więc zdarzenie przychodzi też bez udziału platformy.
-  Przy zwykłym wystawieniu pola **nie ma w ciele w ogóle** — nie przychodzi jako `null`, więc rozpoznanie sprowadza
-  się do sprawdzenia obecności klucza. Decyzja: zostajemy przy jednym zdarzeniu `certificate.issued` z tym polem,
-  bez osobnego `certificate.superseded` — odbiorca obsługuje duplikat tą samą ścieżką co wystawienie.
+- **Zdarzenia o zaświadczeniach dotyczą wyłącznie dokumentów wystawionych z `Idempotency-Key`**. Dokumenty
+  z aplikacji webowej i dzienników nie generują zdarzeń — odbiorca nie miałby ich z czym powiązać.
+- **Duplikat nie jest nowym dokumentem.** `certificate.duplicate_issued` mówi tylko, że dla zaświadczenia
+  o podanym numerze wydano wtórnik: numer rejestru, kod weryfikacyjny, data wystawienia i ważność zostają
+  bez zmian, więc **nie twórz drugiego dokumentu** — odnotuj datę. Duplikat bywa wystawiany w aplikacji
+  webowej (kursant zgubił oryginał), więc zdarzenie przychodzi też bez udziału platformy. Ponowne wystawienie
+  wtórnika wysyła kolejne zdarzenie z nowszą datą.
 - `pdf_url` wymaga klucza API z `certificates:read`; dla unieważnionego dokumentu zwraca 409.
 - `timestamp` to ISO 8601 w UTC z `Z` i mikrosekundami. Rośnie ściśle w obrębie zaświadczenia (i kursu).
 
@@ -604,7 +599,7 @@ UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_attempt_at 
 | 401 | Nie | Klucz nieważny — zatrzymaj integrację i zgłoś potrzebę nowego klucza. |
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
-| 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `certificate already revoked` / `certificate already superseded` przy ponowieniu unieważnienia lub duplikatu oznaczają, że pierwsze wywołanie się powiodło — pobierz dokument przez GET. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
+| 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `certificate already revoked` przy ponowieniu unieważnienia oznacza, że pierwsze wywołanie się powiodło — pobierz dokument przez GET. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
 | 500 | Ostrożnie | Błąd serwera. `POST /certificates` z `Idempotency-Key` możesz bezpiecznie ponawiać z opóźnieniem. Pozostałe operacje `POST` nie są idempotentne — ponów najwyżej raz. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany. `POST /certificates` z `Idempotency-Key` ponów z tym samym kluczem i ciałem (dostaniesz `200` z pierwotnym wynikiem, jeśli dokument powstał). Dla pozostałych operacji przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
