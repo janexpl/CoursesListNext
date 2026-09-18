@@ -2,12 +2,19 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+# Projekt używa pnpm (pole packageManager w package.json wskazuje wersję).
+# Corepack pobiera dokładnie ją, więc obraz buduje się tym samym menedżerem
+# co środowisko deweloperskie - inaczej w drzewie zależności lądują dwie kopie
+# tych samych pakietów (np. unhead) i aplikacja wywala się przy renderowaniu.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN npm run build
+RUN pnpm build
 
 FROM node:22-bookworm-slim
 

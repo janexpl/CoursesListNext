@@ -1,0 +1,7 @@
+# Zależności i artefakty budowania instaluje/generuje sam obraz. Skopiowane z hosta
+# zawierałyby binaria dla macOS i popsuły build.
+node_modules
+.nuxt
+.output
+.data
+.git
