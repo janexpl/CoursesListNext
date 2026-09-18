@@ -100,6 +100,11 @@ func (r *fakeRows) RawValues() [][]byte {
 	return nil
 }
 
+// TypeMap dokłada pgx v5.11 do interfejsu pgx.Rows.
+func (r *fakeRows) TypeMap() *pgtype.Map {
+	return pgtype.NewMap()
+}
+
 func (r *fakeRows) Conn() *pgx.Conn {
 	return nil
 }
