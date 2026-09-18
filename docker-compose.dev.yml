@@ -50,6 +50,9 @@ services:
       # Cache modułów i kompilacji, żeby restart kontenera trwał sekundy.
       - dev-go-mod:/go/pkg/mod
       - dev-go-build:/go-cache
+    # Baza bywa gotowa później niż API (profil `db`) albo dopiero wstaje na hoście.
+    # API kończy się wtedy błędem połączenia, więc pozwalamy mu spróbować ponownie.
+    restart: on-failure
     stop_grace_period: 5s
 
   db:
