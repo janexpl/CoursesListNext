@@ -363,6 +363,22 @@ const certificatePreviewHtml = computed(() => {
   })
 })
 
+// Duplikat to ten sam dokument - na wydruku odróżnia go adnotacja z datą wystawienia
+// wtórnika. Ten sam napis co w PDF generowanym przez API (internal/certificates/pdf.go),
+// żeby podgląd i wydruk z przeglądarki zgadzały się z dokumentem z serwera.
+const duplicateAnnotationHtml = computed(() => {
+  const issuedAt = certificate.value?.duplicateIssuedAt
+  if (!issuedAt) {
+    return ''
+  }
+
+  const date = formatPolishDate(issuedAt.slice(0, 10))
+  return `<div class="duplicate">
+      <span class="duplicate-label">DUPLIKAT</span>
+      <span class="duplicate-date">Data wystawienia duplikatu: ${date}</span>
+    </div>`
+})
+
 const certificatePreviewDocument = computed(() => {
   if (!certificatePreviewHtml.value) {
     return ''
@@ -440,6 +456,24 @@ const certificatePreviewDocument = computed(() => {
         letter-spacing: 0.18em;
         text-transform: uppercase;
         color: #475569;
+      }
+
+      /* Adnotacja wtórnika - te same proporcje co w PDF z serwera. */
+      .duplicate {
+        text-align: right;
+        margin-bottom: 8mm;
+      }
+
+      .duplicate-label {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+      }
+
+      .duplicate-date {
+        display: block;
+        font-size: 12px;
       }
 
       h1, h2, h3, h4, h5, h6 {
@@ -585,6 +619,7 @@ const certificatePreviewDocument = computed(() => {
   <body>
     <div class="certificate-sheet">
       <div class="sheet-caption">Zaświadczenie</div>
+      ${duplicateAnnotationHtml.value}
       ${certificatePreviewHtml.value}
     </div>
     ${courseProgramTableHtml.value}
