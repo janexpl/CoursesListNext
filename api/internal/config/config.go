@@ -33,6 +33,11 @@ type Config struct {
 	PublicBaseURL string
 	// WebhooksEnabled - czy ta instancja uruchamia dispatcher webhooków.
 	WebhooksEnabled bool
+	// CertificateVerificationURL - wzorzec adresu publicznej strony weryfikacji
+	// zaświadczenia, np. https://twoja-domena.pl/verify/{code}. Z niego powstaje kod QR
+	// drukowany na dokumencie; {code} jest podmieniane na kod weryfikacyjny.
+	// Pusty wyłącza QR - na wydruku nie pojawia się nic.
+	CertificateVerificationURL string
 }
 
 func Load() Config {
@@ -122,6 +127,13 @@ func Load() Config {
 
 	notificationsAPIToken := strings.TrimSpace(os.Getenv("NOTIFICATIONS_API_TOKEN"))
 
+	// Adres publicznej weryfikacji żyje w aplikacji webowej, a PUBLIC_BASE_URL wskazuje API,
+	// więc to osobna zmienna, a nie doklejanie ścieżki do tamtej.
+	certificateVerificationURL := strings.TrimSpace(os.Getenv("CERTIFICATE_VERIFICATION_URL"))
+	if certificateVerificationURL != "" && !strings.Contains(certificateVerificationURL, "{code}") {
+		log.Fatalf("CERTIFICATE_VERIFICATION_URL must contain the {code} placeholder, got %q", certificateVerificationURL)
+	}
+
 	webhooksEnabled := true
 	if raw := os.Getenv("WEBHOOKS_ENABLED"); raw != "" {
 		webhooksEnabled, err = strconv.ParseBool(raw)
@@ -149,6 +161,8 @@ func Load() Config {
 		NotificationsAPIToken:  notificationsAPIToken,
 		PublicBaseURL:          os.Getenv("PUBLIC_BASE_URL"),
 		WebhooksEnabled:        webhooksEnabled,
+
+		CertificateVerificationURL: certificateVerificationURL,
 	}
 }
 
