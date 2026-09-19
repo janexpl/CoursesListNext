@@ -43,10 +43,40 @@ type CertificateDetailsDTO struct {
 	LanguageCode      string                       `json:"languageCode"`
 	PrintVariants     []CertificatePrintVariantDTO `json:"printVariants"`
 	VerificationCode  string                       `json:"verificationCode"`
-	RevokedAt         *string                      `json:"revokedAt"`
-	RevokeReason      *string                      `json:"revokeReason"`
-	DuplicateIssuedAt *string                      `json:"duplicateIssuedAt"`
-	DuplicateReason   *string                      `json:"duplicateReason"`
+	// VerificationURL i VerificationQr są puste, gdy instancja nie ma skonfigurowanego
+	// adresu publicznej weryfikacji - wtedy kod QR nie jest też drukowany.
+	VerificationURL   string  `json:"verificationUrl,omitempty"`
+	VerificationQr    string  `json:"verificationQr,omitempty"`
+	RevokedAt         *string `json:"revokedAt"`
+	RevokeReason      *string `json:"revokeReason"`
+	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
+	DuplicateReason   *string `json:"duplicateReason"`
+}
+
+// PublicCertificateDTO to odpowiedź publicznej weryfikacji - trafia do każdego,
+// kto zeskanuje kod QR z dokumentu. Niesie wyłącznie to, co jest na papierze:
+// bez PESEL-u, daty i miejsca urodzenia, nazwy firmy, powodów unieważnienia
+// i identyfikatorów, którymi dałoby się sięgnąć do chronionego API.
+type PublicCertificateDTO struct {
+	VerificationCode  string  `json:"verificationCode"`
+	CertificateNumber string  `json:"certificateNumber"`
+	StudentName       string  `json:"studentName"`
+	CourseName        string  `json:"courseName"`
+	CourseDateStart   string  `json:"courseDateStart"`
+	CourseDateEnd     *string `json:"courseDateEnd"`
+	IssuedAt          string  `json:"issuedAt"`
+	ValidUntil        *string `json:"validUntil"`
+	// Status: "valid" albo "revoked". Wygaśnięcie terminu ważności jest osobnym
+	// polem, bo dokument po terminie nadal jest autentyczny.
+	Status            string  `json:"status"`
+	Expired           bool    `json:"expired"`
+	DuplicateIssued   bool    `json:"duplicateIssued"`
+	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
+	RevokedAt         *string `json:"revokedAt"`
+}
+
+type PublicCertificateResponse struct {
+	Data PublicCertificateDTO `json:"data"`
 }
 
 // LifecycleRequest to ciało POST /certificates/{id}/revoke i /duplicate.

@@ -79,10 +79,26 @@ func NewRouter(deps Dependencies) http.Handler {
 	}))
 
 	loginLimiter := newIPLimiter(deps.Config.LoginRateLimit/60, 10)
+	// 20 sprawdzeń na minutę dla jednego dokumentu wystarczy człowiekowi ze skanerem,
+	// a odcina młócenie pojedynczego kodu. Sufit całej trasy: 5 żądań na sekundę.
+	publicVerificationCodeLimiter := newIPLimiter(20.0/60, 20)
+	publicVerificationTotalLimiter := newIPLimiter(5, 50)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/healthz", h.healthzHandler)
 		r.With(RateLimitByIP(loginLimiter)).Post("/auth/login", authHandler.Login)
+
+		// Publiczna weryfikacja zaświadczenia - adres z kodu QR na wydruku. Jedyna
+		// trasa zwracająca dane bez uwierzytelnienia, więc odpowiedź jest zawężona
+		// do tego, co widać na dokumencie (certificates.PublicCertificateDTO).
+		//
+		// Limit po kodzie, nie po adresie IP: przeglądarka woła API przez proxy
+		// aplikacji webowej, więc wszystkie żądania mają ten sam adres. Drugi limiter
+		// jest sufitem dla całej trasy.
+		r.With(
+			RateLimitByKey(publicVerificationTotalLimiter, func(*http.Request) string { return "public-verification" }),
+			RateLimitByKey(publicVerificationCodeLimiter, certificates.PublicVerificationCodeFromRequest),
+		).Get("/public/certificates/{code}", certificateHandler.GetPublicVerification)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireBearerToken(deps.Config.NotificationsAPIToken))
 			r.Get("/internal/notifications/expiring-certificates", certificateHandler.ListExpiringNotificationCandidates)

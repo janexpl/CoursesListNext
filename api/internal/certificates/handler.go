@@ -17,6 +17,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
+	"github.com/janexpl/CoursesListNext/api/internal/qrcode"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 	"github.com/janexpl/CoursesListNext/api/internal/validation"
 )
@@ -111,7 +112,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := CertificateResponse{Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))}
+	resp := CertificateResponse{Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)))}
 	response.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -163,7 +164,7 @@ func (h *Handler) writeCertificateDetails(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.WriteJSON(w, status, CertificateResponse{
-		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
+		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
 	})
 }
 
@@ -210,6 +211,72 @@ type verificationCodeFinder interface {
 	GetCertificateIDByVerificationCode(ctx context.Context, verificationCode string) (int64, error)
 }
 
+// withVerificationQR dokłada do szczegółów obrazek kodu QR, żeby podgląd i wydruk
+// z przeglądarki pokazywały dokładnie ten sam kod co PDF z serwera.
+//
+// Celowo nie robi tego mapCertificateDetailsResponse: ta funkcja buduje też migawki
+// "przed" i "po" w dzienniku zmian, a obrazek rozdąłby każdy wpis o kilka kilobajtów.
+func (h *Handler) withVerificationQR(dto CertificateDetailsDTO) CertificateDetailsDTO {
+	url := qrcode.VerificationURL(h.verificationURLTemplate, dto.VerificationCode)
+	if url == "" {
+		return dto
+	}
+	dataURI, err := qrcode.PNGDataURI(url)
+	if err != nil {
+		log.Printf("failed to build verification QR code for certificate %d: %v", dto.ID, err)
+		return dto
+	}
+	dto.VerificationURL = url
+	dto.VerificationQr = dataURI
+	return dto
+}
+
+// PublicVerificationCodeFromRequest zwraca znormalizowany kod z adresu żądania.
+// Router używa go jako klucza limitu - wszystkie źle sformatowane kody dzielą jedno
+// wiaderko, żeby pamięć limitera nie rosła od losowych ciągów.
+func PublicVerificationCodeFromRequest(r *http.Request) string {
+	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
+	if !validation.IsCertificateVerificationCode(code) {
+		return "invalid"
+	}
+	return code
+}
+
+// GetPublicVerification obsługuje publiczną stronę weryfikacji, na którą prowadzi kod QR
+// z wydruku. Trasa działa bez uwierzytelnienia, więc odpowiedź niesie wyłącznie dane
+// widoczne na samym dokumencie - stąd osobne DTO zamiast szczegółów zaświadczenia.
+func (h *Handler) GetPublicVerification(w http.ResponseWriter, r *http.Request) {
+	// Status dokumentu zmienia się w czasie (unieważnienie, wtórnik), więc żadna
+	// pośrednia pamięć podręczna nie może pokazywać starej odpowiedzi.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Robots-Tag", "noindex")
+
+	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
+	if !validation.IsCertificateVerificationCode(code) {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid verification code")
+		return
+	}
+	finder, ok := h.querier.(verificationCodeFinder)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to get certificate")
+		return
+	}
+	id, err := finder.GetCertificateIDByVerificationCode(r.Context(), code)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+	certificate, err := h.querier.GetCertificateByID(r.Context(), id)
+	if err != nil {
+		response.HandleDBError(w, err, "certificate")
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, PublicCertificateResponse{
+		Data: mapPublicCertificateResponse(certificate, time.Now()),
+	})
+}
+
 // GetByVerificationCode zwraca to samo co GET /certificates/{id} dla zaświadczenia
 // o podanym kodzie. Kod jest normalizowany do wielkich liter (człowiek przepisuje go
 // z papieru); usunięte zaświadczenie daje 404 jak w GET po id.
@@ -235,7 +302,7 @@ func (h *Handler) GetByVerificationCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
-		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
+		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
 	})
 }
 
@@ -504,7 +571,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	certificate := sqlc.GetCertificateByIDRow(row)
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
-		Data: mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)),
+		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
 	})
 }
 
@@ -745,6 +812,46 @@ func mapCertificateRequest(cert CreateCertificateRequest) (CreateCertificateInpu
 	}
 	input.RegistryNumber = *cert.RegistryNumber
 	return input, nil
+}
+
+// mapPublicCertificateResponse buduje odpowiedź publicznej weryfikacji. Świadomie
+// osobna od mapCertificateDetailsResponse: dopisanie pola do DTO wewnętrznego nie może
+// nigdy wypchnąć danych na zewnątrz.
+func mapPublicCertificateResponse(certificate sqlc.GetCertificateByIDRow, now time.Time) PublicCertificateDTO {
+	name := []string{certificate.StudentFirstname}
+	if certificate.StudentSecondname.Valid && strings.TrimSpace(certificate.StudentSecondname.String) != "" {
+		name = append(name, certificate.StudentSecondname.String)
+	}
+	name = append(name, certificate.StudentLastname)
+
+	validUntil := pgutil.NullableString(certificate.ExpiryDate)
+	expired := false
+	if validUntil != nil {
+		if parsed, err := time.Parse(response.DateFormat, *validUntil); err == nil {
+			expired = parsed.Before(now.Truncate(24 * time.Hour))
+		}
+	}
+
+	status := "valid"
+	if certificate.RevokedAt.Valid {
+		status = "revoked"
+	}
+
+	return PublicCertificateDTO{
+		VerificationCode:  certificate.VerificationCode,
+		CertificateNumber: buildCertificateNumber(certificate.RegistryNumber, certificate.CourseSymbol, certificate.RegistryYear),
+		StudentName:       strings.Join(name, " "),
+		CourseName:        certificate.CourseName,
+		CourseDateStart:   certificate.CourseDateStart.Time.Format(response.DateFormat),
+		CourseDateEnd:     pgutil.NullableDate(certificate.CourseDateEnd),
+		IssuedAt:          certificate.Date.Time.Format(response.DateFormat),
+		ValidUntil:        validUntil,
+		Status:            status,
+		Expired:           expired,
+		DuplicateIssued:   certificate.DuplicateIssuedAt.Valid,
+		DuplicateIssuedAt: pgutil.NullableTimestampz(certificate.DuplicateIssuedAt),
+		RevokedAt:         pgutil.NullableTimestampz(certificate.RevokedAt),
+	}
 }
 
 func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, printVariants []CertificatePrintVariantDTO) CertificateDetailsDTO {

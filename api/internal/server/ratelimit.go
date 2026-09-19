@@ -77,9 +77,16 @@ func (rl *ipLimiter) cleanup() {
 }
 
 func RateLimitByIP(limiter *ipLimiter) func(http.Handler) http.Handler {
+	return RateLimitByKey(limiter, clientIP)
+}
+
+// RateLimitByKey ogranicza ruch po kluczu wyliczanym z żądania. Dla tras, które
+// przeglądarka woła przez proxy aplikacji webowej, adres IP jest bezużyteczny
+// (wszystkie żądania mają adres proxy), więc kluczem bywa np. weryfikowany kod.
+func RateLimitByKey(limiter *ipLimiter, key func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !limiter.allow(clientIP(r)) {
+			if !limiter.allow(key(r)) {
 				response.WriteError(w, http.StatusTooManyRequests, "too_many_requests", "too many requests, please try again later")
 				return
 			}

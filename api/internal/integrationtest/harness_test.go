@@ -44,6 +44,9 @@ const (
 	webhookTestRequestTimeout = 300 * time.Millisecond
 	webhookTestRetryDelay     = 50 * time.Millisecond
 	webhookTestPublicBaseURL  = "https://courseslist.test"
+
+	// verificationURLTemplate - wzorzec adresu publicznej weryfikacji w testach.
+	verificationURLTemplate = "https://courseslist.test/verify/{code}"
 )
 
 // notificationsToken to statyczny token tras /internal/notifications w testach.
@@ -154,6 +157,8 @@ func setup(adminURL string) (*testEnv, error) {
 		LoginRateLimit:        600,
 		NotificationsAPIToken: notificationsToken,
 		PublicBaseURL:         webhookTestPublicBaseURL,
+		// Ustawione, żeby testy widziały kod QR i publiczną weryfikację tak jak produkcja.
+		CertificateVerificationURL: verificationURLTemplate,
 	}
 	e.server = httptest.NewServer(server.NewRouter(server.Dependencies{
 		Queries: dbsqlc.New(pool),
@@ -261,6 +266,26 @@ func applyMigration(ctx context.Context, connConfig *pgx.ConnConfig, file string
 		return fmt.Errorf("apply %s: %w", filepath.Base(file), err)
 	}
 	return tx.Commit(ctx)
+}
+
+// callPublic wysyła żądanie bez żadnych poświadczeń - tak jak przeglądarka kogoś,
+// kto zeskanował kod QR z papierowego zaświadczenia.
+func (e *testEnv) callPublic(t *testing.T, method, path string) apiResponse {
+	t.Helper()
+	req, err := http.NewRequest(method, e.server.URL+"/api/v1"+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return apiResponse{Status: resp.StatusCode, Body: data, Header: resp.Header}
 }
 
 // callWithSession wysyła żądanie ciasteczkiem sesji, tak jak aplikacja webowa - bez klucza API.
