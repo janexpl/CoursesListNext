@@ -338,9 +338,24 @@ const courseProgramTableHtml = computed(() => {
   `
 })
 
-const certificatePreviewHtml = computed(() => {
-  if (!certificate.value || !selectedPrintVariant.value?.certFrontPage) {
+// Kod QR przychodzi z API jako gotowy obrazek (data URI) razem ze szczegółami
+// zaświadczenia. Dzięki temu podgląd i wydruk z przeglądarki pokazują dokładnie ten
+// sam kod co PDF z serwera, a obrazek nie wymaga sieci - print() woła się natychmiast
+// i nie zdążyłby poczekać na pobranie pliku.
+const qrBlockHtml = computed(() => {
+  const dataURI = certificate.value?.verificationQr
+  if (!dataURI) {
     return ''
+  }
+
+  return `<div class="qr-code"><img src="${dataURI}" alt="Kod QR do weryfikacji zaświadczenia"></div>`
+})
+
+// Zwraca podmieniony szablon i informację, czy kod QR trafił w znacznik - jeśli nie,
+// dokładamy go w rogu arkusza, tak samo jak PDF z serwera.
+const certificatePreview = computed(() => {
+  if (!certificate.value || !selectedPrintVariant.value?.certFrontPage) {
+    return { html: '', qrPlaced: false }
   }
 
   const values: Record<string, string> = {
@@ -357,11 +372,20 @@ const certificatePreviewHtml = computed(() => {
     numer_zaswiadczenia: certificateNumber.value
   }
 
-  return selectedPrintVariant.value.certFrontPage.replace(/{{(.*?)}}/g, (_, rawTag: string) => {
+  let qrPlaced = false
+  const html = selectedPrintVariant.value.certFrontPage.replace(/{{(.*?)}}/g, (_, rawTag: string) => {
     const normalizedTag = rawTag.replaceAll(/\s+/g, '')
+    if (normalizedTag === 'kod_qr') {
+      qrPlaced = qrBlockHtml.value !== ''
+      return qrBlockHtml.value
+    }
     return values[normalizedTag] ?? ''
   })
+
+  return { html, qrPlaced }
 })
+
+const certificatePreviewHtml = computed(() => certificatePreview.value.html)
 
 // Duplikat to ten sam dokument - na wydruku odróżnia go adnotacja z datą wystawienia
 // wtórnika. Ten sam napis co w PDF generowanym przez API (internal/certificates/pdf.go),
@@ -377,6 +401,18 @@ const duplicateAnnotationHtml = computed(() => {
       <span class="duplicate-label">DUPLIKAT</span>
       <span class="duplicate-date">Data wystawienia duplikatu: ${date}</span>
     </div>`
+})
+
+// Szablony istniejących kursów nie mają znacznika, a kod ma się na nich pojawić.
+// Kontener z ustaloną wysokością dokładamy tylko wtedy, gdy kod ląduje w rogu -
+// tak samo jak w PDF, żeby wydruki bez QR wyglądały dokładnie jak wcześniej.
+const certificateFrontHtml = computed(() => {
+  const front = `${duplicateAnnotationHtml.value}\n      ${certificatePreviewHtml.value}`
+  if (!qrBlockHtml.value || certificatePreview.value.qrPlaced) {
+    return front
+  }
+
+  return `<div class="cert-front">${front}<div class="qr-corner">${qrBlockHtml.value}</div></div>`
 })
 
 const certificatePreviewDocument = computed(() => {
@@ -474,6 +510,25 @@ const certificatePreviewDocument = computed(() => {
       .duplicate-date {
         display: block;
         font-size: 12px;
+      }
+
+      /* Kod QR - te same rozmiary i to samo pozycjonowanie co w PDF z serwera
+         (internal/certificates/pdf.go). */
+      .qr-code img {
+        width: 24mm;
+        height: 24mm;
+        display: block;
+      }
+
+      .cert-front {
+        position: relative;
+        min-height: 230mm;
+      }
+
+      .qr-corner {
+        position: absolute;
+        right: 0;
+        bottom: 0;
       }
 
       h1, h2, h3, h4, h5, h6 {
@@ -619,8 +674,7 @@ const certificatePreviewDocument = computed(() => {
   <body>
     <div class="certificate-sheet">
       <div class="sheet-caption">Zaświadczenie</div>
-      ${duplicateAnnotationHtml.value}
-      ${certificatePreviewHtml.value}
+      ${certificateFrontHtml.value}
     </div>
     ${courseProgramTableHtml.value}
   </body>

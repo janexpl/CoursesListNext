@@ -40,7 +40,8 @@ const templatePlaceholders: TemplatePlaceholder[] = [
   { label: 'Data rozpoczęcia', value: '{{ data_rozpoczecia }}' },
   { label: 'Data zakończenia', value: '{{ data_zakonczenia }}' },
   { label: 'Data wystawienia', value: '{{ data_wystawienia }}' },
-  { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' }
+  { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' },
+  { label: 'Kod QR', value: '{{ kod_qr }}' }
 ]
 
 const fontSizeOptions: FontSizeOption[] = [
@@ -337,11 +338,12 @@ function buildTemplatePreviewDocument(html: string) {
       p { margin: 0 0 0.45rem; font-size: 15px; line-height: 1.45; }
       ul, ol { margin: 0 0 0.45rem; padding-left: 1.25rem; }
       img { max-width: 100%; height: auto; }
+${templatePreviewQrCss}
     </style>
   </head>
   <body>
     <div class="certificate-sheet">
-      ${html}
+      ${renderTemplatePreviewQr(html)}
     </div>
   </body>
 </html>`

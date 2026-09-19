@@ -89,7 +89,8 @@ const templatePlaceholders: TemplatePlaceholder[] = [
   { label: 'Data rozpoczęcia', value: '{{ data_rozpoczecia }}' },
   { label: 'Data zakończenia', value: '{{ data_zakonczenia }}' },
   { label: 'Data wystawienia', value: '{{ data_wystawienia }}' },
-  { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' }
+  { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' },
+  { label: 'Kod QR', value: '{{ kod_qr }}' }
 ]
 
 const fontSizeOptions: FontSizeOption[] = [
@@ -583,11 +584,12 @@ const certFrontPageDocument = computed(() => {
         max-width: 100%;
         height: auto;
       }
+${templatePreviewQrCss}
     </style>
   </head>
   <body>
     <div class="certificate-sheet">
-      ${form.certFrontPage}
+      ${renderTemplatePreviewQr(form.certFrontPage)}
     </div>
   </body>
 </html>`

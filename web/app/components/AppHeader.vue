@@ -3,7 +3,9 @@ const route = useRoute()
 const auth = useAuth()
 const isMobileMenuOpen = ref(false)
 
-const isLoginPage = computed(() => route.path === '/login')
+// Strony dostępne bez logowania: ekran logowania i publiczna weryfikacja zaświadczenia
+// (adres z kodu QR na wydruku). Nie pokazujemy na nich nawigacji panelu.
+const isPublicPage = computed(() => route.path === '/login' || route.path.startsWith('/verify'))
 const navigationItems = computed(() => {
   const items = [
     {
@@ -79,7 +81,7 @@ async function onLogout() {
             Zaświadczenia
           </NuxtLink>
 
-          <nav v-if="auth.user.value && !isLoginPage" class="hidden items-center gap-2 md:flex">
+          <nav v-if="auth.user.value && !isPublicPage" class="hidden items-center gap-2 md:flex">
             <NuxtLink
               v-for="item in navigationItems"
               :key="item.to"
@@ -129,14 +131,14 @@ async function onLogout() {
             </UButton>
           </template>
 
-          <UButton v-else-if="!isLoginPage" to="/login" color="primary" class="rounded-lg">
+          <UButton v-else-if="!isPublicPage" to="/login" color="primary" class="rounded-lg">
             Zaloguj się
           </UButton>
         </div>
       </div>
 
       <div
-        v-if="auth.user.value && !isLoginPage && isMobileMenuOpen"
+        v-if="auth.user.value && !isPublicPage && isMobileMenuOpen"
         class="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm md:hidden"
       >
         <div class="border-b border-slate-200 pb-3">

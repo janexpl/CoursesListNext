@@ -666,10 +666,33 @@ export interface CertificateDetails {
     isOriginal: boolean
   }>
   verificationCode: string
+  // Adres i obrazek kodu QR; puste, gdy instancja nie ma skonfigurowanej weryfikacji.
+  verificationUrl?: string
+  verificationQr?: string
   revokedAt: string | null
   revokeReason: string | null
   duplicateIssuedAt: string | null
   duplicateReason: string | null
+}
+
+export interface PublicCertificate {
+  verificationCode: string
+  certificateNumber: string
+  studentName: string
+  courseName: string
+  courseDateStart: string
+  courseDateEnd: string | null
+  issuedAt: string
+  validUntil: string | null
+  status: 'valid' | 'revoked'
+  expired: boolean
+  duplicateIssued: boolean
+  duplicateIssuedAt: string | null
+  revokedAt: string | null
+}
+
+export interface PublicCertificateResponse {
+  data: PublicCertificate
 }
 
 export interface CertificateLifecyclePayload {
@@ -740,6 +763,8 @@ const apiErrorMessages: Record<string, string> = {
 
   // certificates: unieważnienie i duplikat
   'conflict:certificate already revoked': 'To zaświadczenie zostało już unieważnione.',
+  'bad_request:invalid verification code': 'Nieprawidłowy kod weryfikacyjny.',
+  'not_found:certificate not found': 'Nie znaleziono zaświadczenia o tym kodzie.',
   'conflict:certificate is revoked': 'Operacja niedostępna dla unieważnionego zaświadczenia.',
 
   // certificates
@@ -1069,6 +1094,8 @@ export function useApi() {
       method: 'POST',
       body: payload
     }),
+    // Publiczna weryfikacja - bez sesji i bez klucza API (adres z kodu QR).
+    publicCertificate: async (code: string) => await request<PublicCertificateResponse>(`/api/v1/public/certificates/${encodeURIComponent(code)}`),
     revokeCertificate: async (id: number, payload: CertificateLifecyclePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}/revoke`, {
       method: 'POST',
       body: payload
