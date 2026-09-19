@@ -1283,6 +1283,53 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /public/certificates/{code}:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        description: >-
+          Kod weryfikacyjny z dokumentu. Białe znaki na brzegach są obcinane, a litery zamieniane
+          na wielkie.
+        schema:
+          type: string
+          examples: ["K7QM4XPA9TZC"]
+    get:
+      tags: [certificates]
+      operationId: getPublicCertificate
+      summary: Publiczna weryfikacja zaświadczenia
+      description: >-
+        Trasa spod kodu QR z wydruku. **Nie wymaga klucza API ani sesji** - to jedyna taka trasa
+        poza `/healthz`. Zwraca wyłącznie dane widoczne na samym dokumencie: bez PESEL, bez daty
+        i miejsca urodzenia, bez firmy i bez powodu unieważnienia. Zaświadczenie usunięte
+        (soft delete) daje 404. Odpowiedź ma nagłówki `Cache-Control: no-store`
+        i `X-Robots-Tag: noindex`. Ruch jest ograniczany na kod, nie na adres IP - przeglądarka
+        woła API przez proxy aplikacji webowej, więc wszystkie żądania mają ten sam adres.
+      security: []
+      responses:
+        "200":
+          description: Dane dokumentu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicCertificateResponse"
+        "400":
+          description: "Niepoprawny format kodu (`invalid verification code`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          description: "Za dużo sprawdzeń tego kodu (`too many requests, please try again later`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /certificates/by-verification-code/{code}:
     parameters:
       - name: code
@@ -1444,6 +1491,9 @@ paths:
         to 60 s. Nagłówek `Content-Disposition` zawiera nazwę pliku `zaswiadczenie-<numer>.pdf`.
         Unieważnione zaświadczenie nie ma wydruku — 409 `certificate is revoked`. Zaświadczenie zastąpione
         duplikatem można nadal wydrukować.
+        Na wydruku jest kod QR prowadzący do publicznej weryfikacji (`GET /public/certificates/{code}`):
+        w miejscu znacznika `{{ kod_qr }}` w szablonie kursu, a bez znacznika w prawym dolnym rogu
+        pierwszej strony. Gdy `CERTIFICATE_VERIFICATION_URL` nie jest ustawiony, kodu QR nie ma.
       x-required-scope: certificates:read
       parameters:
         - name: language
@@ -2910,7 +2960,7 @@ components:
           properties:
             code:
               type: string
-              enum: [bad_request, unauthorized, invalid_credentials, forbidden, not_found, conflict, internal_error]
+              enum: [bad_request, unauthorized, invalid_credentials, forbidden, not_found, conflict, too_many_requests, internal_error]
             message:
               type: string
               description: >-
@@ -3718,6 +3768,19 @@ components:
             $ref: "#/components/schemas/CertificatePrintVariant"
         verificationCode:
           $ref: "#/components/schemas/VerificationCode"
+        verificationUrl:
+          type: string
+          description: >-
+            Adres publicznej weryfikacji, na który prowadzi kod QR z wydruku. Pole nie występuje,
+            gdy `CERTIFICATE_VERIFICATION_URL` nie jest ustawiony - wtedy kodu QR nie ma też na PDF.
+          examples: ["https://example.pl/verify/K7QM4XPA9TZC"]
+        verificationQr:
+          type: string
+          description: >-
+            Ten sam kod QR co na wydruku, jako data URI z obrazem PNG - aplikacja webowa pokazuje
+            w podglądzie dokładnie to, co wydrukuje serwer. Pole nie występuje razem
+            z `verificationUrl`.
+          examples: ["data:image/png;base64,iVBORw0KGgo..."]
         revokedAt:
           $ref: "#/components/schemas/NullableLocalTimestamp"
         revokeReason:
@@ -3754,6 +3817,59 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/CertificateDetails"
+    PublicCertificateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PublicCertificate"
+    PublicCertificate:
+      type: object
+      description: >-
+        Dane zaświadczenia widoczne dla każdego, kto ma kod z dokumentu. Celowo węższe niż
+        `CertificateDetails`: tylko to, co i tak widnieje na papierze.
+      required: [verificationCode, certificateNumber, studentName, courseName, courseDateStart, courseDateEnd, issuedAt, validUntil, status, expired, duplicateIssued, duplicateIssuedAt, revokedAt]
+      properties:
+        verificationCode:
+          $ref: "#/components/schemas/VerificationCode"
+        certificateNumber:
+          type: string
+          description: Numer w formacie `numer/symbol/rok`, taki sam jak na wydruku.
+          examples: ["12/BHP/2026"]
+        studentName:
+          type: string
+          description: Imię, drugie imię i nazwisko kursanta, rozdzielone spacjami.
+          examples: ["Jan Adam Kowalski"]
+        courseName:
+          type: string
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        issuedAt:
+          $ref: "#/components/schemas/Date"
+        validUntil:
+          allOf:
+            - $ref: "#/components/schemas/NullableDate"
+          description: "`null` oznacza dokument bezterminowy."
+        status:
+          type: string
+          enum: [valid, revoked]
+          description: >-
+            Wystawienie duplikatu nie zmienia statusu - to ten sam dokument.
+        expired:
+          type: boolean
+          description: >-
+            Czy `validUntil` już minął. Liczone po stronie serwera, żeby strona weryfikacji nie
+            zależała od zegara przeglądarki.
+        duplicateIssued:
+          type: boolean
+        duplicateIssuedAt:
+          $ref: "#/components/schemas/NullableLocalTimestamp"
+        revokedAt:
+          allOf:
+            - $ref: "#/components/schemas/NullableLocalTimestamp"
+          description: Sam powód unieważnienia nie jest publikowany - bywa wewnętrzną notatką.
     CertificateCreate:
       type: object
       additionalProperties: false

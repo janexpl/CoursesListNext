@@ -147,7 +147,7 @@ See `docs/DEVELOPMENT.md` (Polish) for the one-time Postgres change needed by th
 
 ## Environment Variables
 
-Backend (`api/.env`): `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_SSLMODE`, `SESSION_COOKIE_NAME`, `SESSION_TTL`, `SESSION_CLEANUP_INTERVAL` (default `1h`), `SESSION_COOKIE_SECURE`, `CORS_ALLOWED_ORIGINS`, `LOGIN_RATE_LIMIT`, `PUBLIC_BASE_URL` (webhook `pdf_url`), `WEBHOOKS_ENABLED` (default `true`)
+Backend (`api/.env`): `PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_SSLMODE`, `SESSION_COOKIE_NAME`, `SESSION_TTL`, `SESSION_CLEANUP_INTERVAL` (default `1h`), `SESSION_COOKIE_SECURE`, `CORS_ALLOWED_ORIGINS`, `LOGIN_RATE_LIMIT`, `PUBLIC_BASE_URL` (webhook `pdf_url`), `CERTIFICATE_VERIFICATION_URL` (adres publicznej weryfikacji z `{code}`; puste = brak kodu QR na wydruku), `WEBHOOKS_ENABLED` (default `true`)
 
 Integration tests (`api/internal/integrationtest`) run only with `TEST_DATABASE_URL` pointing at a PostgreSQL server where databases may be created, e.g. `TEST_DATABASE_URL='postgres://user@127.0.0.1:5432/postgres?sslmode=disable' go test ./internal/integrationtest/`. Each run builds a fresh database from `testdata/baseline_schema.sql` (production schema after migration 0018) plus newer migrations.
 

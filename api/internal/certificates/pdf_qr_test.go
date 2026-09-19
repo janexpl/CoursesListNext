@@ -92,6 +92,11 @@ func TestCertificatePDFPrintsQRInPlaceOfPlaceholder(t *testing.T) {
 	if strings.Contains(html, `<div class="qr-corner">`) {
 		t.Fatal("kod wstawiony znacznikiem nie może dodatkowo lądować w rogu")
 	}
+	// Znacznik bywa w akapicie, a <div> w <p> parser HTML wyrzuca poza akapit -
+	// kod przestałby wtedy słuchać wyrównania z szablonu.
+	if !strings.Contains(html, `<span class="qr-code">`) {
+		t.Fatalf("kod musi być elementem inline, żeby działał wewnątrz akapitu: %s", html)
+	}
 	if n := strings.Count(html, "data:image/png;base64,"); n != 1 {
 		t.Fatalf("oczekiwano jednego kodu QR, znaleziono %d", n)
 	}

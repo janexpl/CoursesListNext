@@ -259,7 +259,8 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    i niezmienny. Dostają go wszystkie dokumenty (API, aplikacja webowa, dziennik, także te sprzed wprowadzenia kodu).
    Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
    `GET /certificates/by-verification-code/{code}` (`certificates:read`, wielkość liter bez znaczenia).
-   Kod **nie jest drukowany** na PDF generowanym przez API.
+   Na wydruku PDF kod pojawia się jako **kod QR** prowadzący do publicznej strony weryfikacji
+   (`GET /public/certificates/{code}`, sekcja 6.8) — samego kodu tekstem na dokumencie nie ma.
 7. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
    (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 
@@ -589,6 +590,37 @@ WHERE d.status = 'failed' ORDER BY d.id DESC;
 UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_attempt_at = now() WHERE id = <id>;
 ```
 
+### 6.8. Publiczna weryfikacja zaświadczenia
+
+Na wydruku PDF jest kod QR prowadzący pod adres `CERTIFICATE_VERIFICATION_URL` z podstawionym
+`verificationCode` (domyślnie `/verify/{kod}` w aplikacji webowej CoursesList). Kryje się za nim
+jedna trasa API:
+
+```
+GET /api/v1/public/certificates/{code}
+```
+
+- **Bez uwierzytelniania** — żadnego klucza API ani sesji; to jedyna taka trasa poza `/healthz`.
+- Zwraca wyłącznie to, co i tak widnieje na papierze: `studentName` (imię, drugie imię, nazwisko),
+  `certificateNumber`, `courseName`, `courseDateStart`, `courseDateEnd`, `issuedAt`, `validUntil`,
+  `status` (`valid` albo `revoked`), `expired`, `duplicateIssued`, `duplicateIssuedAt`, `revokedAt`.
+  **Bez PESEL, bez daty i miejsca urodzenia, bez firmy i bez powodu unieważnienia** — powód bywa
+  wewnętrzną notatką.
+- Kod jest normalizowany do wielkich liter. Zły format to `400 invalid verification code`,
+  kod nieznany albo dokument usunięty to `404 certificate not found`.
+- Ruch jest ograniczany **na kod**, nie na adres IP (przeglądarka woła API przez proxy aplikacji
+  webowej, więc wszystkie żądania mają ten sam adres): po przekroczeniu limitu `429 too many requests`.
+- Odpowiedź ma `Cache-Control: no-store` i `X-Robots-Tag: noindex`.
+
+Integracja serwer-serwer nie potrzebuje tej trasy — ma `GET /certificates/by-verification-code/{code}`
+z pełnymi danymi i zakresem `certificates:read` (sekcja 5). Trasa publiczna istnieje dla osoby,
+która trzyma wydruk w ręce.
+
+Gdy `CERTIFICATE_VERIFICATION_URL` nie jest ustawiony, kod QR nie jest drukowany, a `CertificateDetails`
+nie zawiera `verificationUrl` ani `verificationQr`. Sama trasa publiczna działa niezależnie od tej zmiennej.
+
+---
+
 ---
 
 ## 7. Obsługa błędów — zalecenia
@@ -600,6 +632,7 @@ UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_attempt_at 
 | 403 | Nie | Brak zakresu lub uprawnień administratora. |
 | 404 | Nie | — |
 | 409 | Zależy | Konflikt stanu. Dla jawnie podanego numeru rejestru: pobierz nowy numer i ponów. `certificate already revoked` przy ponowieniu unieważnienia oznacza, że pierwsze wywołanie się powiodło — pobierz dokument przez GET. `idempotency key reused with different payload` — nie ponawiaj, to błąd po stronie klienta (ten sam klucz dla różnych zaświadczeń). |
+| 429 | Tak, z opóźnieniem | Tylko logowanie i publiczna weryfikacja (sekcja 6.8) — trasy z kluczem API nie mają limitu. Odczekaj minutę. |
 | 500 | Ostrożnie | Błąd serwera. `POST /certificates` z `Idempotency-Key` możesz bezpiecznie ponawiać z opóźnieniem. Pozostałe operacje `POST` nie są idempotentne — ponów najwyżej raz. |
 | Brak odpowiedzi / timeout | Ostrożnie | `POST` mógł zostać wykonany. `POST /certificates` z `Idempotency-Key` ponów z tym samym kluczem i ciałem (dostaniesz `200` z pierwotnym wynikiem, jeśli dokument powstał). Dla pozostałych operacji przed ponowieniem sprawdź, czy obiekt nie powstał. |
 
@@ -621,6 +654,9 @@ obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
   stronie (sekcja 6.2);
 - cofnięcia unieważnienia zaświadczenia;
 - wydruku PDF unieważnionego zaświadczenia;
+- sterowania kodem QR na wydruku — pojawia się na każdym dokumencie, gdy adres weryfikacji jest
+  skonfigurowany; jego miejsce wybiera się wyłącznie znacznikiem `{{ kod_qr }}` w szablonie kursu
+  (bez znacznika ląduje w prawym dolnym rogu);
 - idempotencji operacji zapisu innych niż `POST /certificates` (poza naturalnie idempotentnymi
   `PUT .../by-external-id/...`, unieważnieniem i duplikatem);
 - operacji zbiorczych (np. obecność wielu osób jednym żądaniem);

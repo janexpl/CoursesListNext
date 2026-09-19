@@ -348,7 +348,7 @@ const qrBlockHtml = computed(() => {
     return ''
   }
 
-  return `<div class="qr-code"><img src="${dataURI}" alt="Kod QR do weryfikacji zaświadczenia"></div>`
+  return `<span class="qr-code"><img src="${dataURI}" alt="Kod QR do weryfikacji zaświadczenia"></span>`
 })
 
 // Zwraca podmieniony szablon i informację, czy kod QR trafił w znacznik - jeśli nie,
@@ -514,6 +514,10 @@ const certificatePreviewDocument = computed(() => {
 
       /* Kod QR - te same rozmiary i to samo pozycjonowanie co w PDF z serwera
          (internal/certificates/pdf.go). */
+      .qr-code {
+        display: inline-block;
+      }
+
       .qr-code img {
         width: 24mm;
         height: 24mm;

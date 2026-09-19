@@ -43,6 +43,9 @@ services:
       # pisałby UTC i daty rozjechałyby się z tym, co widzisz na hoście.
       - TZ=${TZ:-Europe/Warsaw}
       - CORS_ALLOWED_ORIGINS=${DEV_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      # Adres spod kodu QR na wydruku. Domyślnie strona weryfikacji serwowana przez
+      # `pnpm dev` na hoście; pusta wartość wyłącza kod QR.
+      - CERTIFICATE_VERIFICATION_URL=${DEV_CERTIFICATE_VERIFICATION_URL:-http://localhost:3000/verify/{code}}
     ports:
       - "127.0.0.1:8081:8081"
     volumes:

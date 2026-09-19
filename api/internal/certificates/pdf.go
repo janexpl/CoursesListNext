@@ -104,6 +104,13 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       font-size: 12px;
     }
 
+    /* Element inline, nie blokowy: szablony wstawiają znacznik wewnątrz akapitu,
+       a <div> w <p> parser HTML wyrzuca poza akapit - kod przestałby wtedy słuchać
+       wyrównania ustawionego przez autora szablonu. */
+    .qr-code {
+      display: inline-block;
+    }
+
     .qr-code img {
       width: 24mm;
       height: 24mm;
@@ -235,7 +242,7 @@ func buildVerificationQR(certificate sqlc.GetCertificateByIDRow, verificationURL
 		return ""
 	}
 
-	return `<div class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></div>`
+	return `<span class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></span>`
 }
 
 // substituteCertificateTemplate podmienia znaczniki w szablonie kursu. Zwraca też
