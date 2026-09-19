@@ -44,6 +44,15 @@ type Creator interface {
 type Handler struct {
 	querier Querier
 	creator Creator
+	// verificationURLTemplate - wzorzec adresu publicznej weryfikacji, z którego powstaje
+	// kod QR na wydruku. Pusty oznacza wydruk bez QR.
+	verificationURLTemplate string
+}
+
+// SetVerificationURLTemplate wpina konfigurację adresu weryfikacji. Osobny setter,
+// bo NewHandler jest wołane w kilkunastu testach i nie ma powodu ich ruszać.
+func (h *Handler) SetVerificationURLTemplate(template string) {
+	h.verificationURLTemplate = template
 }
 
 func NewHandler(querier Querier, creator Creator) *Handler {
@@ -260,7 +269,7 @@ func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pdfBytes, err := renderCertificatePDF(r.Context(), buildCertificatePDFHTML(certificate))
+	pdfBytes, err := renderCertificatePDF(r.Context(), buildCertificatePDFHTML(certificate, h.verificationURLTemplate))
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to render certificate pdf")
 		return

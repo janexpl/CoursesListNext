@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"log"
 	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pdfutil"
+	"github.com/janexpl/CoursesListNext/api/internal/qrcode"
 )
 
 type courseProgramEntry struct {
@@ -31,8 +33,17 @@ var certificatePlaceholderPattern = regexp.MustCompile(`{{(.*?)}}`)
 
 var renderCertificatePDF = pdfutil.RenderHTMLToPDF
 
-func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
-	front := buildDuplicateAnnotation(certificate) + substituteCertificateTemplate(certificate)
+// buildCertificatePDFHTML składa wydruk. verificationURLTemplate to wzorzec adresu
+// publicznej weryfikacji; pusty oznacza wydruk bez kodu QR.
+func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificationURLTemplate string) string {
+	qrHTML := buildVerificationQR(certificate, verificationURLTemplate)
+	template, qrPlaced := substituteCertificateTemplate(certificate, qrHTML)
+	front := buildDuplicateAnnotation(certificate) + template
+	// Szablon bez znacznika (tak wygląda większość istniejących kursów) dostaje kod
+	// w prawym dolnym rogu pierwszej strony.
+	if qrHTML != "" && !qrPlaced {
+		front = `<div class="cert-front">` + front + `<div class="qr-corner">` + qrHTML + `</div></div>`
+	}
 	back := buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode)
 	labels := getCourseProgramPageLabels(certificate.LanguageCode)
 
@@ -91,6 +102,26 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow) string {
     .duplicate-date {
       display: block;
       font-size: 12px;
+    }
+
+    .qr-code img {
+      width: 24mm;
+      height: 24mm;
+      display: block;
+    }
+
+    /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej
+       wysokości, a nie position: fixed - chromium drukuje "fixed" tylko na pierwszej
+       stronie, a wkhtmltopdf powtarza je na każdej. */
+    .cert-front {
+      position: relative;
+      min-height: 230mm;
+    }
+
+    .qr-corner {
+      position: absolute;
+      right: 0;
+      bottom: 0;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -189,7 +220,28 @@ func buildDuplicateAnnotation(certificate sqlc.GetCertificateByIDRow) string {
 		`</span></div>`
 }
 
-func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) string {
+// buildVerificationQR zwraca blok z kodem QR prowadzącym do publicznej weryfikacji
+// dokumentu albo pusty string, gdy adres nie jest skonfigurowany. Błąd generowania
+// kodu nie przerywa wydruku - dokument bez QR jest lepszy niż brak dokumentu.
+func buildVerificationQR(certificate sqlc.GetCertificateByIDRow, verificationURLTemplate string) string {
+	url := qrcode.VerificationURL(verificationURLTemplate, certificate.VerificationCode)
+	if url == "" {
+		return ""
+	}
+
+	dataURI, err := qrcode.PNGDataURI(url)
+	if err != nil {
+		log.Printf("failed to build verification QR code for certificate %d: %v", certificate.ID, err)
+		return ""
+	}
+
+	return `<div class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></div>`
+}
+
+// substituteCertificateTemplate podmienia znaczniki w szablonie kursu. Zwraca też
+// informację, czy szablon zawierał znacznik kodu QR - jeśli nie, wywołujący dokłada
+// kod w rogu strony.
+func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, qrHTML string) (string, bool) {
 	values := map[string]string{
 		"imie":                certificate.StudentFirstname,
 		"drugie_imie":         certificate.StudentSecondname.String,
@@ -204,15 +256,30 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow) strin
 		"numer_zaswiadczenia": buildCertificateNumber(certificate.RegistryNumber, certificate.CourseSymbol, certificate.RegistryYear),
 	}
 
-	return certificatePlaceholderPattern.ReplaceAllStringFunc(certificate.CertFrontPage, func(token string) string {
+	// rawValues omijają html.EscapeString, więc wolno tu wkładać WYŁĄCZNIE HTML zbudowany
+	// w tym pakiecie z danych, których nie kontroluje użytkownik. Kod QR to obrazek
+	// data: URI wygenerowany z kodu weryfikacyjnego - nic z bazy tu nie trafia.
+	rawValues := map[string]string{}
+	if qrHTML != "" {
+		rawValues["kod_qr"] = qrHTML
+	}
+
+	qrPlaced := false
+	substituted := certificatePlaceholderPattern.ReplaceAllStringFunc(certificate.CertFrontPage, func(token string) string {
 		matches := certificatePlaceholderPattern.FindStringSubmatch(token)
 		if len(matches) != 2 {
 			return ""
 		}
 
 		normalized := strings.Join(strings.Fields(matches[1]), "")
+		if raw, ok := rawValues[normalized]; ok {
+			qrPlaced = true
+			return raw
+		}
 		return html.EscapeString(values[normalized])
 	})
+
+	return substituted, qrPlaced
 }
 
 func buildCourseProgramPage(raw string, languageCode string) string {

@@ -71,5 +71,5 @@ func ParseDateQueryValue(r *http.Request, key string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, errors.New("invalid date format")
 	}
-	return parsed, nil	
+	return parsed, nil
 }

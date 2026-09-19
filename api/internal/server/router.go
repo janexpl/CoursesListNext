@@ -51,6 +51,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	userService := users.NewServiceWithAudit(deps.Pool, deps.Queries, recorder)
 	userHandler := users.NewHandler(deps.Queries, userService)
 	certificateHandler := certificates.NewHandler(deps.Queries, certificateService)
+	certificateHandler.SetVerificationURLTemplate(deps.Config.CertificateVerificationURL)
 	dashboardHandler := dashboard.NewHandler(deps.Queries)
 	coursesService := courses.NewService(deps.Pool, deps.Queries, recorder)
 	coursesService.SetWebhookPublisher(webhookPublisher)
