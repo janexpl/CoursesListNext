@@ -71,8 +71,28 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Bez -e nieudane `pull` czy `up` nie zatrzymuje skryptu: healthcheck
+            # odpowiada wtedy ze starego kontenera i wdrożenie świeci na zielono,
+            # choć na serwerze nic się nie zmieniło.
+            set -e
             cd "${{ secrets.VPS_DEPLOY_PATH }}"
-            export IMAGE_TAG="${{ github.sha }}"
+
+            # IMAGE_TAG trafia do .env, a nie tylko do tej sesji SSH: compose czyta
+            # ten plik sam, więc ręczne `docker compose up -d` na serwerze postawi
+            # tę samą wersję co ostatnie wdrożenie. Zmienna trzymana wyłącznie
+            # w sesji cofała stack do przypadkowo starego obrazu `:latest`.
+            # Zapis MUSI wyprzedzać `. ./.env`, inaczej stara wartość z pliku
+            # nadpisałaby tag bieżącego wdrożenia.
+            # .env trzyma hasła produkcyjne, więc najpierw upewniamy się, że plik
+            # istnieje i nie jest pusty - inaczej przepisanie skasowałoby sekrety.
+            # umask pilnuje, żeby kopia robocza nie powstała z szerokimi prawami.
+            test -s .env
+            ( umask 077; grep -v '^IMAGE_TAG=' .env > .env.deploy-tmp )
+            printf 'IMAGE_TAG=%s\n' "${{ github.sha }}" >> .env.deploy-tmp
+            # `cat >` zamiast `mv`, żeby zachować właściciela i uprawnienia .env.
+            cat .env.deploy-tmp > .env
+            rm -f .env.deploy-tmp
+
             # Port API bierzemy z .env, tak jak docker-compose.prod.yml.
             set -a; . ./.env; set +a
             API_PORT="${PORT:-8082}"
@@ -80,6 +100,14 @@ jobs:
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker compose -f docker-compose.prod.yml ps
+
+            # Kontrola, że działa naprawdę wdrażana wersja, a nie obraz sprzed
+            # ręcznego restartu.
+            if docker compose -f docker-compose.prod.yml ps --format '{{.Image}}' | grep -qv "${{ github.sha }}"; then
+              echo "BŁĄD: nie wszystkie kontenery chodzą z tagu ${{ github.sha }}"
+              docker compose -f docker-compose.prod.yml ps --format '{{.Service}} {{.Image}}'
+              exit 1
+            fi
             for i in 1 2 3 4 5 6 7 8 9 10; do
               if docker compose -f docker-compose.prod.yml exec -T api wget -qO- "http://localhost:${API_PORT}/api/v1/healthz" >/dev/null; then
                 exit 0
