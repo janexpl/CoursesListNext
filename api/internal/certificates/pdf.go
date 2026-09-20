@@ -120,9 +120,13 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
     /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej
        wysokości, a nie position: fixed - chromium drukuje "fixed" tylko na pierwszej
        stronie, a wkhtmltopdf powtarza je na każdej. */
+    /* padding-bottom rezerwuje pasek na kod: treść płynie w obszarze zawartości,
+       a kod siedzi w pasku paddingu, więc nie da się go już przykryć podpisem.
+       min-height plus padding dają razem wysokość strony. */
     .cert-front {
       position: relative;
-      min-height: 230mm;
+      min-height: 202mm;
+      padding-bottom: 28mm;
     }
 
     .qr-corner {

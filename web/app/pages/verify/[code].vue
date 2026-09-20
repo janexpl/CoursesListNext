@@ -235,7 +235,7 @@ useSeoMeta({
       </div>
 
       <p class="text-xs leading-5 text-slate-500">
-        Dane pochodzą z rejestru zaświadczeń CoursesList. Strona pokazuje wyłącznie informacje
+        Dane pochodzą z rejestru zaświadczeń firmy Nasza Era Sp. z o.o. Strona pokazuje wyłącznie informacje
         widoczne na samym dokumencie.
       </p>
     </template>

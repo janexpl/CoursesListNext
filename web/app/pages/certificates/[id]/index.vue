@@ -526,7 +526,8 @@ const certificatePreviewDocument = computed(() => {
 
       .cert-front {
         position: relative;
-        min-height: 230mm;
+        min-height: 202mm;
+        padding-bottom: 28mm;
       }
 
       .qr-corner {
