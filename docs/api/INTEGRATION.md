@@ -621,6 +621,33 @@ nie zawiera `verificationUrl` ani `verificationQr`. Sama trasa publiczna działa
 
 ---
 
+### 6.9. Nadruki na wydruku platformowym
+
+Zaświadczenie wystawione z `Idempotency-Key` trafia do kursanta elektronicznie — nikt nie
+przystawia na nim pieczątki ręcznie, jak na wydruku z aplikacji webowej. Taki dokument dostaje
+więc na PDF **dwie pieczątki, podpis i giloszowe tło** na obu stronach.
+
+Kryterium jest to samo, po którym rozpoznajesz dokumenty platformy przy webhookach:
+niepusty klucz idempotencji. Dokument wystawiony bez tego nagłówka drukuje się dokładnie
+tak jak dotąd.
+
+Umiejscowienie wybiera szablon kursu znacznikami `{{ pieczatka_1 }}`, `{{ pieczatka_2 }}`
+i `{{ podpis }}`. Szablon bez znaczników dostaje pasek u dołu pierwszej strony, obok kodu QR.
+Znacznik bez wgranego pliku znika z wydruku bez śladu.
+
+Pliki wgrywa administrator CoursesList w przeglądarce (`POST /admin/certificate-print-assets/{kind}`);
+klucz API tej trasy nie otworzy — dostanie `403 this endpoint requires an interactive session`.
+Integracja może je tylko odczytać: `GET /certificate-print-assets` (metadane) oraz
+`GET /certificate-print-assets/{kind}/file` i `/certificate-print-assets/guilloche` (obrazy).
+
+Szczegóły zaświadczenia niosą `printDecor` z adresami nadruków — pole jest obecne **wyłącznie**
+przy dokumentach platformowych, więc integracja nie musi powtarzać kryterium.
+
+Tło giloszowe jest wkompilowane w API i nie podlega konfiguracji; pochodzi z blankietu
+organizatora (`docs/api/wzory`).
+
+---
+
 ---
 
 ## 7. Obsługa błędów — zalecenia
@@ -654,6 +681,8 @@ obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
   stronie (sekcja 6.2);
 - cofnięcia unieważnienia zaświadczenia;
 - wydruku PDF unieważnionego zaświadczenia;
+- zmiany pieczątek ani podpisu przez API - wgrywa je administrator w przeglądarce (sekcja 6.9),
+  a tło giloszowe jest wkompilowane w API i nie ma ustawienia, które by je wyłączało;
 - sterowania kodem QR na wydruku — pojawia się na każdym dokumencie, gdy adres weryfikacji jest
   skonfigurowany; jego miejsce wybiera się wyłącznie znacznikiem `{{ kod_qr }}` w szablonie kursu
   (bez znacznika ląduje w prawym dolnym rogu);

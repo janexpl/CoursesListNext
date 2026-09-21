@@ -1283,6 +1283,156 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /certificate-print-assets:
+    get:
+      tags: [certificates]
+      operationId: listCertificatePrintAssets
+      summary: Nadruki wydruku (pieczątki i podpis)
+      description: >-
+        Metadane wgranych nadruków, bez bajtów plików. Nadruki trafiają wyłącznie na
+        zaświadczenia wystawione z `Idempotency-Key` (sekcja 6.9 w INTEGRATION.md).
+      x-required-scope: certificates:read
+      responses:
+        "200":
+          description: Lista nadruków; pusta, dopóki administrator nic nie wgrał.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintAssetsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /certificate-print-assets/guilloche:
+    get:
+      tags: [certificates]
+      operationId: getGuillochePattern
+      summary: Giloszowe tło wydruku
+      description: >-
+        Wzór jest wkompilowany w API i nie podlega konfiguracji. Domyślnie przód
+        (z monogramem); `side=back` zwraca wzór odwrotu.
+      x-required-scope: certificates:read
+      parameters:
+        - name: side
+          in: query
+          schema:
+            type: string
+            enum: [front, back]
+      responses:
+        "200":
+          description: Obraz PNG.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /certificate-print-assets/{kind}/file:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [pieczatka_1, pieczatka_2, podpis]
+    get:
+      tags: [certificates]
+      operationId: getCertificatePrintAssetFile
+      summary: Plik nadruku
+      description: >-
+        Obraz PNG wgrany przez administratora. Używa go podgląd zaświadczenia
+        w przeglądarce, żeby pokazać to samo, co wydrukuje serwer.
+      x-required-scope: certificates:read
+      responses:
+        "200":
+          description: Obraz PNG.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: "Nieznany rodzaj nadruku (`invalid print asset kind`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/certificate-print-assets/{kind}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [pieczatka_1, pieczatka_2, podpis]
+    post:
+      tags: [certificates]
+      operationId: upsertCertificatePrintAsset
+      summary: Wgranie nadruku
+      description: >-
+        **Wyłącznie z sesji przeglądarki i tylko dla administratora** - klucz API dostaje
+        403 `this endpoint requires an interactive session`. Pieczątka i podpis decydują
+        o wyglądzie każdego dokumentu wychodzącego z instytucji.
+
+        Plik idzie jako `multipart/form-data` (pole `file`, do 16 MiB, PNG albo JPEG)
+        i jest przekodowywany do PNG o dłuższym boku najwyżej 1200 px. Najlepiej PNG
+        z przezroczystym tłem: pieczątka na białym prostokącie zasłoni gilosz.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                printWidthMm:
+                  type: integer
+                  minimum: 10
+                  maximum: 60
+                  description: Szerokość na papierze; domyślnie 35 mm dla pieczątek, 50 mm dla podpisu.
+      responses:
+        "200":
+          description: Nadruk zapisany.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintAssetResponse"
+        "400":
+          description: "Brak pliku, zły format albo szerokość poza zakresem."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [certificates]
+      operationId: deleteCertificatePrintAsset
+      summary: Usunięcie nadruku
+      description: Dokumenty drukowane od tej chwili nie będą go nosić. Wymaga sesji administratora.
+      responses:
+        "204":
+          description: Usunięto.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /public/certificates/{code}:
     parameters:
       - name: code
@@ -3774,6 +3924,12 @@ components:
             Adres publicznej weryfikacji, na który prowadzi kod QR z wydruku. Pole nie występuje,
             gdy `CERTIFICATE_VERIFICATION_URL` nie jest ustawiony - wtedy kodu QR nie ma też na PDF.
           examples: ["https://example.pl/verify/K7QM4XPA9TZC"]
+        printDecor:
+          allOf:
+            - $ref: "#/components/schemas/CertificatePrintDecor"
+          description: >-
+            Obecne wyłącznie dla zaświadczeń wystawionych z `Idempotency-Key` - tylko one
+            dostają na wydruku pieczątki, podpis i giloszowe tło.
         verificationQr:
           type: string
           description: >-
@@ -3817,6 +3973,73 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/CertificateDetails"
+    PrintAssetsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrintAsset"
+    PrintAssetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PrintAsset"
+    PrintAsset:
+      type: object
+      required: [kind, fileName, contentType, fileSize, printWidthMm, uploadedAt]
+      properties:
+        kind:
+          type: string
+          enum: [pieczatka_1, pieczatka_2, podpis]
+          description: Nazwa rodzaju jest zarazem nazwą znacznika szablonu (`{{ pieczatka_1 }}`).
+        fileName:
+          type: string
+        contentType:
+          type: string
+          const: image/png
+          description: API przekodowuje każde wejście do PNG.
+        fileSize:
+          type: integer
+          format: int64
+        printWidthMm:
+          type: integer
+        uploadedAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    CertificatePrintDecor:
+      type: object
+      description: >-
+        Nadruki wydruku dla przeglądarki: gdzie po nie sięgnąć i jak szerokie mają być
+        na papierze. Obecne wyłącznie przy zaświadczeniach platformowych.
+      required: [stamp1, stamp2, signature, guillocheFrontUrl, guillocheBackUrl]
+      properties:
+        stamp1:
+          oneOf:
+            - $ref: "#/components/schemas/CertificatePrintImage"
+            - type: "null"
+        stamp2:
+          oneOf:
+            - $ref: "#/components/schemas/CertificatePrintImage"
+            - type: "null"
+        signature:
+          oneOf:
+            - $ref: "#/components/schemas/CertificatePrintImage"
+            - type: "null"
+        guillocheFrontUrl:
+          type: string
+        guillocheBackUrl:
+          type: string
+    CertificatePrintImage:
+      type: object
+      required: [url, widthMm]
+      properties:
+        url:
+          type: string
+          description: Adres z parametrem `v` - znacznikiem czasu wgrania, do omijania cache.
+        widthMm:
+          type: integer
     PublicCertificateResponse:
       type: object
       required: [data]
