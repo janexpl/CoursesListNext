@@ -43,6 +43,10 @@ const navigationItems = computed(() => {
       {
         label: 'Klucze API',
         to: '/admin/api-keys'
+      },
+      {
+        label: 'Nadruki',
+        to: '/admin/certificate-print-assets'
       }
     )
   }

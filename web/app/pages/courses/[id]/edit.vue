@@ -25,15 +25,6 @@ type CourseProgramRow = {
 }
 
 type EditTab = 'general' | 'program' | 'translations' | 'template'
-type TemplatePlaceholder = {
-  label: string
-  value: string
-}
-type FontSizeOption = {
-  label: string
-  value: string
-}
-
 definePageMeta({
   middleware: 'auth'
 })
@@ -80,18 +71,12 @@ let translationProgramRowSequence = 0
 let translationSequence = 0
 let templateEditorSyncInProgress = false
 
-const templatePlaceholders: TemplatePlaceholder[] = [
-  { label: 'Imię', value: '{{ imie }}' },
-  { label: 'Drugie imię', value: '{{ drugie_imie }}' },
-  { label: 'Nazwisko', value: '{{ nazwisko }}' },
-  { label: 'Data urodzenia', value: '{{ data_urodzenia }}' },
-  { label: 'Nazwa kursu', value: '{{ nazwa_kursu }}' },
-  { label: 'Data rozpoczęcia', value: '{{ data_rozpoczecia }}' },
-  { label: 'Data zakończenia', value: '{{ data_zakonczenia }}' },
-  { label: 'Data wystawienia', value: '{{ data_wystawienia }}' },
-  { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' },
-  { label: 'Kod QR', value: '{{ kod_qr }}' }
-]
+const templatePlaceholders = certificateTemplatePlaceholders
+
+type FontSizeOption = {
+  label: string
+  value: string
+}
 
 const fontSizeOptions: FontSizeOption[] = [
   { label: 'Mała', value: '14px' },

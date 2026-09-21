@@ -32,6 +32,7 @@ type fakeQuerier struct {
 	softDeleteFunc                                         func(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
 	listExpiringNotificationCandidatesFunc                 func(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
 	listPrintAssetFilesFunc                                func(ctx context.Context) ([]sqlc.ListCertificatePrintAssetFilesRow, error)
+	listPrintAssetsMetaFunc                                func(ctx context.Context) ([]sqlc.ListCertificatePrintAssetsMetaRow, error)
 }
 
 type fakeCreator struct {
@@ -137,6 +138,13 @@ func (f fakeQuerier) ListCertificatePrintAssetFiles(ctx context.Context) ([]sqlc
 		return nil, nil
 	}
 	return f.listPrintAssetFilesFunc(ctx)
+}
+
+func (f fakeQuerier) ListCertificatePrintAssetsMeta(ctx context.Context) ([]sqlc.ListCertificatePrintAssetsMetaRow, error) {
+	if f.listPrintAssetsMetaFunc == nil {
+		return nil, nil
+	}
+	return f.listPrintAssetsMetaFunc(ctx)
 }
 
 func (f fakeCreator) Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {

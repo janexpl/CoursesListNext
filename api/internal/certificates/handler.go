@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -41,6 +42,7 @@ type Querier interface {
 	CountCertificatesByCompanyID(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error)
 	ListExpiringCertificateNotificationCandidates(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
 	ListCertificatePrintAssetFiles(ctx context.Context) ([]sqlc.ListCertificatePrintAssetFilesRow, error)
+	ListCertificatePrintAssetsMeta(ctx context.Context) ([]sqlc.ListCertificatePrintAssetsMetaRow, error)
 }
 type Creator interface {
 	Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error)
@@ -117,7 +119,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := CertificateResponse{Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)))}
+	resp := CertificateResponse{Data: h.withPrintDecor(r.Context(), certificate, h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))))}
 	response.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -169,7 +171,7 @@ func (h *Handler) writeCertificateDetails(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.WriteJSON(w, status, CertificateResponse{
-		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
+		Data: h.withPrintDecor(r.Context(), certificate, h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)))),
 	})
 }
 
@@ -233,6 +235,54 @@ func (h *Handler) withVerificationQR(dto CertificateDetailsDTO) CertificateDetai
 	}
 	dto.VerificationURL = url
 	dto.VerificationQr = dataURI
+	return dto
+}
+
+// Adresy nadruków dla przeglądarki. Podgląd i wydruk z przeglądarki mają pokazywać
+// dokładnie to samo co PDF z serwera, więc sięgają po te same pliki.
+const (
+	printAssetFileURL = "/api/v1/certificate-print-assets/%s/file?v=%d"
+	guillocheFrontURL = "/api/v1/certificate-print-assets/guilloche"
+	guillocheBackURL  = "/api/v1/certificate-print-assets/guilloche?side=back"
+)
+
+// withPrintDecor dokłada do szczegółów adresy nadruków - ale tylko dla zaświadczeń
+// platformowych, czyli tych, które faktycznie dostaną je na wydruku.
+//
+// Celowo nie w mapCertificateDetailsResponse, z tego samego powodu co withVerificationQR:
+// tamta funkcja buduje też migawki do dziennika zmian.
+func (h *Handler) withPrintDecor(ctx context.Context, certificate sqlc.GetCertificateByIDRow, dto CertificateDetailsDTO) CertificateDetailsDTO {
+	if !webhooks.IsPlatformCertificate(certificate) {
+		return dto
+	}
+
+	rows, err := h.querier.ListCertificatePrintAssetsMeta(ctx)
+	if err != nil {
+		log.Printf("failed to load print asset metadata for certificate %d: %v", certificate.ID, err)
+		return dto
+	}
+
+	decor := CertificatePrintDecorDTO{
+		GuillocheFrontURL: guillocheFrontURL,
+		GuillocheBackURL:  guillocheBackURL,
+	}
+	for _, row := range rows {
+		// Znacznik czasu w adresie wymusza pobranie nowego pliku po podmianie pieczątki.
+		image := &CertificatePrintImageDTO{
+			URL:     fmt.Sprintf(printAssetFileURL, row.Kind, row.UpdatedAt.Time.Unix()),
+			WidthMm: int(row.PrintWidthMm),
+		}
+		switch row.Kind {
+		case certassets.KindStamp1:
+			decor.Stamp1 = image
+		case certassets.KindStamp2:
+			decor.Stamp2 = image
+		case certassets.KindSignature:
+			decor.Signature = image
+		}
+	}
+
+	dto.PrintDecor = &decor
 	return dto
 }
 
@@ -352,7 +402,7 @@ func (h *Handler) GetByVerificationCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
-		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
+		Data: h.withPrintDecor(r.Context(), certificate, h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)))),
 	})
 }
 
@@ -621,7 +671,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	certificate := sqlc.GetCertificateByIDRow(row)
 	response.WriteJSON(w, http.StatusOK, CertificateResponse{
-		Data: h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate))),
+		Data: h.withPrintDecor(r.Context(), certificate, h.withVerificationQR(mapCertificateDetailsResponse(certificate, h.loadCertificatePrintVariants(r.Context(), certificate)))),
 	})
 }
 

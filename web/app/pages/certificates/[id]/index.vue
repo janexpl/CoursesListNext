@@ -307,8 +307,13 @@ const courseProgramTableHtml = computed(() => {
     })
     .join('')
 
+  const guilloche = decorImages.value?.guillocheBack ?? ''
+  const background = guilloche ? `<img class="cert-guilloche" src="${guilloche}" alt="">` : ''
+  const sheetClass = guilloche ? 'certificate-sheet secondary-sheet cert-back-sheet' : 'certificate-sheet secondary-sheet'
+
   return `
-    <div class="certificate-sheet secondary-sheet">
+    <div class="${sheetClass}">
+      ${background}
       <div class="sheet-caption">Program szkolenia</div>
       <table>
         <colgroup>
@@ -342,6 +347,38 @@ const courseProgramTableHtml = computed(() => {
 // zaświadczenia. Dzięki temu podgląd i wydruk z przeglądarki pokazują dokładnie ten
 // sam kod co PDF z serwera, a obrazek nie wymaga sieci - print() woła się natychmiast
 // i nie zdążyłby poczekać na pobranie pliku.
+// Nadruki (pieczątki, podpis, gilosz) przychodzą adresami, nie w treści odpowiedzi -
+// cztery obrazy w każdym GET /certificates/{id} to pół megabajta. Pobieramy je raz
+// i zamieniamy na data URI, bo print() nie zaczeka na sieć.
+const decorImages = ref<ResolvedDecor | null>(null)
+const decorPending = ref(false)
+
+watch(
+  () => certificate.value?.printDecor,
+  async (decor) => {
+    if (!decor) {
+      decorImages.value = null
+      return
+    }
+
+    decorPending.value = true
+    try {
+      decorImages.value = await loadCertificateDecorImages(decor)
+    } catch {
+      // Brak nadruków w podglądzie jest lepszy niż pusty podgląd; PDF z serwera
+      // i tak je dołoży.
+      decorImages.value = null
+    } finally {
+      decorPending.value = false
+    }
+  },
+  { immediate: true }
+)
+
+function decorImageHtml(css: string, image: { dataUri: string, widthMm: number }, alt: string) {
+  return `<span class="${css}" style="width:${image.widthMm}mm"><img src="${image.dataUri}" alt="${alt}"></span>`
+}
+
 const qrBlockHtml = computed(() => {
   const dataURI = certificate.value?.verificationQr
   if (!dataURI) {
@@ -355,7 +392,7 @@ const qrBlockHtml = computed(() => {
 // dokładamy go w rogu arkusza, tak samo jak PDF z serwera.
 const certificatePreview = computed(() => {
   if (!certificate.value || !selectedPrintVariant.value?.certFrontPage) {
-    return { html: '', qrPlaced: false }
+    return { html: '', placed: {} as Record<string, boolean> }
   }
 
   const values: Record<string, string> = {
@@ -372,17 +409,33 @@ const certificatePreview = computed(() => {
     numer_zaswiadczenia: certificateNumber.value
   }
 
-  let qrPlaced = false
+  // Nadruki wstawiane znacznikiem - dokładnie te same klucze co w pdf.go.
+  const raw: Record<string, string> = {}
+  if (qrBlockHtml.value) {
+    raw.kod_qr = qrBlockHtml.value
+  }
+  const decor = decorImages.value
+  if (decor?.stamp1) {
+    raw.pieczatka_1 = decorImageHtml('cert-stamp', decor.stamp1, 'Pieczątka')
+  }
+  if (decor?.stamp2) {
+    raw.pieczatka_2 = decorImageHtml('cert-stamp', decor.stamp2, 'Pieczątka')
+  }
+  if (decor?.signature) {
+    raw.podpis = decorImageHtml('cert-signature', decor.signature, 'Podpis')
+  }
+
+  const placed: Record<string, boolean> = {}
   const html = selectedPrintVariant.value.certFrontPage.replace(/{{(.*?)}}/g, (_, rawTag: string) => {
     const normalizedTag = rawTag.replaceAll(/\s+/g, '')
-    if (normalizedTag === 'kod_qr') {
-      qrPlaced = qrBlockHtml.value !== ''
-      return qrBlockHtml.value
+    if (raw[normalizedTag]) {
+      placed[normalizedTag] = true
+      return raw[normalizedTag]
     }
     return values[normalizedTag] ?? ''
   })
 
-  return { html, qrPlaced }
+  return { html, placed }
 })
 
 const certificatePreviewHtml = computed(() => certificatePreview.value.html)
@@ -403,16 +456,46 @@ const duplicateAnnotationHtml = computed(() => {
     </div>`
 })
 
-// Szablony istniejących kursów nie mają znacznika, a kod ma się na nich pojawić.
-// Kontener z ustaloną wysokością dokładamy tylko wtedy, gdy kod ląduje w rogu -
-// tak samo jak w PDF, żeby wydruki bez QR wyglądały dokładnie jak wcześniej.
+// Pasek awaryjny z nadrukami, których autor szablonu nie umieścił znacznikiem -
+// ta sama kolejność i te same klasy co w pdf.go.
+const marksHtml = computed(() => {
+  const decor = decorImages.value
+  if (!decor) {
+    return ''
+  }
+
+  const placed = certificatePreview.value.placed
+  const marks = [
+    { key: 'pieczatka_1', css: 'cert-stamp', alt: 'Pieczątka', image: decor.stamp1 },
+    { key: 'pieczatka_2', css: 'cert-stamp', alt: 'Pieczątka', image: decor.stamp2 },
+    { key: 'podpis', css: 'cert-signature', alt: 'Podpis', image: decor.signature }
+  ]
+    .filter(mark => mark.image && !placed[mark.key])
+    .map(mark => decorImageHtml(mark.css, mark.image!, mark.alt))
+    .join('')
+
+  return marks ? `<div class="cert-marks">${marks}</div>` : ''
+})
+
+// Szablony istniejących kursów nie mają znaczników, a nadruki mają się na nich pojawić.
+// Układ jest sklonowany z pdf.go: gilosz pod treścią, pasek u dołu, kod QR w rogu.
 const certificateFrontHtml = computed(() => {
   const front = `${duplicateAnnotationHtml.value}\n      ${certificatePreviewHtml.value}`
-  if (!qrBlockHtml.value || certificatePreview.value.qrPlaced) {
+  const guilloche = decorImages.value?.guillocheFront ?? ''
+  const corner = qrBlockHtml.value && !certificatePreview.value.placed.kod_qr
+    ? `<div class="qr-corner">${qrBlockHtml.value}</div>`
+    : ''
+  const marks = marksHtml.value
+
+  if (!guilloche && !corner && !marks) {
     return front
   }
 
-  return `<div class="cert-front">${front}<div class="qr-corner">${qrBlockHtml.value}</div></div>`
+  const body = guilloche
+    ? `<img class="cert-guilloche" src="${guilloche}" alt=""><div class="cert-body">${front}</div>`
+    : front
+
+  return `<div class="cert-front${marks ? ' cert-front--marks' : ''}">${body}${marks}${corner}</div>`
 })
 
 const certificatePreviewDocument = computed(() => {
@@ -534,6 +617,64 @@ const certificatePreviewDocument = computed(() => {
         position: absolute;
         right: 0;
         bottom: 0;
+      }
+
+      /* Nadruki zaświadczenia platformowego. Te same reguły co w wydruku z serwera
+         (api/internal/certificates/pdf.go) - podgląd ma pokazywać to samo. */
+      .cert-stamp,
+      .cert-signature {
+        display: inline-block;
+        vertical-align: bottom;
+      }
+
+      .cert-stamp img,
+      .cert-signature img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .cert-marks {
+        position: absolute;
+        left: 0;
+        right: 32mm;
+        bottom: 0;
+        white-space: nowrap;
+      }
+
+      .cert-marks .cert-stamp,
+      .cert-marks .cert-signature {
+        margin-right: 8mm;
+      }
+
+      .cert-front--marks {
+        min-height: 190mm;
+        padding-bottom: 40mm;
+      }
+
+      /* Gilosz wypełnia arkusz podglądu. W podglądzie arkusz ma własne wymiary
+         (.certificate-sheet), więc wystarczy rozciągnięcie na cały kontener. */
+      .cert-guilloche {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+      }
+
+      .cert-body {
+        position: relative;
+        z-index: 1;
+      }
+
+      .cert-back-sheet {
+        position: relative;
+      }
+
+      /* Szary nagłówek tabeli zakryłby gilosz pod spodem. */
+      .cert-back-sheet th {
+        background: transparent;
       }
 
       h1, h2, h3, h4, h5, h6 {
@@ -886,10 +1027,11 @@ useSeoMeta({
         <button
           v-if="!certificate?.revokedAt"
           type="button"
-          class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+          :disabled="decorPending"
+          class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
           @click="printCertificatePreview"
         >
-          Drukuj
+          {{ decorPending ? 'Wczytywanie nadruków...' : 'Drukuj' }}
         </button>
       </div>
     </div>

@@ -669,10 +669,43 @@ export interface CertificateDetails {
   // Adres i obrazek kodu QR; puste, gdy instancja nie ma skonfigurowanej weryfikacji.
   verificationUrl?: string
   verificationQr?: string
+  // Obecne wyłącznie dla zaświadczeń wystawionych przez platformę - tylko one dostają
+  // nadruki na wydruku. Przeglądarka nie powtarza tego kryterium.
+  printDecor?: CertificatePrintDecor
   revokedAt: string | null
   revokeReason: string | null
   duplicateIssuedAt: string | null
   duplicateReason: string | null
+}
+
+export interface CertificatePrintImage {
+  url: string
+  widthMm: number
+}
+
+export interface CertificatePrintDecor {
+  stamp1: CertificatePrintImage | null
+  stamp2: CertificatePrintImage | null
+  signature: CertificatePrintImage | null
+  guillocheFrontUrl: string
+  guillocheBackUrl: string
+}
+
+export interface PrintAsset {
+  kind: 'pieczatka_1' | 'pieczatka_2' | 'podpis'
+  fileName: string
+  contentType: string
+  fileSize: number
+  printWidthMm: number
+  uploadedAt: string
+}
+
+export interface PrintAssetsResponse {
+  data: PrintAsset[]
+}
+
+export interface PrintAssetResponse {
+  data: PrintAsset
 }
 
 export interface PublicCertificate {
@@ -1093,6 +1126,22 @@ export function useApi() {
     createCertificate: async (payload: CreateCertificatePayload) => await request<CreateCertificateResponse>('/api/v1/certificates', {
       method: 'POST',
       body: payload
+    }),
+    certificatePrintAssets: async () => await request<PrintAssetsResponse>('/api/v1/certificate-print-assets'),
+    uploadCertificatePrintAsset: async (kind: string, file: File, printWidthMm?: number) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (printWidthMm) {
+        formData.append('printWidthMm', String(printWidthMm))
+      }
+
+      return await request<PrintAssetResponse>(`/api/v1/admin/certificate-print-assets/${kind}`, {
+        method: 'POST',
+        body: formData
+      })
+    },
+    deleteCertificatePrintAsset: async (kind: string) => await request(`/api/v1/admin/certificate-print-assets/${kind}`, {
+      method: 'DELETE'
     }),
     // Publiczna weryfikacja - bez sesji i bez klucza API (adres z kodu QR).
     publicCertificate: async (code: string) => await request<PublicCertificateResponse>(`/api/v1/public/certificates/${encodeURIComponent(code)}`),

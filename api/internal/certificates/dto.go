@@ -45,12 +45,33 @@ type CertificateDetailsDTO struct {
 	VerificationCode  string                       `json:"verificationCode"`
 	// VerificationURL i VerificationQr są puste, gdy instancja nie ma skonfigurowanego
 	// adresu publicznej weryfikacji - wtedy kod QR nie jest też drukowany.
-	VerificationURL   string  `json:"verificationUrl,omitempty"`
-	VerificationQr    string  `json:"verificationQr,omitempty"`
-	RevokedAt         *string `json:"revokedAt"`
-	RevokeReason      *string `json:"revokeReason"`
-	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
-	DuplicateReason   *string `json:"duplicateReason"`
+	VerificationURL string `json:"verificationUrl,omitempty"`
+	VerificationQr  string `json:"verificationQr,omitempty"`
+	// PrintDecor jest wypełniane WYŁĄCZNIE dla zaświadczeń platformowych - przeglądarka
+	// nie powtarza kryterium, tylko dostaje gotową odpowiedź. Obrazy idą adresami,
+	// a nie jak kod QR w treści: cztery obrazki w każdej odpowiedzi to pół megabajta
+	// przy każdym GET /certificates/{id}.
+	PrintDecor        *CertificatePrintDecorDTO `json:"printDecor,omitempty"`
+	RevokedAt         *string                   `json:"revokedAt"`
+	RevokeReason      *string                   `json:"revokeReason"`
+	DuplicateIssuedAt *string                   `json:"duplicateIssuedAt"`
+	DuplicateReason   *string                   `json:"duplicateReason"`
+}
+
+// CertificatePrintDecorDTO opisuje nadruki wydruku: gdzie po nie sięgnąć i jak szerokie
+// mają być na papierze. Pola pieczątek i podpisu są puste, dopóki administrator
+// nie wgra pliku; tło jest zawsze, bo jest wkompilowane w API.
+type CertificatePrintDecorDTO struct {
+	Stamp1            *CertificatePrintImageDTO `json:"stamp1"`
+	Stamp2            *CertificatePrintImageDTO `json:"stamp2"`
+	Signature         *CertificatePrintImageDTO `json:"signature"`
+	GuillocheFrontURL string                    `json:"guillocheFrontUrl"`
+	GuillocheBackURL  string                    `json:"guillocheBackUrl"`
+}
+
+type CertificatePrintImageDTO struct {
+	URL     string `json:"url"`
+	WidthMm int    `json:"widthMm"`
 }
 
 // PublicCertificateDTO to odpowiedź publicznej weryfikacji - trafia do każdego,
