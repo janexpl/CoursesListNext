@@ -330,6 +330,13 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
     th {
       background: #f8fafc;
     }
+
+    /* Na blankiecie nagłówek tabeli nie może mieć wypełnienia - szary pasek zakryłby
+       gilosz pod spodem. Reguła dotyczy tylko odwrotu z tłem, więc wydruki bez wzoru
+       zachowują dotychczasowy wygląd tabeli. */
+    .cert-back th {
+      background: transparent;
+    }
   </style>
 </head>
 <body>` + front + back + `</body>
