@@ -43,7 +43,13 @@ func TestLimitRequestBodyAllowsBodyWithinLimit(t *testing.T) {
 }
 
 func TestLimitRequestBodyExemptsUploadRoutes(t *testing.T) {
-	for _, path := range []string{"/api/v1/journals/5/attendance-scan", "/api/v1/journals/5/signed-scan"} {
+	for _, path := range []string{
+		"/api/v1/journals/5/attendance-scan",
+		"/api/v1/journals/5/signed-scan",
+		// Ścieżka nadruku kończy się rodzajem, nie stałym segmentem - rozpoznanie
+		// po sufiksie by jej nie złapało i wgranie pieczątki padłoby na limicie 1 MiB.
+		"/api/v1/admin/certificate-print-assets/pieczatka_1",
+	} {
 		t.Run(path, func(t *testing.T) {
 			var read []byte
 			var readErr error

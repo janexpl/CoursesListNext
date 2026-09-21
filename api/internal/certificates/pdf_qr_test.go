@@ -86,7 +86,7 @@ func TestCertificatePDFPrintsQRInPlaceOfPlaceholder(t *testing.T) {
 	certificate.VerificationCode = "K7QM4XPA9TZC"
 	certificate.CertFrontPage = `<h1>ZAŚWIADCZENIE</h1><p>{{ numer_zaswiadczenia }}</p><div>{{ kod_qr }}</div>`
 
-	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate)
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
 
 	assertQREncodes(t, html, "https://courseslist.example.pl/verify/K7QM4XPA9TZC")
 	if strings.Contains(html, `<div class="qr-corner">`) {
@@ -107,7 +107,7 @@ func TestCertificatePDFPrintsQRInTheCornerWithoutPlaceholder(t *testing.T) {
 	certificate := baseCertificateForPDF()
 	certificate.VerificationCode = "K7QM4XPA9TZC"
 
-	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate)
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
 
 	assertQREncodes(t, html, "https://courseslist.example.pl/verify/K7QM4XPA9TZC")
 	if !strings.Contains(html, `<div class="qr-corner">`) {
@@ -123,7 +123,7 @@ func TestCertificatePDFHasNoQRWithoutConfiguredURL(t *testing.T) {
 	certificate.VerificationCode = "K7QM4XPA9TZC"
 	certificate.CertFrontPage = `<h1>ZAŚWIADCZENIE</h1><div>{{ kod_qr }}</div>`
 
-	html := buildCertificatePDFHTML(certificate, "")
+	html := buildCertificatePDFHTML(certificate, "", certificateDecor{})
 
 	if strings.Contains(html, "data:image/png;base64,") || strings.Contains(html, `<div class="qr-corner">`) {
 		t.Fatal("bez skonfigurowanego adresu wydruk nie może zawierać kodu QR")
@@ -140,7 +140,7 @@ func TestCertificatePDFQRPlaceholderIgnoresWhitespace(t *testing.T) {
 		certificate.VerificationCode = "K7QM4XPA9TZC"
 		certificate.CertFrontPage = `<div>` + token + `</div>`
 
-		html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate)
+		html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
 		if strings.Contains(html, `<div class="qr-corner">`) {
 			t.Fatalf("token %q nie został rozpoznany", token)
 		}
@@ -149,7 +149,7 @@ func TestCertificatePDFQRPlaceholderIgnoresWhitespace(t *testing.T) {
 	certificate := baseCertificateForPDF()
 	certificate.VerificationCode = "K7QM4XPA9TZC"
 	certificate.CertFrontPage = `<div>{{ kod_qrx }}</div>`
-	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate)
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
 	if !strings.Contains(html, `<div class="qr-corner">`) {
 		t.Fatal("nieznany token nie może uchodzić za znacznik kodu QR")
 	}
@@ -162,7 +162,7 @@ func TestCertificatePDFStillEscapesTemplateValues(t *testing.T) {
 	certificate.StudentLastname = `<script>alert(1)</script>`
 	certificate.CertFrontPage = `<p>{{ nazwisko }}</p>`
 
-	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate)
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
 
 	if strings.Contains(html, "<script>alert(1)</script>") {
 		t.Fatal("wartość z bazy trafiła do wydruku bez escapowania")

@@ -2,6 +2,7 @@ package certificates
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,11 +16,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
+	"github.com/janexpl/CoursesListNext/api/internal/certassets"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
+	"github.com/janexpl/CoursesListNext/api/internal/guilloche"
 	"github.com/janexpl/CoursesListNext/api/internal/pgutil"
 	"github.com/janexpl/CoursesListNext/api/internal/qrcode"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 	"github.com/janexpl/CoursesListNext/api/internal/validation"
+	"github.com/janexpl/CoursesListNext/api/internal/webhooks"
 )
 
 type Querier interface {
@@ -36,6 +40,7 @@ type Querier interface {
 	ListCertificatesByCompanyID(ctx context.Context, arg sqlc.ListCertificatesByCompanyIDParams) ([]sqlc.ListCertificatesByCompanyIDRow, error)
 	CountCertificatesByCompanyID(ctx context.Context, arg sqlc.CountCertificatesByCompanyIDParams) (int64, error)
 	ListExpiringCertificateNotificationCandidates(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
+	ListCertificatePrintAssetFiles(ctx context.Context) ([]sqlc.ListCertificatePrintAssetFilesRow, error)
 }
 type Creator interface {
 	Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error)
@@ -231,6 +236,55 @@ func (h *Handler) withVerificationQR(dto CertificateDetailsDTO) CertificateDetai
 	return dto
 }
 
+// loadCertificateDecor buduje nadruki wydruku: pieczątki, podpis i giloszowe tło.
+//
+// Dostają je wyłącznie zaświadczenia platformowe - dokument wystawiony przez platformę
+// idzie do kursanta elektronicznie i nikt nie przystawia na nim pieczątki ręcznie,
+// w odróżnieniu od wydruków z aplikacji webowej, które są stemplowane w biurze.
+// Kryterium jest jedno w całym systemie (webhooks.IsPlatformCertificate) i żyje tylko
+// w tej funkcji.
+//
+// Błąd odczytu nie przerywa wydruku: dokument bez pieczątki jest lepszy niż brak
+// dokumentu - tak samo jak przy kodzie QR.
+func (h *Handler) loadCertificateDecor(ctx context.Context, certificate sqlc.GetCertificateByIDRow) certificateDecor {
+	if !webhooks.IsPlatformCertificate(certificate) {
+		return certificateDecor{}
+	}
+
+	rows, err := h.querier.ListCertificatePrintAssetFiles(ctx)
+	if err != nil {
+		log.Printf("failed to load print assets for certificate %d: %v", certificate.ID, err)
+		return certificateDecor{}
+	}
+
+	decor := certificateDecor{}
+	for _, row := range rows {
+		image := decorImage{
+			// Prefiks typu jest stałą w kodzie, a nie wartością row.ContentType: adres
+			// trafia do atrybutu src w HTML, który omija escapowanie szablonu.
+			DataURI: "data:image/png;base64," + base64.StdEncoding.EncodeToString(row.FileData),
+			WidthMM: int(row.PrintWidthMm),
+		}
+		switch row.Kind {
+		case certassets.KindStamp1:
+			decor.Stamp1 = image
+		case certassets.KindStamp2:
+			decor.Stamp2 = image
+		case certassets.KindSignature:
+			decor.Signature = image
+		}
+	}
+
+	pattern, err := guilloche.DataURI()
+	if err != nil {
+		log.Printf("failed to build guilloche for certificate %d: %v", certificate.ID, err)
+	} else {
+		decor.Guilloche = pattern
+	}
+
+	return decor
+}
+
 // PublicVerificationCodeFromRequest zwraca znormalizowany kod z adresu żądania.
 // Router używa go jako klucza limitu - wszystkie źle sformatowane kody dzielą jedno
 // wiaderko, żeby pamięć limitera nie rosła od losowych ciągów.
@@ -336,7 +390,7 @@ func (h *Handler) PDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pdfBytes, err := renderCertificatePDF(r.Context(), buildCertificatePDFHTML(certificate, h.verificationURLTemplate))
+	pdfBytes, err := renderCertificatePDF(r.Context(), buildCertificatePDFHTML(certificate, h.verificationURLTemplate, h.loadCertificateDecor(r.Context(), certificate)))
 	if err != nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to render certificate pdf")
 		return

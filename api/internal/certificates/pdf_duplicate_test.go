@@ -27,7 +27,7 @@ func baseCertificateForPDF() sqlc.GetCertificateByIDRow {
 }
 
 func TestCertificatePDFHasNoDuplicateAnnotationByDefault(t *testing.T) {
-	html := buildCertificatePDFHTML(baseCertificateForPDF(), "")
+	html := buildCertificatePDFHTML(baseCertificateForPDF(), "", certificateDecor{})
 
 	if strings.Contains(html, "DUPLIKAT") {
 		t.Fatal("zwykłe zaświadczenie nie może mieć adnotacji duplikatu")
@@ -42,7 +42,7 @@ func TestCertificatePDFCarriesDuplicateAnnotation(t *testing.T) {
 		Valid: true,
 	}
 
-	html := buildCertificatePDFHTML(certificate, "")
+	html := buildCertificatePDFHTML(certificate, "", certificateDecor{})
 
 	if !strings.Contains(html, "DUPLIKAT") {
 		t.Fatalf("brak adnotacji DUPLIKAT w wydruku: %s", html)

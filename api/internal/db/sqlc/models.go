@@ -77,6 +77,19 @@ type Certificate struct {
 	IdempotencyKey            pgtype.Text        `json:"idempotency_key"`
 }
 
+type CertificatePrintAsset struct {
+	ID               int64              `json:"id"`
+	Kind             string             `json:"kind"`
+	FileName         string             `json:"file_name"`
+	ContentType      string             `json:"content_type"`
+	FileSize         int64              `json:"file_size"`
+	FileData         []byte             `json:"file_data"`
+	PrintWidthMm     int16              `json:"print_width_mm"`
+	UploadedByUserID int64              `json:"uploaded_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Company struct {
 	ID                         int64       `json:"id"`
 	Name                       string      `json:"name"`

@@ -31,6 +31,7 @@ type fakeQuerier struct {
 	updateCertificateFunc                                  func(ctx context.Context, arg sqlc.UpdateCertificateParams) (sqlc.UpdateCertificateRow, error)
 	softDeleteFunc                                         func(ctx context.Context, arg sqlc.SoftDeleteCertificateParams) (int64, error)
 	listExpiringNotificationCandidatesFunc                 func(ctx context.Context, arg sqlc.ListExpiringCertificateNotificationCandidatesParams) ([]sqlc.ListExpiringCertificateNotificationCandidatesRow, error)
+	listPrintAssetFilesFunc                                func(ctx context.Context) ([]sqlc.ListCertificatePrintAssetFilesRow, error)
 }
 
 type fakeCreator struct {
@@ -127,6 +128,15 @@ func (f fakeQuerier) ListExpiringCertificateNotificationCandidates(ctx context.C
 		return nil, errors.New("unexpected ListExpiringCertificateNotificationCandidates call")
 	}
 	return f.listExpiringNotificationCandidatesFunc(ctx, arg)
+}
+
+// Nadruki wydruku. Atrapa domyślnie nie ma żadnych, więc wydruki w testach wychodzą
+// bez pieczątek - tak jak dla dokumentów spoza platformy.
+func (f fakeQuerier) ListCertificatePrintAssetFiles(ctx context.Context) ([]sqlc.ListCertificatePrintAssetFilesRow, error) {
+	if f.listPrintAssetFilesFunc == nil {
+		return nil, nil
+	}
+	return f.listPrintAssetFilesFunc(ctx)
 }
 
 func (f fakeCreator) Create(ctx context.Context, input CreateCertificateInput) (CreateCertificateResult, error) {

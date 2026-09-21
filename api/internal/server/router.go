@@ -12,6 +12,7 @@ import (
 	"github.com/janexpl/CoursesListNext/api/internal/apikeys"
 	"github.com/janexpl/CoursesListNext/api/internal/auditlog"
 	"github.com/janexpl/CoursesListNext/api/internal/auth"
+	"github.com/janexpl/CoursesListNext/api/internal/certassets"
 	"github.com/janexpl/CoursesListNext/api/internal/certificates"
 	"github.com/janexpl/CoursesListNext/api/internal/companies"
 	"github.com/janexpl/CoursesListNext/api/internal/config"
@@ -52,6 +53,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	userHandler := users.NewHandler(deps.Queries, userService)
 	certificateHandler := certificates.NewHandler(deps.Queries, certificateService)
 	certificateHandler.SetVerificationURLTemplate(deps.Config.CertificateVerificationURL)
+	certAssetService := certassets.NewService(deps.Pool, deps.Queries, recorder)
+	certAssetHandler := certassets.NewHandler(deps.Queries, certAssetService)
 	dashboardHandler := dashboard.NewHandler(deps.Queries)
 	coursesService := courses.NewService(deps.Pool, deps.Queries, recorder)
 	coursesService.SetWebhookPublisher(webhookPublisher)
@@ -148,6 +151,13 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/revoke", certificateHandler.Revoke)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/duplicate", certificateHandler.Duplicate)
 
+			// Nadruki zaświadczeń: pieczątki i podpis. Odczyt jest dostępny dla każdego
+			// zalogowanego, bo podgląd zaświadczenia w przeglądarce musi pokazać to samo,
+			// co wydrukuje serwer. Statyczny "guilloche" wyprzedza wzorzec {kind}.
+			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificate-print-assets", certAssetHandler.List)
+			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificate-print-assets/guilloche", certAssetHandler.Guilloche)
+			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/certificate-print-assets/{kind}/file", certAssetHandler.GetFile)
+
 			r.With(auth.RequireScope(auth.ScopeDashboardRead)).Get("/dashboard", dashboardHandler.Get)
 
 			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses", courseHandler.List)
@@ -212,6 +222,12 @@ func NewRouter(deps Dependencies) http.Handler {
 				r.With(auth.RequireSession()).Get("/admin/api-keys/scopes", apiKeyHandler.ListScopes)
 				r.With(auth.RequireSession()).Post("/admin/api-keys", apiKeyHandler.Create)
 				r.With(auth.RequireSession()).Delete("/admin/api-keys/{id}", apiKeyHandler.Revoke)
+
+				// Pieczątka i podpis decydują o wyglądzie każdego dokumentu wychodzącego
+				// z instytucji, więc podmiana zostaje w przeglądarce - klucz integracji
+				// z certificates:write nie powinien móc podłożyć własnego podpisu.
+				r.With(auth.RequireSession()).Post("/admin/certificate-print-assets/{kind}", certAssetHandler.Upsert)
+				r.With(auth.RequireSession()).Delete("/admin/certificate-print-assets/{kind}", certAssetHandler.Delete)
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireScope(auth.ScopeAuditLogRead))

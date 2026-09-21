@@ -29,6 +29,9 @@ func isUploadRequest(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
 	}
+	// Nadruki zaświadczeń mają rodzaj na końcu ścieżki (.../pieczatka_1), więc
+	// rozpoznanie po sufiksie tu nie wystarcza.
 	return strings.HasSuffix(r.URL.Path, "/attendance-scan") ||
-		strings.HasSuffix(r.URL.Path, "/signed-scan")
+		strings.HasSuffix(r.URL.Path, "/signed-scan") ||
+		strings.Contains(r.URL.Path, "/certificate-print-assets/")
 }

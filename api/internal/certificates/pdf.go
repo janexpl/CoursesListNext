@@ -6,9 +6,11 @@ import (
 	"html"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/janexpl/CoursesListNext/api/internal/certassets"
 	"github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/pdfutil"
 	"github.com/janexpl/CoursesListNext/api/internal/qrcode"
@@ -33,16 +35,54 @@ var certificatePlaceholderPattern = regexp.MustCompile(`{{(.*?)}}`)
 
 var renderCertificatePDF = pdfutil.RenderHTMLToPDF
 
+// decorImage to jeden nadruk gotowy do wstawienia: obrazek jako data URI i szerokość,
+// jaką ma mieć na papierze.
+type decorImage struct {
+	DataURI string
+	WidthMM int
+}
+
+// certificateDecor to nadruki dokładane wyłącznie do zaświadczeń platformowych:
+// pieczątki, podpis i giloszowe tło. Wartość zerowa znaczy "wydruk dokładnie taki,
+// jak przed wprowadzeniem nadruków" - i tak wygląda dla wszystkich dokumentów
+// wystawianych z aplikacji webowej i z dziennika.
+type certificateDecor struct {
+	Stamp1    decorImage
+	Stamp2    decorImage
+	Signature decorImage
+	Guilloche string
+}
+
 // buildCertificatePDFHTML składa wydruk. verificationURLTemplate to wzorzec adresu
-// publicznej weryfikacji; pusty oznacza wydruk bez kodu QR.
-func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificationURLTemplate string) string {
+// publicznej weryfikacji; pusty oznacza wydruk bez kodu QR. decor niesie nadruki
+// zaświadczenia platformowego; wartość zerowa daje wydruk bez nich.
+func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificationURLTemplate string, decor certificateDecor) string {
 	qrHTML := buildVerificationQR(certificate, verificationURLTemplate)
-	template, qrPlaced := substituteCertificateTemplate(certificate, qrHTML)
+	template, placed := substituteCertificateTemplate(certificate, buildCertificateRawValues(qrHTML, decor))
 	front := buildDuplicateAnnotation(certificate) + template
+
 	// Szablon bez znacznika (tak wygląda większość istniejących kursów) dostaje kod
-	// w prawym dolnym rogu pierwszej strony.
-	if qrHTML != "" && !qrPlaced {
-		front = `<div class="cert-front">` + front + `<div class="qr-corner">` + qrHTML + `</div></div>`
+	// w prawym dolnym rogu pierwszej strony, a nadruki w pasku nad nim.
+	corner := ""
+	if qrHTML != "" && !placed["kod_qr"] {
+		corner = `<div class="qr-corner">` + qrHTML + `</div>`
+	}
+	marks := buildFallbackMarks(decor, placed)
+
+	if decor.Guilloche != "" {
+		// Deseń jest elementem treści, nie tłem CSS - tła bywają pomijane przy druku.
+		// Treść dostaje własny pozycjonowany kontener, bo element position:absolute
+		// maluje się nad elementami niepozycjonowanymi i przykryłby tekst.
+		front = `<img class="cert-guilloche" src="` + html.EscapeString(decor.Guilloche) + `" alt="">` +
+			`<div class="cert-body">` + front + `</div>`
+	}
+	if corner != "" || marks != "" || decor.Guilloche != "" {
+		classes := "cert-front"
+		if marks != "" {
+			// Pasek z nadrukami jest wyższy niż sam kod QR, więc treść dostaje mniej miejsca.
+			classes += " cert-front--marks"
+		}
+		front = `<div class="` + classes + `">` + front + marks + corner + `</div>`
 	}
 	back := buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode)
 	labels := getCourseProgramPageLabels(certificate.LanguageCode)
@@ -133,6 +173,63 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       position: absolute;
       right: 0;
       bottom: 0;
+    }
+
+    /* Pieczątki i podpis. Element inline z tego samego powodu co .qr-code, a szerokość
+       przychodzi w atrybucie style, bo ustala ją administrator przy wgrywaniu pliku. */
+    .cert-stamp,
+    .cert-signature {
+      display: inline-block;
+      vertical-align: bottom;
+    }
+
+    .cert-stamp img,
+    .cert-signature img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* Pasek awaryjny dla szablonów bez znaczników. Kończy się 32 mm przed prawą
+       krawędzią, bo tam siedzi kod QR (24 mm plus odstęp). */
+    .cert-marks {
+      position: absolute;
+      left: 0;
+      right: 32mm;
+      bottom: 0;
+      white-space: nowrap;
+    }
+
+    .cert-marks .cert-stamp,
+    .cert-marks .cert-signature {
+      margin-right: 8mm;
+    }
+
+    /* Pasek z nadrukami jest wyższy niż sam kod QR, więc treść dostaje mniej miejsca.
+       Modyfikator, a nie zmiana .cert-front - wydruki bez nadruków mają zostać takie
+       jak dotąd. */
+    .cert-front--marks {
+      min-height: 190mm;
+      padding-bottom: 40mm;
+    }
+
+    /* Gilosz jako element treści, nie background-image: tła bywają pomijane przy druku
+       i przez sterowniki drukarek. Lekki spad poza obszar treści daje wrażenie ramki,
+       ale nie wchodzi w margines strony. */
+    .cert-guilloche {
+      position: absolute;
+      top: -10mm;
+      left: -12mm;
+      width: calc(100% + 24mm);
+      height: calc(100% + 20mm);
+    }
+
+    /* Treść leży nad deseniem. Element pozycjonowany maluje się nad niepozycjonowanymi,
+       więc bez tego kontenera gilosz przykryłby tekst. Ujemny z-index to pułapka -
+       stary WebKit chowa wtedy obrazek pod tłem strony. */
+    .cert-body {
+      position: relative;
+      z-index: 1;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -249,10 +346,72 @@ func buildVerificationQR(certificate sqlc.GetCertificateByIDRow, verificationURL
 	return `<span class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></span>`
 }
 
+// decorImageHTML buduje nadruk jako element inline. Nie <div>, bo znacznik bywa
+// wstawiony w akapicie, a <div> w <p> parser HTML wyrzuca poza akapit - nadruk
+// przestałby wtedy słuchać wyrównania ustawionego przez autora szablonu.
+//
+// Adres obrazu jest escapowany mimo że powstaje w tym pakiecie z bajtów spod stałego
+// prefiksu: to jedyne miejsce, w którym wartość spoza szablonu trafia do atrybutu.
+func decorImageHTML(class string, img decorImage, alt string) string {
+	return `<span class="` + class + `" style="width:` + strconv.Itoa(img.WidthMM) + `mm">` +
+		`<img src="` + html.EscapeString(img.DataURI) + `" alt="` + alt + `"></span>`
+}
+
+// buildCertificateRawValues zbiera nadruki wstawiane bez escapowania. Brakującego
+// zasobu tu nie ma, więc jego znacznik zniknie z wydruku - tak samo jak {{ kod_qr }}
+// przy niewykonfigurowanym adresie weryfikacji.
+func buildCertificateRawValues(qrHTML string, decor certificateDecor) map[string]string {
+	raw := map[string]string{}
+	if qrHTML != "" {
+		raw["kod_qr"] = qrHTML
+	}
+	for _, mark := range decorMarks(decor) {
+		if mark.image.DataURI == "" {
+			continue
+		}
+		raw[mark.key] = decorImageHTML(mark.class, mark.image, mark.alt)
+	}
+	return raw
+}
+
+// buildFallbackMarks buduje pasek u dołu strony z nadrukami, których autor szablonu
+// nie umieścił znacznikiem. Dzięki temu nadruk pojawia się także na szablonach
+// napisanych przed wprowadzeniem tej funkcji.
+func buildFallbackMarks(decor certificateDecor, placed map[string]bool) string {
+	var marks strings.Builder
+	for _, mark := range decorMarks(decor) {
+		if mark.image.DataURI == "" || placed[mark.key] {
+			continue
+		}
+		marks.WriteString(decorImageHTML(mark.class, mark.image, mark.alt))
+	}
+	if marks.Len() == 0 {
+		return ""
+	}
+	return `<div class="cert-marks">` + marks.String() + `</div>`
+}
+
+type decorMark struct {
+	key   string
+	class string
+	alt   string
+	image decorImage
+}
+
+// decorMarks trzyma kolejność nadruków na pasku i powiązanie rodzaju ze znacznikiem
+// szablonu w jednym miejscu.
+func decorMarks(decor certificateDecor) []decorMark {
+	return []decorMark{
+		{key: certassets.KindStamp1, class: "cert-stamp", alt: "Pieczątka", image: decor.Stamp1},
+		{key: certassets.KindStamp2, class: "cert-stamp", alt: "Pieczątka", image: decor.Stamp2},
+		{key: certassets.KindSignature, class: "cert-signature", alt: "Podpis", image: decor.Signature},
+	}
+}
+
 // substituteCertificateTemplate podmienia znaczniki w szablonie kursu. Zwraca też
-// informację, czy szablon zawierał znacznik kodu QR - jeśli nie, wywołujący dokłada
-// kod w rogu strony.
-func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, qrHTML string) (string, bool) {
+// zbiór znaczników, które faktycznie wystąpiły - wywołujący dokłada w rogu i w pasku
+// u dołu tylko to, czego w szablonie nie było.
+func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, rawValues map[string]string) (string, map[string]bool) {
 	values := map[string]string{
 		"imie":                certificate.StudentFirstname,
 		"drugie_imie":         certificate.StudentSecondname.String,
@@ -267,15 +426,11 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, qrHTM
 		"numer_zaswiadczenia": buildCertificateNumber(certificate.RegistryNumber, certificate.CourseSymbol, certificate.RegistryYear),
 	}
 
-	// rawValues omijają html.EscapeString, więc wolno tu wkładać WYŁĄCZNIE HTML zbudowany
-	// w tym pakiecie z danych, których nie kontroluje użytkownik. Kod QR to obrazek
-	// data: URI wygenerowany z kodu weryfikacyjnego - nic z bazy tu nie trafia.
-	rawValues := map[string]string{}
-	if qrHTML != "" {
-		rawValues["kod_qr"] = qrHTML
-	}
-
-	qrPlaced := false
+	// rawValues omijają html.EscapeString, więc wolno tam wkładać WYŁĄCZNIE HTML zbudowany
+	// w tym pakiecie z danych, których nie kontroluje użytkownik: kod QR wygenerowany
+	// z kodu weryfikacyjnego oraz nadruki złożone ze stałego prefiksu data URI i bajtów
+	// obrazu zakodowanych base64. Typ MIME jest stałą w kodzie, nie wartością z bazy.
+	placed := map[string]bool{}
 	substituted := certificatePlaceholderPattern.ReplaceAllStringFunc(certificate.CertFrontPage, func(token string) string {
 		matches := certificatePlaceholderPattern.FindStringSubmatch(token)
 		if len(matches) != 2 {
@@ -284,13 +439,13 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, qrHTM
 
 		normalized := strings.Join(strings.Fields(matches[1]), "")
 		if raw, ok := rawValues[normalized]; ok {
-			qrPlaced = true
+			placed[normalized] = true
 			return raw
 		}
 		return html.EscapeString(values[normalized])
 	})
 
-	return substituted, qrPlaced
+	return substituted, placed
 }
 
 func buildCourseProgramPage(raw string, languageCode string) string {
