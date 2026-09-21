@@ -37,7 +37,7 @@ func TestLoadCertificateDecorOnlyForPlatformCertificates(t *testing.T) {
 	if withKey.Stamp1.DataURI == "" || withKey.Stamp2.DataURI == "" || withKey.Signature.DataURI == "" {
 		t.Fatalf("zaświadczenie platformowe powinno dostać wszystkie nadruki: %+v", withKey)
 	}
-	if withKey.Guilloche == "" {
+	if withKey.GuillocheFront == "" {
 		t.Fatal("zaświadczenie platformowe powinno dostać tło giloszowe")
 	}
 	if withKey.Stamp2.WidthMM != 30 {
@@ -93,7 +93,7 @@ func TestLoadCertificateDecorWithoutUploadedFiles(t *testing.T) {
 	if decor.Stamp1.DataURI != "" || decor.Signature.DataURI != "" {
 		t.Fatalf("bez wgranych plików nie ma pieczątek: %+v", decor)
 	}
-	if decor.Guilloche == "" {
+	if decor.GuillocheFront == "" {
 		t.Fatal("tło powstaje w kodzie, więc nie zależy od wgranych plików")
 	}
 }

@@ -14,10 +14,10 @@ const (
 
 func testDecor() certificateDecor {
 	return certificateDecor{
-		Stamp1:    decorImage{DataURI: testStampURI, WidthMM: 35},
-		Stamp2:    decorImage{DataURI: testStamp2URI, WidthMM: 35},
-		Signature: decorImage{DataURI: testSignatureURI, WidthMM: 50},
-		Guilloche: testGuillocheURI,
+		Stamp1:         decorImage{DataURI: testStampURI, WidthMM: 35},
+		Stamp2:         decorImage{DataURI: testStamp2URI, WidthMM: 35},
+		Signature:      decorImage{DataURI: testSignatureURI, WidthMM: 50},
+		GuillocheFront: testGuillocheURI,
 	}
 }
 
@@ -125,7 +125,7 @@ func TestMissingAssetRemovesItsMarker(t *testing.T) {
 func TestGuillocheIsContentBehindTheText(t *testing.T) {
 	certificate := baseCertificateForPDF()
 
-	html := buildCertificatePDFHTML(certificate, "", certificateDecor{Guilloche: testGuillocheURI})
+	html := buildCertificatePDFHTML(certificate, "", certificateDecor{GuillocheFront: testGuillocheURI})
 
 	if !strings.Contains(html, `<img class="cert-guilloche" src="`+testGuillocheURI+`"`) {
 		t.Fatalf("gilosz musi być obrazem w treści: %s", html)

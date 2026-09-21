@@ -275,12 +275,8 @@ func (h *Handler) loadCertificateDecor(ctx context.Context, certificate sqlc.Get
 		}
 	}
 
-	pattern, err := guilloche.DataURI()
-	if err != nil {
-		log.Printf("failed to build guilloche for certificate %d: %v", certificate.ID, err)
-	} else {
-		decor.Guilloche = pattern
-	}
+	decor.GuillocheFront = guilloche.FrontDataURI()
+	decor.GuillocheBack = guilloche.BackDataURI()
 
 	return decor
 }

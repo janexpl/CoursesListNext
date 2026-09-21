@@ -79,13 +79,13 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Guilloche zwraca tło generowane proceduralnie. Nie ma go w bazie, więc trasa jest
-// jedynym sposobem, żeby podgląd w przeglądarce pokazał ten sam deseń co wydruk.
+// Guilloche zwraca wzór tła. Nie ma go w bazie (jest wkompilowany w binarkę), więc trasa
+// jest jedynym sposobem, żeby podgląd w przeglądarce pokazał to samo co wydruk.
+// Domyślnie przód; ?side=back zwraca wzór odwrotu.
 func (h *Handler) Guilloche(w http.ResponseWriter, r *http.Request) {
-	pattern, err := guilloche.PNG()
-	if err != nil {
-		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to render guilloche")
-		return
+	pattern := guilloche.FrontPNG()
+	if r.URL.Query().Get("side") == "back" {
+		pattern = guilloche.BackPNG()
 	}
 
 	w.Header().Set("Content-Type", "image/png")

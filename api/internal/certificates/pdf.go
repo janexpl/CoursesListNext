@@ -50,7 +50,9 @@ type certificateDecor struct {
 	Stamp1    decorImage
 	Stamp2    decorImage
 	Signature decorImage
-	Guilloche string
+	// Osobne wzory na przód i odwrót: przód ma monogram, odwrót samą ramkę z siatką.
+	GuillocheFront string
+	GuillocheBack  string
 }
 
 // buildCertificatePDFHTML składa wydruk. verificationURLTemplate to wzorzec adresu
@@ -69,14 +71,13 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
 	}
 	marks := buildFallbackMarks(decor, placed)
 
-	if decor.Guilloche != "" {
+	if decor.GuillocheFront != "" {
 		// Deseń jest elementem treści, nie tłem CSS - tła bywają pomijane przy druku.
 		// Treść dostaje własny pozycjonowany kontener, bo element position:absolute
 		// maluje się nad elementami niepozycjonowanymi i przykryłby tekst.
-		front = `<img class="cert-guilloche" src="` + html.EscapeString(decor.Guilloche) + `" alt="">` +
-			`<div class="cert-body">` + front + `</div>`
+		front = guillocheHTML(decor.GuillocheFront, "") + `<div class="cert-body">` + front + `</div>`
 	}
-	if corner != "" || marks != "" || decor.Guilloche != "" {
+	if corner != "" || marks != "" || decor.GuillocheFront != "" {
 		classes := "cert-front"
 		if marks != "" {
 			// Pasek z nadrukami jest wyższy niż sam kod QR, więc treść dostaje mniej miejsca.
@@ -84,7 +85,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
 		}
 		front = `<div class="` + classes + `">` + front + marks + corner + `</div>`
 	}
-	back := buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode)
+	back := wrapCertificateBack(buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode), decor.GuillocheBack)
 	labels := getCourseProgramPageLabels(certificate.LanguageCode)
 
 	return `<!doctype html>
@@ -214,14 +215,37 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
     }
 
     /* Gilosz jako element treści, nie background-image: tła bywają pomijane przy druku
-       i przez sterowniki drukarek. Lekki spad poza obszar treści daje wrażenie ramki,
-       ale nie wchodzi w margines strony. */
+       i przez sterowniki drukarek.
+
+       Wzór pokrywa CAŁĄ stronę A4, więc wychodzi poza obszar treści o marginesy body
+       (15 mm) i jego padding (14 mm u góry, 16 mm po bokach). Stąd ujemne przesunięcia
+       i sztywne 210 x 297 mm zamiast wartości procentowych - te ostatnie liczyłyby się
+       od kontenera, który jest mniejszy od strony. */
     .cert-guilloche {
       position: absolute;
-      top: -10mm;
-      left: -12mm;
-      width: calc(100% + 24mm);
-      height: calc(100% + 20mm);
+      top: -29mm;
+      left: -31mm;
+      width: 210mm;
+      height: 297mm;
+      /* Bez tego ogólna reguła img { max-width: 100% } ścisnęłaby wzór do szerokości
+         obszaru treści i tło pokryłoby dwie trzecie strony. */
+      max-width: none;
+    }
+
+    /* Odwrót: kontener na tabelę programu, żeby wzór miał się względem czego ustawić.
+       Wysokość strony pomniejszona o marginesy - inaczej kontener rozepchnąłby wydruk
+       na trzecią stronę. */
+    .cert-back {
+      position: relative;
+      min-height: 235mm;
+      page-break-before: always;
+      break-before: page;
+    }
+
+    /* Na drugiej stronie marginesy body się nie powtarzają, więc kontener zaczyna się
+       przy samej krawędzi strony - wzór nie potrzebuje przesunięcia w górę. */
+    .cert-guilloche--back {
+      top: 0;
     }
 
     /* Treść leży nad deseniem. Element pozycjonowany maluje się nad niepozycjonowanymi,
@@ -344,6 +368,34 @@ func buildVerificationQR(certificate sqlc.GetCertificateByIDRow, verificationURL
 	}
 
 	return `<span class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></span>`
+}
+
+// guillocheHTML buduje warstwę tła. Obraz jest pozycjonowany bezwzględnie i wychodzi
+// poza obszar treści, bo ma pokryć CAŁĄ stronę razem z marginesami - na blankiecie
+// wzór sięga do krawędzi papieru.
+func guillocheHTML(dataURI, modifier string) string {
+	class := "cert-guilloche"
+	if modifier != "" {
+		class += " cert-guilloche--" + modifier
+	}
+	return `<img class="` + class + `" src="` + html.EscapeString(dataURI) + `" alt="">`
+}
+
+// wrapCertificateBack podkłada wzór pod odwrót zaświadczenia (tabelę programu).
+// Odwrót blankietu też jest zadrukowany, więc strona z programem nie może być biała.
+func wrapCertificateBack(back, dataURI string) string {
+	if back == "" || dataURI == "" {
+		return back
+	}
+
+	// Podział strony siedzi na samym kontenerze, a nie w osobnym pustym <div> przed nim:
+	// tło jest pozycjonowane bezwzględnie względem kontenera, a przy podziale z zewnątrz
+	// wylewało się na dół pierwszej strony.
+	const pageBreak = `<div class="break"></div>`
+	body := strings.TrimPrefix(strings.TrimSpace(back), pageBreak)
+
+	return `<div class="cert-back">` + guillocheHTML(dataURI, "back") +
+		`<div class="cert-body">` + body + `</div></div>`
 }
 
 // decorImageHTML buduje nadruk jako element inline. Nie <div>, bo znacznik bywa
