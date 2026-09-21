@@ -86,6 +86,15 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
 		front = `<div class="` + classes + `">` + front + marks + corner + `</div>`
 	}
 	back := wrapCertificateBack(buildCourseProgramPage(certificate.CourseProgram, certificate.LanguageCode), decor.GuillocheBack)
+
+	// Wydruk z tłem układa się w arkuszach o wymiarach strony, a nie w marginesach body.
+	// Powód jest w wkhtmltopdf: tło wychodzące poza obszar układu włączało tam globalne
+	// zmniejszanie treści (smart shrinking), którego w debianowym buildzie na niezałatanym
+	// Qt nie da się wyłączyć przełącznikiem. Wydruki bez tła zostają przy starym układzie.
+	bodyClass := ""
+	if decor.GuillocheFront != "" {
+		bodyClass = "decor"
+	}
 	labels := getCourseProgramPageLabels(certificate.LanguageCode)
 
 	return `<!doctype html>
@@ -214,38 +223,67 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       padding-bottom: 40mm;
     }
 
-    /* Gilosz jako element treści, nie background-image: tła bywają pomijane przy druku
-       i przez sterowniki drukarek.
+    /* Układ arkuszowy, włączany klasą na body tylko dla wydruków z tłem.
 
-       Wzór pokrywa CAŁĄ stronę A4, więc wychodzi poza obszar treści o marginesy body
-       (15 mm) i jego padding (14 mm u góry, 16 mm po bokach). Stąd ujemne przesunięcia
-       i sztywne 210 x 297 mm zamiast wartości procentowych - te ostatnie liczyłyby się
-       od kontenera, który jest mniejszy od strony. */
+       Zamiast marginesów body każda strona jest kontenerem o wymiarach arkusza, a wcięcia
+       daje jego padding. Dzięki temu tło mieści się w układzie zamiast z niego wystawać:
+       w wkhtmltopdf element szerszy niż widok włącza zmniejszanie całej treści, którego
+       w tamtym buildzie nie wyłącza żaden przełącznik. Wcięcia są te same co wcześniej
+       (15 mm marginesu plus 14/16 mm paddingu), więc treść stoi tam, gdzie stała. */
+    body.decor {
+      margin: 0;
+      padding: 0;
+      /* Łańcuch wysokości jest tu potrzebny, żeby min-height: 100% na arkuszu miało
+         od czego się liczyć - inaczej wkhtmltopdf zostaje przy swojej skali milimetrów
+         i tło kończy się na trzech czwartych strony. */
+      height: 100%;
+    }
+
+    html {
+      height: 100%;
+    }
+
+    .decor .cert-front,
+    .decor .cert-back {
+      box-sizing: border-box;
+      position: relative;
+      width: 100%;
+      /* height dla chromium, min-height dla wkhtmltopdf: ten drugi przelicza milimetry
+         we własnej skali, ale rozumie wysokość strony wyrażoną procentem. */
+      height: 297mm;
+      min-height: 100%;
+      padding: 29mm 31mm;
+    }
+
+    /* Gilosz jako element treści, nie background-image: tła bywają pomijane przy druku
+       i przez sterowniki drukarek. Wypełnia arkusz co do krawędzi. */
     .cert-guilloche {
       position: absolute;
-      top: -29mm;
-      left: -31mm;
-      width: 210mm;
-      height: 297mm;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       /* Bez tego ogólna reguła img { max-width: 100% } ścisnęłaby wzór do szerokości
-         obszaru treści i tło pokryłoby dwie trzecie strony. */
+         obszaru treści. */
       max-width: none;
     }
 
-    /* Odwrót: kontener na tabelę programu, żeby wzór miał się względem czego ustawić.
-       Wysokość strony pomniejszona o marginesy - inaczej kontener rozepchnąłby wydruk
-       na trzecią stronę. */
-    .cert-back {
-      position: relative;
-      min-height: 235mm;
-      page-break-before: always;
-      break-before: page;
+    /* Na arkuszu kod QR i pasek nadruków odmierzają się od krawędzi papieru, więc muszą
+       wejść do środka o tyle, ile wynosi wcięcie treści. */
+    .decor .qr-corner {
+      right: 31mm;
+      bottom: 29mm;
     }
 
-    /* Na drugiej stronie marginesy body się nie powtarzają, więc kontener zaczyna się
-       przy samej krawędzi strony - wzór nie potrzebuje przesunięcia w górę. */
-    .cert-guilloche--back {
-      top: 0;
+    .decor .cert-marks {
+      left: 31mm;
+      right: 63mm;
+      bottom: 29mm;
+    }
+
+    .cert-back {
+      page-break-before: always;
+      break-before: page;
     }
 
     /* Treść leży nad deseniem. Element pozycjonowany maluje się nad niepozycjonowanymi,
@@ -339,7 +377,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
     }
   </style>
 </head>
-<body>` + front + back + `</body>
+<body class="` + bodyClass + `">` + front + back + `</body>
 </html>`
 }
 
