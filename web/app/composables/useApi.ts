@@ -684,15 +684,16 @@ export interface CertificatePrintImage {
 }
 
 export interface CertificatePrintDecor {
-  stamp1: CertificatePrintImage | null
-  stamp2: CertificatePrintImage | null
+  stampRound: CertificatePrintImage | null
+  stampCompany: CertificatePrintImage | null
+  stampPersonal: CertificatePrintImage | null
   signature: CertificatePrintImage | null
   guillocheFrontUrl: string
   guillocheBackUrl: string
 }
 
 export interface PrintAsset {
-  kind: 'pieczatka_1' | 'pieczatka_2' | 'podpis'
+  kind: 'pieczatka_okragla' | 'pieczatka_firmowa' | 'pieczatka_imienna' | 'podpis'
   fileName: string
   contentType: string
   fileSize: number

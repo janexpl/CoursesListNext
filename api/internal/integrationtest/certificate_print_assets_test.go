@@ -13,10 +13,10 @@ import (
 type printDecorEnvelope struct {
 	Data struct {
 		PrintDecor *struct {
-			Stamp1 *struct {
+			StampRound *struct {
 				URL     string `json:"url"`
 				WidthMm int    `json:"widthMm"`
-			} `json:"stamp1"`
+			} `json:"stampRound"`
 			GuillocheFrontURL string `json:"guillocheFrontUrl"`
 			GuillocheBackURL  string `json:"guillocheBackUrl"`
 		} `json:"printDecor"`
@@ -91,7 +91,7 @@ func TestGuillochePatternIsServed(t *testing.T) {
 func TestPrintAssetUploadRejectsAPIKey(t *testing.T) {
 	e := requireEnv(t)
 
-	resp := e.mustCall(t, http.MethodDelete, "/admin/certificate-print-assets/pieczatka_1", nil, nil)
+	resp := e.mustCall(t, http.MethodDelete, "/admin/certificate-print-assets/pieczatka_okragla", nil, nil)
 	if resp.Status != http.StatusForbidden {
 		t.Fatalf("oczekiwano 403, dostano %d: %s", resp.Status, resp.Body)
 	}

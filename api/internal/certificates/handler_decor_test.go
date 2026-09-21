@@ -12,8 +12,9 @@ import (
 
 func printAssetRows() []sqlc.ListCertificatePrintAssetFilesRow {
 	return []sqlc.ListCertificatePrintAssetFilesRow{
-		{Kind: certassets.KindStamp1, ContentType: "image/png", FileData: []byte{0x01, 0x02}, PrintWidthMm: 35},
-		{Kind: certassets.KindStamp2, ContentType: "image/png", FileData: []byte{0x03, 0x04}, PrintWidthMm: 30},
+		{Kind: certassets.KindStampRound, ContentType: "image/png", FileData: []byte{0x01, 0x02}, PrintWidthMm: 35},
+		{Kind: certassets.KindStampCompany, ContentType: "image/png", FileData: []byte{0x03, 0x04}, PrintWidthMm: 30},
+		{Kind: certassets.KindStampPersonal, ContentType: "image/png", FileData: []byte{0x07, 0x08}, PrintWidthMm: 25},
 		{Kind: certassets.KindSignature, ContentType: "image/png", FileData: []byte{0x05, 0x06}, PrintWidthMm: 50},
 	}
 }
@@ -34,14 +35,14 @@ func TestLoadCertificateDecorOnlyForPlatformCertificates(t *testing.T) {
 	}, nil)
 
 	withKey := handler.loadCertificateDecor(t.Context(), platformCertificate())
-	if withKey.Stamp1.DataURI == "" || withKey.Stamp2.DataURI == "" || withKey.Signature.DataURI == "" {
+	if withKey.StampRound.DataURI == "" || withKey.StampCompany.DataURI == "" || withKey.StampPersonal.DataURI == "" || withKey.Signature.DataURI == "" {
 		t.Fatalf("zaświadczenie platformowe powinno dostać wszystkie nadruki: %+v", withKey)
 	}
 	if withKey.GuillocheFront == "" {
 		t.Fatal("zaświadczenie platformowe powinno dostać tło giloszowe")
 	}
-	if withKey.Stamp2.WidthMM != 30 {
-		t.Fatalf("szerokość nadruku ma pochodzić z bazy, dostano %d", withKey.Stamp2.WidthMM)
+	if withKey.StampCompany.WidthMM != 30 {
+		t.Fatalf("szerokość nadruku ma pochodzić z bazy, dostano %d", withKey.StampCompany.WidthMM)
 	}
 
 	withoutKey := handler.loadCertificateDecor(t.Context(), baseCertificateForPDF())
@@ -90,7 +91,7 @@ func TestLoadCertificateDecorWithoutUploadedFiles(t *testing.T) {
 	}, nil)
 
 	decor := handler.loadCertificateDecor(t.Context(), platformCertificate())
-	if decor.Stamp1.DataURI != "" || decor.Signature.DataURI != "" {
+	if decor.StampRound.DataURI != "" || decor.Signature.DataURI != "" {
 		t.Fatalf("bez wgranych plików nie ma pieczątek: %+v", decor)
 	}
 	if decor.GuillocheFront == "" {

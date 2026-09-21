@@ -6,17 +6,19 @@ import (
 )
 
 const (
-	testStampURI     = "data:image/png;base64,AAAASTAMP1"
-	testStamp2URI    = "data:image/png;base64,AAAASTAMP2"
+	testStampURI     = "data:image/png;base64,AAAASTAMPROUND"
+	testStamp2URI    = "data:image/png;base64,AAAASTAMPCOMPANY"
+	testStamp3URI    = "data:image/png;base64,AAAASTAMPPERSONAL"
 	testSignatureURI = "data:image/png;base64,AAAASIGN"
 	testGuillocheURI = "data:image/png;base64,AAAAGUILLOCHE"
 )
 
 func testDecor() certificateDecor {
 	return certificateDecor{
-		Stamp1:         decorImage{DataURI: testStampURI, WidthMM: 35},
-		Stamp2:         decorImage{DataURI: testStamp2URI, WidthMM: 35},
-		Signature:      decorImage{DataURI: testSignatureURI, WidthMM: 50},
+		StampRound:     decorImage{DataURI: testStampURI, WidthMM: 30},
+		StampCompany:   decorImage{DataURI: testStamp2URI, WidthMM: 40},
+		StampPersonal:  decorImage{DataURI: testStamp3URI, WidthMM: 35},
+		Signature:      decorImage{DataURI: testSignatureURI, WidthMM: 45},
 		GuillocheFront: testGuillocheURI,
 	}
 }
@@ -43,11 +45,11 @@ func TestCertificateWithoutDecorPrintsExactlyAsBefore(t *testing.T) {
 func TestDecorLandsInTemplateMarkers(t *testing.T) {
 	certificate := baseCertificateForPDF()
 	certificate.VerificationCode = "K7QM4XPA9TZC"
-	certificate.CertFrontPage = `<p>{{ pieczatka_1 }} {{ pieczatka_2 }}</p><p>{{ podpis }}</p>`
+	certificate.CertFrontPage = `<p>{{ pieczatka_okragla }} {{ pieczatka_firmowa }} {{ pieczatka_imienna }}</p><p>{{ podpis }}</p>`
 
 	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, testDecor())
 
-	for _, uri := range []string{testStampURI, testStamp2URI, testSignatureURI} {
+	for _, uri := range []string{testStampURI, testStamp2URI, testStamp3URI, testSignatureURI} {
 		if !strings.Contains(html, uri) {
 			t.Fatalf("w wydruku brakuje obrazu %q", uri)
 		}
@@ -94,8 +96,10 @@ func TestDecorMixesMarkersWithStrip(t *testing.T) {
 	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, testDecor())
 
 	marks := html[strings.Index(html, `<div class="cert-marks">`):]
-	if !strings.Contains(marks, testStampURI) || !strings.Contains(marks, testStamp2URI) {
-		t.Fatal("pieczątki bez znacznika powinny trafić do paska")
+	for _, uri := range []string{testStampURI, testStamp2URI, testStamp3URI} {
+		if !strings.Contains(marks, uri) {
+			t.Fatalf("pieczątka bez znacznika powinna trafić do paska: %q", uri)
+		}
 	}
 	if strings.Contains(marks, testSignatureURI) {
 		t.Fatal("podpis wstawiony znacznikiem nie może się powtórzyć w pasku")
@@ -106,13 +110,13 @@ func TestDecorMixesMarkersWithStrip(t *testing.T) {
 // {{ kod_qr }} przy niewykonfigurowanym adresie weryfikacji.
 func TestMissingAssetRemovesItsMarker(t *testing.T) {
 	certificate := baseCertificateForPDF()
-	certificate.CertFrontPage = `<p>{{ pieczatka_1 }}</p>`
+	certificate.CertFrontPage = `<p>{{ pieczatka_okragla }}</p>`
 
 	html := buildCertificatePDFHTML(certificate, "", certificateDecor{
-		Signature: decorImage{DataURI: testSignatureURI, WidthMM: 50},
+		Signature: decorImage{DataURI: testSignatureURI, WidthMM: 45},
 	})
 
-	if strings.Contains(html, "pieczatka_1") {
+	if strings.Contains(html, "pieczatka_okragla") {
 		t.Fatalf("znacznik bez wgranego pliku został w wydruku: %s", html)
 	}
 	if strings.Contains(html, `<span class="cert-stamp"`) {
@@ -147,10 +151,10 @@ func TestGuillocheIsContentBehindTheText(t *testing.T) {
 // trafić nic, co pochodzi spoza tego pakietu.
 func TestDecorCannotInjectMarkup(t *testing.T) {
 	certificate := baseCertificateForPDF()
-	certificate.CertFrontPage = `<p>{{ pieczatka_1 }}</p>`
+	certificate.CertFrontPage = `<p>{{ pieczatka_okragla }}</p>`
 
 	html := buildCertificatePDFHTML(certificate, "", certificateDecor{
-		Stamp1: decorImage{DataURI: `data:image/png;base64,AAA"><script>alert(1)</script>`, WidthMM: 35},
+		StampRound: decorImage{DataURI: `data:image/png;base64,AAA"><script>alert(1)</script>`, WidthMM: 35},
 	})
 
 	if strings.Contains(html, "<script>") {

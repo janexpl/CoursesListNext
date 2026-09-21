@@ -273,10 +273,12 @@ func (h *Handler) withPrintDecor(ctx context.Context, certificate sqlc.GetCertif
 			WidthMm: int(row.PrintWidthMm),
 		}
 		switch row.Kind {
-		case certassets.KindStamp1:
-			decor.Stamp1 = image
-		case certassets.KindStamp2:
-			decor.Stamp2 = image
+		case certassets.KindStampRound:
+			decor.StampRound = image
+		case certassets.KindStampCompany:
+			decor.StampCompany = image
+		case certassets.KindStampPersonal:
+			decor.StampPersonal = image
 		case certassets.KindSignature:
 			decor.Signature = image
 		}
@@ -316,10 +318,12 @@ func (h *Handler) loadCertificateDecor(ctx context.Context, certificate sqlc.Get
 			WidthMM: int(row.PrintWidthMm),
 		}
 		switch row.Kind {
-		case certassets.KindStamp1:
-			decor.Stamp1 = image
-		case certassets.KindStamp2:
-			decor.Stamp2 = image
+		case certassets.KindStampRound:
+			decor.StampRound = image
+		case certassets.KindStampCompany:
+			decor.StampCompany = image
+		case certassets.KindStampPersonal:
+			decor.StampPersonal = image
 		case certassets.KindSignature:
 			decor.Signature = image
 		}

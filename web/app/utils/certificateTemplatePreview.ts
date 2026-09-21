@@ -26,21 +26,28 @@ export const templatePreviewQrCss = `
       }
 
       .stamp-preview {
-        width: 35mm;
-        height: 35mm;
+        width: 40mm;
+        height: 22mm;
+      }
+
+      /* Pieczęć okrągła jest kwadratowa i okrągła - reszta prostokątna. */
+      .stamp-preview--round {
+        width: 30mm;
+        height: 30mm;
         border-radius: 50%;
       }
 
       .signature-preview {
-        width: 50mm;
-        height: 20mm;
+        width: 45mm;
+        height: 18mm;
       }`
 
 // Rozmiary odpowiadają domyślnym szerokościom nadruków z API (certassets.DefaultWidthMM).
 const previewBoxes: Array<{ token: RegExp, html: string }> = [
   { token: /{{\s*kod_qr\s*}}/g, html: '<span class="qr-preview">KOD QR</span>' },
-  { token: /{{\s*pieczatka_1\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA 1</span>' },
-  { token: /{{\s*pieczatka_2\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA 2</span>' },
+  { token: /{{\s*pieczatka_okragla\s*}}/g, html: '<span class="decor-preview stamp-preview stamp-preview--round">PIECZĄTKA OKRĄGŁA</span>' },
+  { token: /{{\s*pieczatka_firmowa\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA FIRMOWA</span>' },
+  { token: /{{\s*pieczatka_imienna\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA IMIENNA</span>' },
   { token: /{{\s*podpis\s*}}/g, html: '<span class="decor-preview signature-preview">PODPIS</span>' }
 ]
 

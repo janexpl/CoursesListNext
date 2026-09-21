@@ -375,6 +375,17 @@ watch(
   { immediate: true }
 )
 
+// Kolejność i nazwy znaczników muszą zgadzać się z decorMarks w pdf.go.
+function decorMarks() {
+  const decor = decorImages.value
+  return [
+    { key: 'pieczatka_okragla', css: 'cert-stamp', alt: 'Pieczątka okrągła', image: decor?.stampRound ?? null },
+    { key: 'pieczatka_firmowa', css: 'cert-stamp', alt: 'Pieczątka firmowa', image: decor?.stampCompany ?? null },
+    { key: 'pieczatka_imienna', css: 'cert-stamp', alt: 'Pieczątka imienna', image: decor?.stampPersonal ?? null },
+    { key: 'podpis', css: 'cert-signature', alt: 'Podpis', image: decor?.signature ?? null }
+  ]
+}
+
 function decorImageHtml(css: string, image: { dataUri: string, widthMm: number }, alt: string) {
   return `<span class="${css}" style="width:${image.widthMm}mm"><img src="${image.dataUri}" alt="${alt}"></span>`
 }
@@ -414,15 +425,10 @@ const certificatePreview = computed(() => {
   if (qrBlockHtml.value) {
     raw.kod_qr = qrBlockHtml.value
   }
-  const decor = decorImages.value
-  if (decor?.stamp1) {
-    raw.pieczatka_1 = decorImageHtml('cert-stamp', decor.stamp1, 'Pieczątka')
-  }
-  if (decor?.stamp2) {
-    raw.pieczatka_2 = decorImageHtml('cert-stamp', decor.stamp2, 'Pieczątka')
-  }
-  if (decor?.signature) {
-    raw.podpis = decorImageHtml('cert-signature', decor.signature, 'Podpis')
+  for (const mark of decorMarks()) {
+    if (mark.image) {
+      raw[mark.key] = decorImageHtml(mark.css, mark.image, mark.alt)
+    }
   }
 
   const placed: Record<string, boolean> = {}
@@ -465,11 +471,7 @@ const marksHtml = computed(() => {
   }
 
   const placed = certificatePreview.value.placed
-  const marks = [
-    { key: 'pieczatka_1', css: 'cert-stamp', alt: 'Pieczątka', image: decor.stamp1 },
-    { key: 'pieczatka_2', css: 'cert-stamp', alt: 'Pieczątka', image: decor.stamp2 },
-    { key: 'podpis', css: 'cert-signature', alt: 'Podpis', image: decor.signature }
-  ]
+  const marks = decorMarks()
     .filter(mark => mark.image && !placed[mark.key])
     .map(mark => decorImageHtml(mark.css, mark.image!, mark.alt))
     .join('')
@@ -644,7 +646,8 @@ const certificatePreviewDocument = computed(() => {
 
       .cert-marks .cert-stamp,
       .cert-marks .cert-signature {
-        margin-right: 8mm;
+        margin-right: 3%;
+        max-width: 22%;
       }
 
       .cert-front--marks {

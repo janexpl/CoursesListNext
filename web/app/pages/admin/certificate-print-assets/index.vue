@@ -13,10 +13,33 @@ const api = useApi()
 
 type AssetKind = PrintAsset['kind']
 
-const kinds: Array<{ kind: AssetKind, label: string, hint: string }> = [
-  { kind: 'pieczatka_1', label: 'Pieczątka 1', hint: 'Zwykle pieczątka firmowa organizatora.' },
-  { kind: 'pieczatka_2', label: 'Pieczątka 2', hint: 'Zwykle pieczątka wykładowcy albo uprawnienia.' },
-  { kind: 'podpis', label: 'Podpis', hint: 'Podpis osoby upoważnionej przez organizatora.' }
+// Każdy nadruk jest opcjonalny. Znacznik w szablonie decyduje, gdzie ląduje; bez
+// znacznika trafia na pasek u dołu pierwszej strony.
+const kinds: Array<{ kind: AssetKind, label: string, hint: string, marker: string }> = [
+  {
+    kind: 'pieczatka_okragla',
+    label: 'Pieczątka okrągła',
+    hint: 'Pieczęć okrągła organizatora.',
+    marker: '{{ pieczatka_okragla }}'
+  },
+  {
+    kind: 'pieczatka_firmowa',
+    label: 'Pieczątka firmowa',
+    hint: 'Pieczątka z danymi firmy.',
+    marker: '{{ pieczatka_firmowa }}'
+  },
+  {
+    kind: 'pieczatka_imienna',
+    label: 'Pieczątka imienna',
+    hint: 'Pieczątka osoby podpisującej dokument.',
+    marker: '{{ pieczatka_imienna }}'
+  },
+  {
+    kind: 'podpis',
+    label: 'Podpis',
+    hint: 'Podpis osoby upoważnionej przez organizatora.',
+    marker: '{{ podpis }}'
+  }
 ]
 
 const { data, pending, error, refresh } = await useAsyncData(
@@ -127,7 +150,9 @@ watch(assets, (value) => {
         na nich pieczątki ręcznie. Wydruki z aplikacji idą na papier firmowy i zostają bez zmian.
       </p>
       <p class="max-w-3xl text-sm leading-6 text-slate-600">
-        Najlepszy plik to <strong>PNG z przezroczystym tłem</strong>. Pieczątka na białym
+        Każdy nadruk jest opcjonalny. Miejsce na dokumencie wskazuje znacznik w szablonie
+        kursu — bez znacznika nadruk trafia na pasek u dołu pierwszej strony.
+        Najlepszy plik to <strong>PNG z przezroczystym tłem</strong>: pieczątka na białym
         prostokącie zasłoni gilosz pod spodem.
       </p>
     </div>
@@ -143,7 +168,7 @@ watch(assets, (value) => {
       Wczytywanie...
     </div>
 
-    <div v-else class="grid gap-4 lg:grid-cols-3">
+    <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <div
         v-for="item in kinds"
         :key="item.kind"
@@ -152,6 +177,7 @@ watch(assets, (value) => {
         <div>
           <h2 class="text-sm font-semibold text-slate-900">{{ item.label }}</h2>
           <p class="mt-1 text-xs leading-5 text-slate-500">{{ item.hint }}</p>
+          <p class="mt-1 font-mono text-[11px] text-slate-400">{{ item.marker }}</p>
         </div>
 
         <div class="flex min-h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">

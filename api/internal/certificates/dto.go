@@ -62,8 +62,9 @@ type CertificateDetailsDTO struct {
 // mają być na papierze. Pola pieczątek i podpisu są puste, dopóki administrator
 // nie wgra pliku; tło jest zawsze, bo jest wkompilowane w API.
 type CertificatePrintDecorDTO struct {
-	Stamp1            *CertificatePrintImageDTO `json:"stamp1"`
-	Stamp2            *CertificatePrintImageDTO `json:"stamp2"`
+	StampRound        *CertificatePrintImageDTO `json:"stampRound"`
+	StampCompany      *CertificatePrintImageDTO `json:"stampCompany"`
+	StampPersonal     *CertificatePrintImageDTO `json:"stampPersonal"`
 	Signature         *CertificatePrintImageDTO `json:"signature"`
 	GuillocheFrontURL string                    `json:"guillocheFrontUrl"`
 	GuillocheBackURL  string                    `json:"guillocheBackUrl"`

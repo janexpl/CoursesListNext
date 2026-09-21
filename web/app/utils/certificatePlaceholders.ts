@@ -24,7 +24,8 @@ export const certificateTemplatePlaceholders: TemplatePlaceholder[] = [
   { label: 'Kod QR', value: '{{ kod_qr }}' },
   // Nadruki pojawiają się wyłącznie na zaświadczeniach wystawianych przez platformę;
   // na pozostałych wydrukach znacznik po prostu znika.
-  { label: 'Pieczątka 1', value: '{{ pieczatka_1 }}' },
-  { label: 'Pieczątka 2', value: '{{ pieczatka_2 }}' },
+  { label: 'Pieczątka okrągła', value: '{{ pieczatka_okragla }}' },
+  { label: 'Pieczątka firmowa', value: '{{ pieczatka_firmowa }}' },
+  { label: 'Pieczątka imienna', value: '{{ pieczatka_imienna }}' },
   { label: 'Podpis', value: '{{ podpis }}' }
 ]

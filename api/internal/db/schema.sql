@@ -511,7 +511,7 @@ CREATE TABLE certificate_print_assets (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT certificate_print_assets_kind_check
-        CHECK (kind IN ('pieczatka_1', 'pieczatka_2', 'podpis')),
+        CHECK (kind IN ('pieczatka_okragla', 'pieczatka_firmowa', 'pieczatka_imienna', 'podpis')),
     CONSTRAINT certificate_print_assets_kind_unique UNIQUE (kind),
     CONSTRAINT certificate_print_assets_file_size_check CHECK (file_size > 0),
     CONSTRAINT certificate_print_assets_content_type_check

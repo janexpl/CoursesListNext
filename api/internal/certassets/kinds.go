@@ -7,25 +7,29 @@
 // (webhooks.IsPlatformCertificate); ten pakiet odpowiada tylko za pliki.
 package certassets
 
-// Rodzaje nadruków. Wartości są celowo identyczne ze znacznikami szablonu
-// ({{ pieczatka_1 }} i pozostałe), żeby nie trzeba było utrzymywać tabelki mapującej
-// nazwę rodzaju na nazwę znacznika - literówka w jednym miejscu rozjechałaby drugie.
+// Rodzaje nadruków. Nazwy są celowo znaczeniowe, a nie numerowane: są zarazem nazwami
+// znaczników szablonu ({{ pieczatka_okragla }} i pozostałe), więc autor szablonu widzi,
+// którą pieczątkę wstawia, bez zaglądania do dokumentacji.
+//
+// Każdy nadruk jest opcjonalny - dopóki administrator nie wgra pliku, znacznik znika
+// z wydruku bez śladu.
 const (
-	KindStamp1    = "pieczatka_1"
-	KindStamp2    = "pieczatka_2"
-	KindSignature = "podpis"
+	KindStampRound    = "pieczatka_okragla"
+	KindStampCompany  = "pieczatka_firmowa"
+	KindStampPersonal = "pieczatka_imienna"
+	KindSignature     = "podpis"
 )
 
-// AllKinds zwraca rodzaje w kolejności, w jakiej pojawiają się na wydruku.
+// AllKinds zwraca rodzaje w kolejności, w jakiej pojawiają się na pasku u dołu wydruku.
 func AllKinds() []string {
-	return []string{KindStamp1, KindStamp2, KindSignature}
+	return []string{KindStampRound, KindStampCompany, KindStampPersonal, KindSignature}
 }
 
 // IsValidKind mówi, czy rodzaj jest obsługiwany. Ta sama lista stoi w ograniczeniu
 // CHECK tabeli certificate_print_assets.
 func IsValidKind(kind string) bool {
 	switch kind {
-	case KindStamp1, KindStamp2, KindSignature:
+	case KindStampRound, KindStampCompany, KindStampPersonal, KindSignature:
 		return true
 	default:
 		return false
@@ -33,10 +37,17 @@ func IsValidKind(kind string) bool {
 }
 
 // DefaultWidthMM to szerokość nadruku proponowana przy pierwszym wgraniu pliku.
-// Pieczątki są zwykle kwadratowe albo okrągłe, podpis jest szeroki i niski.
+// Pieczątka okrągła jest kwadratowa, firmowa i imienna zwykle prostokątne i szersze,
+// podpis najszerszy i najniższy.
 func DefaultWidthMM(kind string) int {
-	if kind == KindSignature {
-		return 50
+	switch kind {
+	case KindSignature:
+		return 45
+	case KindStampCompany:
+		return 40
+	case KindStampPersonal:
+		return 35
+	default:
+		return 30
 	}
-	return 35
 }

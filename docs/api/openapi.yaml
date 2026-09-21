@@ -1341,7 +1341,7 @@ paths:
         required: true
         schema:
           type: string
-          enum: [pieczatka_1, pieczatka_2, podpis]
+          enum: [pieczatka_okragla, pieczatka_firmowa, pieczatka_imienna, podpis]
     get:
       tags: [certificates]
       operationId: getCertificatePrintAssetFile
@@ -1374,7 +1374,7 @@ paths:
         required: true
         schema:
           type: string
-          enum: [pieczatka_1, pieczatka_2, podpis]
+          enum: [pieczatka_okragla, pieczatka_firmowa, pieczatka_imienna, podpis]
     post:
       tags: [certificates]
       operationId: upsertCertificatePrintAsset
@@ -3993,8 +3993,10 @@ components:
       properties:
         kind:
           type: string
-          enum: [pieczatka_1, pieczatka_2, podpis]
-          description: Nazwa rodzaju jest zarazem nazwą znacznika szablonu (`{{ pieczatka_1 }}`).
+          enum: [pieczatka_okragla, pieczatka_firmowa, pieczatka_imienna, podpis]
+          description: >-
+            Nazwa rodzaju jest zarazem nazwą znacznika szablonu (`{{ pieczatka_okragla }}`).
+            Każdy nadruk jest opcjonalny.
         fileName:
           type: string
         contentType:
@@ -4013,13 +4015,17 @@ components:
       description: >-
         Nadruki wydruku dla przeglądarki: gdzie po nie sięgnąć i jak szerokie mają być
         na papierze. Obecne wyłącznie przy zaświadczeniach platformowych.
-      required: [stamp1, stamp2, signature, guillocheFrontUrl, guillocheBackUrl]
+      required: [stampRound, stampCompany, stampPersonal, signature, guillocheFrontUrl, guillocheBackUrl]
       properties:
-        stamp1:
+        stampRound:
           oneOf:
             - $ref: "#/components/schemas/CertificatePrintImage"
             - type: "null"
-        stamp2:
+        stampCompany:
+          oneOf:
+            - $ref: "#/components/schemas/CertificatePrintImage"
+            - type: "null"
+        stampPersonal:
           oneOf:
             - $ref: "#/components/schemas/CertificatePrintImage"
             - type: "null"

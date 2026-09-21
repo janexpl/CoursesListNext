@@ -625,14 +625,17 @@ nie zawiera `verificationUrl` ani `verificationQr`. Sama trasa publiczna działa
 
 Zaświadczenie wystawione z `Idempotency-Key` trafia do kursanta elektronicznie — nikt nie
 przystawia na nim pieczątki ręcznie, jak na wydruku z aplikacji webowej. Taki dokument dostaje
-więc na PDF **dwie pieczątki, podpis i giloszowe tło** na obu stronach.
+więc na PDF **trzy pieczątki, podpis i giloszowe tło** na obu stronach. Każdy z nadruków
+jest opcjonalny - dopóki administrator nie wgra pliku, nie pojawia się nic.
 
 Kryterium jest to samo, po którym rozpoznajesz dokumenty platformy przy webhookach:
 niepusty klucz idempotencji. Dokument wystawiony bez tego nagłówka drukuje się dokładnie
 tak jak dotąd.
 
-Umiejscowienie wybiera szablon kursu znacznikami `{{ pieczatka_1 }}`, `{{ pieczatka_2 }}`
-i `{{ podpis }}`. Szablon bez znaczników dostaje pasek u dołu pierwszej strony, obok kodu QR.
+Umiejscowienie wybiera szablon kursu znacznikami `{{ pieczatka_okragla }}`,
+`{{ pieczatka_firmowa }}`, `{{ pieczatka_imienna }}` i `{{ podpis }}` - nazwy mówią, która
+pieczątka trafia w dane miejsce. Szablon bez znaczników dostaje pasek u dołu pierwszej
+strony, obok kodu QR; nadruki są tam skalowane tak, żeby komplet zmieścił się w wierszu.
 Znacznik bez wgranego pliku znika z wydruku bez śladu.
 
 Pliki wgrywa administrator CoursesList w przeglądarce (`POST /admin/certificate-print-assets/{kind}`);

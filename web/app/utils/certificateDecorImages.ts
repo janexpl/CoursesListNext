@@ -1,4 +1,4 @@
-import type { CertificatePrintDecor } from '~/composables/useApi'
+import type { CertificatePrintDecor, CertificatePrintImage } from '~/composables/useApi'
 
 // Nadruki wydruku pobrane do postaci data URI.
 //
@@ -7,10 +7,13 @@ import type { CertificatePrintDecor } from '~/composables/useApi'
 // na pobranie plików. Tak samo rozwiązany jest kod QR, który przychodzi z API od razu
 // jako data URI.
 
+type DecorImage = { dataUri: string, widthMm: number }
+
 export type ResolvedDecor = {
-  stamp1: { dataUri: string, widthMm: number } | null
-  stamp2: { dataUri: string, widthMm: number } | null
-  signature: { dataUri: string, widthMm: number } | null
+  stampRound: DecorImage | null
+  stampCompany: DecorImage | null
+  stampPersonal: DecorImage | null
+  signature: DecorImage | null
   guillocheFront: string
   guillocheBack: string
 }
@@ -43,20 +46,23 @@ export function loadDecorDataUri(url: string): Promise<string> {
   return pending
 }
 
+async function resolveImage(image: CertificatePrintImage | null): Promise<DecorImage | null> {
+  if (!image) {
+    return null
+  }
+
+  return { dataUri: await loadDecorDataUri(image.url), widthMm: image.widthMm }
+}
+
 export async function loadCertificateDecorImages(decor: CertificatePrintDecor): Promise<ResolvedDecor> {
-  const [stamp1, stamp2, signature, guillocheFront, guillocheBack] = await Promise.all([
-    decor.stamp1 ? loadDecorDataUri(decor.stamp1.url) : Promise.resolve(''),
-    decor.stamp2 ? loadDecorDataUri(decor.stamp2.url) : Promise.resolve(''),
-    decor.signature ? loadDecorDataUri(decor.signature.url) : Promise.resolve(''),
+  const [stampRound, stampCompany, stampPersonal, signature, guillocheFront, guillocheBack] = await Promise.all([
+    resolveImage(decor.stampRound),
+    resolveImage(decor.stampCompany),
+    resolveImage(decor.stampPersonal),
+    resolveImage(decor.signature),
     loadDecorDataUri(decor.guillocheFrontUrl),
     loadDecorDataUri(decor.guillocheBackUrl)
   ])
 
-  return {
-    stamp1: stamp1 && decor.stamp1 ? { dataUri: stamp1, widthMm: decor.stamp1.widthMm } : null,
-    stamp2: stamp2 && decor.stamp2 ? { dataUri: stamp2, widthMm: decor.stamp2.widthMm } : null,
-    signature: signature && decor.signature ? { dataUri: signature, widthMm: decor.signature.widthMm } : null,
-    guillocheFront,
-    guillocheBack
-  }
+  return { stampRound, stampCompany, stampPersonal, signature, guillocheFront, guillocheBack }
 }

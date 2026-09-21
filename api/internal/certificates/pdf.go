@@ -47,9 +47,10 @@ type decorImage struct {
 // jak przed wprowadzeniem nadruków" - i tak wygląda dla wszystkich dokumentów
 // wystawianych z aplikacji webowej i z dziennika.
 type certificateDecor struct {
-	Stamp1    decorImage
-	Stamp2    decorImage
-	Signature decorImage
+	StampRound    decorImage
+	StampCompany  decorImage
+	StampPersonal decorImage
+	Signature     decorImage
 	// Osobne wzory na przód i odwrót: przód ma monogram, odwrót samą ramkę z siatką.
 	GuillocheFront string
 	GuillocheBack  string
@@ -210,9 +211,13 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       white-space: nowrap;
     }
 
+    /* Pasek mieści cztery nadruki obok siebie, a szerokości ustala administrator,
+       więc ograniczamy je procentem szerokości paska. Bez tego komplet pieczątek
+       w pełnych rozmiarach wyszedłby poza krawędź papieru. */
     .cert-marks .cert-stamp,
     .cert-marks .cert-signature {
-      margin-right: 8mm;
+      margin-right: 3%;
+      max-width: 22%;
     }
 
     /* Pasek z nadrukami jest wyższy niż sam kod QR, więc treść dostaje mniej miejsca.
@@ -499,8 +504,9 @@ type decorMark struct {
 // szablonu w jednym miejscu.
 func decorMarks(decor certificateDecor) []decorMark {
 	return []decorMark{
-		{key: certassets.KindStamp1, class: "cert-stamp", alt: "Pieczątka", image: decor.Stamp1},
-		{key: certassets.KindStamp2, class: "cert-stamp", alt: "Pieczątka", image: decor.Stamp2},
+		{key: certassets.KindStampRound, class: "cert-stamp", alt: "Pieczątka okrągła", image: decor.StampRound},
+		{key: certassets.KindStampCompany, class: "cert-stamp", alt: "Pieczątka firmowa", image: decor.StampCompany},
+		{key: certassets.KindStampPersonal, class: "cert-stamp", alt: "Pieczątka imienna", image: decor.StampPersonal},
 		{key: certassets.KindSignature, class: "cert-signature", alt: "Podpis", image: decor.Signature},
 	}
 }

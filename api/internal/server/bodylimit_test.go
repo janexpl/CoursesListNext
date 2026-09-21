@@ -48,7 +48,7 @@ func TestLimitRequestBodyExemptsUploadRoutes(t *testing.T) {
 		"/api/v1/journals/5/signed-scan",
 		// Ścieżka nadruku kończy się rodzajem, nie stałym segmentem - rozpoznanie
 		// po sufiksie by jej nie złapało i wgranie pieczątki padłoby na limicie 1 MiB.
-		"/api/v1/admin/certificate-print-assets/pieczatka_1",
+		"/api/v1/admin/certificate-print-assets/pieczatka_okragla",
 	} {
 		t.Run(path, func(t *testing.T) {
 			var read []byte
