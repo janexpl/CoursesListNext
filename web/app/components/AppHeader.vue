@@ -7,7 +7,8 @@ const isMobileMenuOpen = ref(false)
 // (adres z kodu QR na wydruku). Nie pokazujemy na nich nawigacji panelu.
 const isPublicPage = computed(() => route.path === '/login' || route.path.startsWith('/verify'))
 const navigationItems = computed(() => {
-  const items = [
+  // match: ścieżka, po której zakładka ma świecić, gdy różni się od docelowej.
+  const items: Array<{ label: string, to: string, match?: string }> = [
     {
       label: 'Dashboard',
       to: '/'
@@ -35,20 +36,14 @@ const navigationItems = computed(() => {
   ]
 
   if (auth.user.value?.role === 1) {
-    items.push(
-      {
-        label: 'Administracja',
-        to: '/admin/users'
-      },
-      {
-        label: 'Klucze API',
-        to: '/admin/api-keys'
-      },
-      {
-        label: 'Nadruki',
-        to: '/admin/certificate-print-assets'
-      }
-    )
+    // Jedna pozycja na całą administrację; działy (użytkownicy, klucze API, nadruki)
+    // przełącza podmenu na stronie - inaczej pasek nawigacji rozjeżdża się przy
+    // każdym nowym dziale.
+    items.push({
+      label: 'Administracja',
+      to: '/admin/users',
+      match: '/admin'
+    })
   }
 
   return items
@@ -60,6 +55,12 @@ function isActive(path: string) {
   }
 
   return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+// Zakładka administracji prowadzi do użytkowników, ale ma świecić na każdej stronie
+// w /admin - stąd osobne pole match.
+function isItemActive(item: { to: string, match?: string }) {
+  return isActive(item.match ?? item.to)
 }
 
 watch(
@@ -92,7 +93,7 @@ async function onLogout() {
               :to="item.to"
               class="rounded-lg px-3 py-2 text-sm transition"
               :class="
-                isActive(item.to)
+                isItemActive(item)
                   ? 'bg-sky-100 text-sky-900'
                   : 'text-slate-500 hover:bg-white hover:text-slate-900'
               "
@@ -161,7 +162,7 @@ async function onLogout() {
             :to="item.to"
             class="rounded-lg px-3 py-2 text-sm transition"
             :class="
-              isActive(item.to)
+              isItemActive(item)
                 ? 'bg-sky-100 text-sky-900'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             "

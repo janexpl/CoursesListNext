@@ -117,6 +117,8 @@ watch(assets, (value) => {
 
 <template>
   <section class="space-y-6">
+    <AdminTabs />
+
     <div class="space-y-2">
       <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Nadruki zaświadczeń</h1>
       <p class="max-w-3xl text-sm leading-6 text-slate-600">

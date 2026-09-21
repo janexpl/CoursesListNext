@@ -307,6 +307,8 @@ async function onRevokeKey(key: ApiKey) {
 
 <template>
   <section class="space-y-8">
+    <AdminTabs />
+
     <div class="flex flex-col gap-3 rounded-xl border border-white/60 bg-white/85 p-8 shadow-sm backdrop-blur sm:flex-row sm:items-end sm:justify-between">
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
