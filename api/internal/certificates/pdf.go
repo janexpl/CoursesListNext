@@ -168,6 +168,15 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       display: block;
     }
 
+    .qr-caption {
+      display: block;
+      width: 24mm;
+      margin-top: 1mm;
+      font-size: 7pt;
+      line-height: 1.1;
+      text-align: center;
+    }
+
     /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej
        wysokości, a nie position: fixed - chromium drukuje "fixed" tylko na pierwszej
        stronie, a wkhtmltopdf powtarza je na każdej. */
@@ -176,8 +185,9 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
        min-height plus padding dają razem wysokość strony. */
     .cert-front {
       position: relative;
-      min-height: 202mm;
-      padding-bottom: 28mm;
+      min-height: 198mm;
+      /* 24 mm kodu, podpis pod nim i odstęp od treści. */
+      padding-bottom: 32mm;
     }
 
     .qr-corner {
@@ -417,7 +427,12 @@ func buildVerificationQR(certificate sqlc.GetCertificateByIDRow, verificationURL
 		return ""
 	}
 
-	return `<span class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia"></span>`
+	// Podpis pod kodem mówi, po co ten kwadrat tu jest - bez niego odbiorca dokumentu
+	// nie wie, że to odnośnik do sprawdzenia ważności. Napis jest po polsku także na
+	// wydrukach w innych językach, tak samo jak adnotacja DUPLIKAT: to opis elementu
+	// polskiego dokumentu urzędowego.
+	return `<span class="qr-code"><img src="` + dataURI + `" alt="Kod QR do weryfikacji zaświadczenia">` +
+		`<span class="qr-caption">Sprawdź ważność</span></span>`
 }
 
 // guillocheHTML buduje warstwę tła. Obraz jest pozycjonowany bezwzględnie i wychodzi

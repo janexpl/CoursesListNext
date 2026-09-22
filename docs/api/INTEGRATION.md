@@ -260,7 +260,8 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
    `GET /certificates/by-verification-code/{code}` (`certificates:read`, wielkość liter bez znaczenia).
    Na wydruku PDF kod pojawia się jako **kod QR** prowadzący do publicznej strony weryfikacji
-   (`GET /public/certificates/{code}`, sekcja 6.8) — samego kodu tekstem na dokumencie nie ma.
+   (`GET /public/certificates/{code}`, sekcja 6.8), podpisany „Sprawdź ważność" — samego kodu
+   tekstem na dokumencie nie ma.
 7. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
    (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 

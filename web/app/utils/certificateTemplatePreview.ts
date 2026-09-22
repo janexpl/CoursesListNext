@@ -20,9 +20,10 @@ export const templatePreviewQrCss = `
         line-height: 1.2;
       }
 
+      /* Wyższy niż sam kod: pod kwadratem drukuje się jeszcze podpis "Sprawdź ważność". */
       .qr-preview {
         width: 24mm;
-        height: 24mm;
+        height: 28mm;
       }
 
       .stamp-preview {

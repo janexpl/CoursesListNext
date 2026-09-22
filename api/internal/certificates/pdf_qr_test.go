@@ -155,6 +155,37 @@ func TestCertificatePDFQRPlaceholderIgnoresWhitespace(t *testing.T) {
 	}
 }
 
+// Sam kwadrat nic nie mówi odbiorcy dokumentu - podpis wyjaśnia, po co tam jest.
+func TestCertificatePDFCaptionsTheQR(t *testing.T) {
+	certificate := baseCertificateForPDF()
+	certificate.VerificationCode = "K7QM4XPA9TZC"
+
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
+
+	if !strings.Contains(html, `<span class="qr-caption">Sprawdź ważność</span>`) {
+		t.Fatalf("brak podpisu pod kodem QR: %s", html)
+	}
+	// Podpis musi siedzieć w tym samym bloku co obrazek, inaczej rozjedzie się przy
+	// wstawieniu kodu znacznikiem w środku akapitu.
+	block := html[strings.Index(html, `<span class="qr-code">`):]
+	if caption := strings.Index(block, "qr-caption"); caption < 0 || caption > strings.Index(block, "</span></span>") {
+		t.Fatal("podpis wypadł poza blok kodu QR")
+	}
+}
+
+// Bez skonfigurowanego adresu weryfikacji nie ma ani kodu, ani podpisu - inaczej
+// na dokumencie zostałby sam napis bez kwadratu.
+func TestCertificatePDFHasNoCaptionWithoutQR(t *testing.T) {
+	certificate := baseCertificateForPDF()
+	certificate.VerificationCode = "K7QM4XPA9TZC"
+
+	html := buildCertificatePDFHTML(certificate, "", certificateDecor{})
+
+	if strings.Contains(html, "Sprawdź ważność") {
+		t.Fatal("podpis pojawił się bez kodu QR")
+	}
+}
+
 // Regresja: wprowadzenie surowego HTML dla kodu QR nie może otworzyć drogi
 // dla niezaescapowanych danych z bazy.
 func TestCertificatePDFStillEscapesTemplateValues(t *testing.T) {

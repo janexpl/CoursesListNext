@@ -396,7 +396,8 @@ const qrBlockHtml = computed(() => {
     return ''
   }
 
-  return `<span class="qr-code"><img src="${dataURI}" alt="Kod QR do weryfikacji zaświadczenia"></span>`
+  return `<span class="qr-code"><img src="${dataURI}" alt="Kod QR do weryfikacji zaświadczenia">`
+    + `<span class="qr-caption">Sprawdź ważność</span></span>`
 })
 
 // Zwraca podmieniony szablon i informację, czy kod QR trafił w znacznik - jeśli nie,
@@ -609,10 +610,19 @@ const certificatePreviewDocument = computed(() => {
         display: block;
       }
 
+      .qr-caption {
+        display: block;
+        width: 24mm;
+        margin-top: 1mm;
+        font-size: 7pt;
+        line-height: 1.1;
+        text-align: center;
+      }
+
       .cert-front {
         position: relative;
-        min-height: 202mm;
-        padding-bottom: 28mm;
+        min-height: 198mm;
+        padding-bottom: 32mm;
       }
 
       .qr-corner {
