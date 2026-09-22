@@ -172,10 +172,10 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       display: block;
       width: 24mm;
       margin-top: 1mm;
-      font-size: 7pt;
+      font-size: 8pt;
       line-height: 1.1;
       text-align: center;
-      font-family: Roboto;
+      font-family: Arial;
     }
 
     /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej
