@@ -168,6 +168,12 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       display: block;
     }
 
+    /* Podpis pod kodem idzie bezszeryfową czcionką, żeby odciąć się od szeryfowej
+       treści dokumentu. !important jest tu konieczne: zbiorcza reguła niżej narzuca
+       szeryfy każdemu elementowi (body *, span) i też ma !important, więc bez tego
+       deklaracja z klasy przegrywa mimo wyższej szczegółowości.
+       Arial jest w obrazie mapowany przez fontconfig na Liberation Sans - podajemy obie
+       nazwy, żeby wydruk wyglądał tak samo poza kontenerem. */
     .qr-caption {
       display: block;
       width: 24mm;
@@ -175,7 +181,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       font-size: 8pt;
       line-height: 1.1;
       text-align: center;
-      font-family: Arial;
+      font-family: Arial, "Liberation Sans", Helvetica, sans-serif !important;
     }
 
     /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej

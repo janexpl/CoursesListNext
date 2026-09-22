@@ -173,6 +173,24 @@ func TestCertificatePDFCaptionsTheQR(t *testing.T) {
 	}
 }
 
+// Regresja cascade: zbiorcza reguła narzuca szeryfy każdemu elementowi z !important,
+// więc podpis musi mieć własne !important, inaczej wraca do czcionki dokumentu.
+func TestCertificatePDFCaptionKeepsItsOwnFont(t *testing.T) {
+	certificate := baseCertificateForPDF()
+	certificate.VerificationCode = "K7QM4XPA9TZC"
+
+	html := buildCertificatePDFHTML(certificate, testVerificationURLTemplate, certificateDecor{})
+
+	rule := html[strings.Index(html, ".qr-caption {"):]
+	rule = rule[:strings.Index(rule, "}")]
+	if !strings.Contains(rule, "font-family") {
+		t.Fatalf("podpis nie ma własnej czcionki: %s", rule)
+	}
+	if !strings.Contains(rule, "!important") {
+		t.Fatalf("bez !important zbiorcza reguła przebije czcionkę podpisu: %s", rule)
+	}
+}
+
 // Bez skonfigurowanego adresu weryfikacji nie ma ani kodu, ani podpisu - inaczej
 // na dokumencie zostałby sam napis bez kwadratu.
 func TestCertificatePDFHasNoCaptionWithoutQR(t *testing.T) {
