@@ -175,6 +175,7 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       font-size: 7pt;
       line-height: 1.1;
       text-align: center;
+      font-family: Roboto;
     }
 
     /* Kod w rogu pierwszej strony. Pozycjonowanie bezwzględne w kontenerze o zadanej
