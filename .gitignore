@@ -5,3 +5,8 @@ notifications-state.json
 # Compiled binaries (go build -o)
 /api/api
 /notifications/notifications
+
+# Pieczątki i podpisy organizatora. Wgrywa się je w panelu administratora i żyją
+# w bazie - w repozytorium byłyby gotowym materiałem do podrobienia dokumentu.
+docs/api/wzory/*.png
+docs/api/wzory/*.jpg

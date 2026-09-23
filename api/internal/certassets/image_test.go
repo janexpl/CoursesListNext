@@ -10,8 +10,13 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"testing"
 )
+
+func clampByte(v int) int {
+	return min(max(v, 0), 255)
+}
 
 func encodePNG(t *testing.T, img image.Image) []byte {
 	t.Helper()
@@ -49,8 +54,11 @@ func TestNormalizeShrinksOversizedScans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nieoczekiwany błąd: %v", err)
 	}
-	if width != MaxLongestSidePx || height != MaxLongestSidePx {
-		t.Fatalf("po normalizacji %dx%d, oczekiwano %d na dłuższym boku", width, height, MaxLongestSidePx)
+	if width > MaxLongestSidePx || height > MaxLongestSidePx {
+		t.Fatalf("po normalizacji %dx%d, dłuższy bok ma się zmieścić w %d", width, height, MaxLongestSidePx)
+	}
+	if width < MinLongestSidePx {
+		t.Fatalf("po normalizacji %dx%d - zeszliśmy poniżej rozdzielczości do druku", width, height)
 	}
 	if len(normalized) > MaxNormalizedBytes {
 		t.Fatalf("znormalizowany plik waży %d B, limit to %d B", len(normalized), MaxNormalizedBytes)
@@ -126,6 +134,51 @@ func TestNormalizeRejectsUnsupportedFormats(t *testing.T) {
 		if _, _, _, err := Normalize(raw); err == nil {
 			t.Fatalf("%s: oczekiwano błędu", name)
 		}
+	}
+}
+
+// Skan pieczątki z miękkimi krawędziami i szumem w kanale alfa potrafi ważyć blisko
+// megabajt przy pełnej rozdzielczości. Taki plik ma zostać przyjęty i zmniejszony,
+// a nie odrzucony - to najczęstsze wejście, jakie dostaje ten kod.
+func TestNormalizeShrinksHeavyScansInsteadOfRejecting(t *testing.T) {
+	// Miękka krawędź i drobny szum papieru - tak wygląda skan pieczątki. Czysty szum
+	// byłby nieściśliwy w każdej rozdzielczości, czyli opisywałby zdjęcie, a nie skan,
+	// i słusznie zostałby odrzucony.
+	const side = 1400
+	scan := image.NewNRGBA(image.Rect(0, 0, side, side))
+	centre := float64(side) / 2
+	seed := uint32(1)
+	for y := range side {
+		for x := range side {
+			seed = seed*1664525 + 1013904223
+			jitter := int(seed>>28) - 8
+
+			distance := math.Hypot(float64(x)-centre, float64(y)-centre)
+			edge := math.Abs(distance-centre*0.8) / (centre * 0.12)
+			alpha := math.Max(0, 1-edge*edge)
+
+			scan.Set(x, y, color.NRGBA{
+				R: uint8(clampByte(0x1D + jitter)),
+				G: uint8(clampByte(0x4E + jitter)),
+				B: uint8(clampByte(0xD8 + jitter)),
+				A: uint8(clampByte(int(alpha*255) + jitter)),
+			})
+		}
+	}
+	raw := encodePNG(t, scan)
+	if len(raw) < MaxNormalizedBytes {
+		t.Fatalf("próbka waży %d B - za lekka, żeby wymusić zmniejszanie", len(raw))
+	}
+
+	normalized, width, _, err := Normalize(raw)
+	if err != nil {
+		t.Fatalf("ciężki skan powinien zostać zmniejszony, a nie odrzucony: %v", err)
+	}
+	if len(normalized) > MaxNormalizedBytes {
+		t.Fatalf("po normalizacji %d B, budżet to %d B", len(normalized), MaxNormalizedBytes)
+	}
+	if width > MaxLongestSidePx {
+		t.Fatalf("szerokość %d px przekracza %d", width, MaxLongestSidePx)
 	}
 }
 

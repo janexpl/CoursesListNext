@@ -755,6 +755,12 @@ export interface DeleteCertificateResponse {
 }
 
 const apiErrorMessages: Record<string, string> = {
+  // nadruki zaświadczeń (komunikaty wspólne z plikami dzienników są niżej)
+  'bad_request:image is too large': 'Obrazu nie da się zmieścić w wydruku. Wgraj pieczątkę na przezroczystym tle, bez zdjęciowego tła.',
+  'bad_request:invalid print width': 'Szerokość nadruku musi mieścić się w zakresie 10-60 mm.',
+  'bad_request:invalid print asset kind': 'Nieznany rodzaj nadruku.',
+  'not_found:print asset not found': 'Tego nadruku nie ma jeszcze wgranego.',
+
   // auth
   'invalid_credentials:invalid credentials': 'Nieprawidłowy adres e-mail lub hasło.',
   'too_many_requests:too many requests, please try again later': 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
