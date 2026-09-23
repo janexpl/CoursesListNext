@@ -161,3 +161,51 @@ func TestDecorCannotInjectMarkup(t *testing.T) {
 		t.Fatalf("wstrzyknięty znacznik trafił do wydruku: %s", html)
 	}
 }
+
+// Znacznik wpisany ręcznie rzadko wygląda jak w dokumentacji: edytor szablonu to pole
+// contenteditable, więc zmiana czcionki albo wklejenie tekstu rozbija go znacznikami
+// HTML, a po polsku naturalnie pisze się "pieczątka" z ogonkami. Wcześniej każdy taki
+// zapis znikał z wydruku bez śladu, a nadruk lądował w pasku u dołu - autor szablonu
+// nie miał jak się domyślić, co poszło nie tak.
+func TestDecorMarkerToleratesEditorMangling(t *testing.T) {
+	for name, template := range map[string]string{
+		"wielkie litery":    `<p>{{ PIECZATKA_OKRAGLA }}</p>`,
+		"polskie znaki":     `<p>{{ pieczątka_okrągła }}</p>`,
+		"rozbity formatem":  `<p>{{ <span style="font-size:16px">pieczatka_okragla</span> }}</p>`,
+		"bez spacji":        `<p>{{pieczatka_okragla}}</p>`,
+		"nadmiarowe spacje": `<p>{{   pieczatka_okragla   }}</p>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			certificate := baseCertificateForPDF()
+			certificate.CertFrontPage = template
+
+			html := buildCertificatePDFHTML(certificate, "", certificateDecor{
+				StampRound: decorImage{DataURI: testStampURI, WidthMM: 30},
+			})
+
+			if !strings.Contains(html, `<span class="cert-stamp"`) {
+				t.Fatalf("znacznik nie został rozpoznany: %s", template)
+			}
+			if strings.Contains(html, `<div class="cert-marks">`) {
+				t.Fatal("rozpoznany znacznik nie może dodatkowo lądować w pasku u dołu")
+			}
+		})
+	}
+}
+
+// Nieznany klucz nadal znika - wyrozumiałość dotyczy zapisu, nie wymyślonych nazw.
+func TestDecorMarkerStillRejectsUnknownNames(t *testing.T) {
+	certificate := baseCertificateForPDF()
+	certificate.CertFrontPage = `<p>{{ pieczatka_1 }}</p>`
+
+	html := buildCertificatePDFHTML(certificate, "", certificateDecor{
+		StampRound: decorImage{DataURI: testStampURI, WidthMM: 30},
+	})
+
+	if strings.Contains(html, "pieczatka_1") {
+		t.Fatal("nieznany znacznik nie może zostać w treści wydruku")
+	}
+	if !strings.Contains(html, `<div class="cert-marks">`) {
+		t.Fatal("skoro znacznika nie rozpoznano, nadruk ma trafić do paska u dołu")
+	}
+}

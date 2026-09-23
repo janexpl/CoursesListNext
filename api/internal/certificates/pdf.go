@@ -33,6 +33,29 @@ type courseProgramPageLabels struct {
 
 var certificatePlaceholderPattern = regexp.MustCompile(`{{(.*?)}}`)
 
+// certificateTemplateTagPattern wyłuskuje znaczniki HTML wstawione w środek znacznika
+// szablonu. Edytor szablonu to pole contenteditable: zmiana czcionki albo wklejenie
+// tekstu potrafi rozbić {{ pieczatka_okragla }} na kawałki opakowane w <span>.
+var certificateTemplateTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+// templateTokenDiacritics sprowadza polskie znaki do postaci bez ogonków. Nazwy
+// znaczników są bez nich, ale wpisanie "pieczątka_okrągła" jest naturalnym odruchem
+// i nie ma powodu, żeby taki znacznik znikał z wydruku bez śladu.
+var templateTokenDiacritics = strings.NewReplacer(
+	"ą", "a", "ć", "c", "ę", "e", "ł", "l", "ń", "n",
+	"ó", "o", "ś", "s", "ż", "z", "ź", "z",
+)
+
+// normalizeTemplateToken sprowadza treść znacznika do klucza w mapie podstawień.
+// Wyrozumiałość jest tu celowa: znacznik wpisany wielkimi literami, z ogonkami albo
+// rozbity formatowaniem edytora znikał wcześniej bez śladu, a autor szablonu nie miał
+// jak się domyślić, dlaczego pieczątka nie trafiła we wskazane miejsce.
+func normalizeTemplateToken(raw string) string {
+	withoutTags := certificateTemplateTagPattern.ReplaceAllString(raw, "")
+	withoutSpaces := strings.Join(strings.Fields(withoutTags), "")
+	return templateTokenDiacritics.Replace(strings.ToLower(withoutSpaces))
+}
+
 var renderCertificatePDF = pdfutil.RenderHTMLToPDF
 
 // decorImage to jeden nadruk gotowy do wstawienia: obrazek jako data URI i szerokość,
@@ -562,7 +585,7 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, rawVa
 			return ""
 		}
 
-		normalized := strings.Join(strings.Fields(matches[1]), "")
+		normalized := normalizeTemplateToken(matches[1])
 		if raw, ok := rawValues[normalized]; ok {
 			placed[normalized] = true
 			return raw
