@@ -610,13 +610,18 @@ const certificatePreviewDocument = computed(() => {
         display: block;
       }
 
+      /* Ten sam podpis co w PDF z serwera (api/internal/certificates/pdf.go):
+         bezszeryfowo, żeby odciąć się od szeryfowej treści dokumentu. Arkusz podglądu
+         narzuca szeryfy dziedziczeniem, więc wystarczy własna deklaracja - w PDF trzeba
+         tam było !important, bo tamten arkusz wymusza szeryfy regułą na span. */
       .qr-caption {
         display: block;
         width: 24mm;
         margin-top: 1mm;
-        font-size: 7pt;
+        font-size: 8pt;
         line-height: 1.1;
         text-align: center;
+        font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
       }
 
       .cert-front {
