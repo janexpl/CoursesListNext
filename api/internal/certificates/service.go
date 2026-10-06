@@ -138,73 +138,9 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		}
 	}
 
-	if err := validateCreateInput(input); err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	certificateDate, err := parseDate(input.CertificateDate)
+	prepared, err := s.prepareCertificate(ctx, input, requestHash)
 	if err != nil {
 		return CreateCertificateResult{}, err
-	}
-
-	courseDateStart, err := parseDate(input.CourseDateStart)
-	if err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	courseDateEnd, err := parseOptionalDate(input.CourseDateEnd)
-	if err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	if courseDateEnd.Valid && courseDateEnd.Time.Before(courseDateStart.Time) {
-		return CreateCertificateResult{}, ErrInvalidInput
-	}
-
-	if err := validateCertificateDateAfterCourse(certificateDate, courseDateStart, courseDateEnd); err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	if input.StudentID > math.MaxInt32 {
-		return CreateCertificateResult{}, ErrInvalidInput
-	}
-	languageCode := normalizeLanguageCode(input.LanguageCode)
-	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
-	if err != nil {
-		return CreateCertificateResult{}, notFoundAs(err, ErrStudentNotFound)
-	}
-	course, err := s.queries.GetCourseByID(ctx, input.CourseID)
-	if err != nil {
-		return CreateCertificateResult{}, notFoundAs(err, ErrCourseNotFound)
-	}
-
-	var translation *dbsqlc.GetCourseCertificateTranslationByCourseAndLanguageRow
-	if languageCode != "pl" {
-		row, err := s.queries.GetCourseCertificateTranslationByCourseAndLanguage(ctx, dbsqlc.GetCourseCertificateTranslationByCourseAndLanguageParams{
-			CourseID:     input.CourseID,
-			LanguageCode: languageCode,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return CreateCertificateResult{}, ErrCertificateTranslationNotFound
-			}
-			return CreateCertificateResult{}, err
-		}
-		translation = &row
-	}
-	studentSnapshot, err := buildStudentSnapshot(student)
-	if err != nil {
-		return CreateCertificateResult{}, err
-	}
-
-	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
-
-	registryYear := input.RegistryYear
-	if input.AssignRegistryNumber && registryYear == 0 {
-		registryYear = int64(courseDateStart.Time.Year())
-		if courseDateEnd.Valid {
-			registryYear = int64(courseDateEnd.Time.Year())
-		}
 	}
 
 	tx, err := s.beginTx(ctx)
@@ -220,17 +156,149 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 			}
 		}
 	}()
+
+	result, err := s.createCertificateTx(ctx, tx, prepared)
+	if err != nil {
+		return CreateCertificateResult{}, err
+	}
+	if result.Replayed {
+		// Klucz idempotencji odtworzył wcześniejsze wystawienie, nic nie zapisaliśmy -
+		// transakcja idzie do wycofania, tak jak przed wydzieleniem tej funkcji.
+		return result, nil
+	}
+
+	if err := tx.commit(ctx); err != nil {
+		return CreateCertificateResult{}, err
+	}
+	committed = true
+
+	return result, nil
+}
+
+// preparedCertificate zbiera to, co trzeba ustalić przed zapisem: sprawdzone daty,
+// migawki kursanta i kursu oraz rok rejestru.
+type preparedCertificate struct {
+	input           CreateCertificateInput
+	requestHash     string
+	certificateDate pgtype.Date
+	courseDateStart pgtype.Date
+	courseDateEnd   pgtype.Date
+	studentSnapshot studentSnapshot
+	courseSnapshot  courseSnapshot
+	languageCode    string
+	registryYear    int64
+}
+
+// prepareCertificate waliduje wejście i czyta dane, z których powstaną migawki.
+// Nie dotyka transakcji, bo wystawianie zwykłego zaświadczenia robi to przed jej
+// otwarciem, a przedłużanie - już pod blokadą wiersza starego dokumentu, z którego
+// bierze kursanta i kurs.
+func (s *Service) prepareCertificate(ctx context.Context, input CreateCertificateInput, requestHash string) (preparedCertificate, error) {
+	if err := validateCreateInput(input); err != nil {
+		return preparedCertificate{}, err
+	}
+
+	certificateDate, err := parseDate(input.CertificateDate)
+	if err != nil {
+		return preparedCertificate{}, err
+	}
+
+	courseDateStart, err := parseDate(input.CourseDateStart)
+	if err != nil {
+		return preparedCertificate{}, err
+	}
+
+	courseDateEnd, err := parseOptionalDate(input.CourseDateEnd)
+	if err != nil {
+		return preparedCertificate{}, err
+	}
+
+	if courseDateEnd.Valid && courseDateEnd.Time.Before(courseDateStart.Time) {
+		return preparedCertificate{}, ErrInvalidInput
+	}
+
+	if err := validateCertificateDateAfterCourse(certificateDate, courseDateStart, courseDateEnd); err != nil {
+		return preparedCertificate{}, err
+	}
+
+	if input.StudentID > math.MaxInt32 {
+		return preparedCertificate{}, ErrInvalidInput
+	}
+	languageCode := normalizeLanguageCode(input.LanguageCode)
+	student, err := s.queries.GetStudentByID(ctx, input.StudentID)
+	if err != nil {
+		return preparedCertificate{}, notFoundAs(err, ErrStudentNotFound)
+	}
+	course, err := s.queries.GetCourseByID(ctx, input.CourseID)
+	if err != nil {
+		return preparedCertificate{}, notFoundAs(err, ErrCourseNotFound)
+	}
+
+	var translation *dbsqlc.GetCourseCertificateTranslationByCourseAndLanguageRow
+	if languageCode != "pl" {
+		row, err := s.queries.GetCourseCertificateTranslationByCourseAndLanguage(ctx, dbsqlc.GetCourseCertificateTranslationByCourseAndLanguageParams{
+			CourseID:     input.CourseID,
+			LanguageCode: languageCode,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return preparedCertificate{}, ErrCertificateTranslationNotFound
+			}
+			return preparedCertificate{}, err
+		}
+		translation = &row
+	}
+	studentSnapshot, err := buildStudentSnapshot(student)
+	if err != nil {
+		return preparedCertificate{}, err
+	}
+
+	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
+
+	registryYear := input.RegistryYear
+	if input.AssignRegistryNumber && registryYear == 0 {
+		registryYear = int64(courseDateStart.Time.Year())
+		if courseDateEnd.Valid {
+			registryYear = int64(courseDateEnd.Time.Year())
+		}
+	}
+
+	return preparedCertificate{
+		input:           input,
+		requestHash:     requestHash,
+		certificateDate: certificateDate,
+		courseDateStart: courseDateStart,
+		courseDateEnd:   courseDateEnd,
+		studentSnapshot: studentSnapshot,
+		courseSnapshot:  courseSnapshot,
+		languageCode:    languageCode,
+		registryYear:    registryYear,
+	}, nil
+}
+
+// createCertificateTx zapisuje zaświadczenie w już otwartej transakcji: bierze blokady,
+// nadaje numer rejestru, tworzy wiersz, publikuje zdarzenie i zapisuje audyt.
+// Transakcji nie zatwierdza - robi to wywołujący, bo przedłużanie dokłada do niej
+// jeszcze oznaczenie starego dokumentu.
+//
+// Wynik z ustawionym Replayed oznacza, że klucz idempotencji odtworzył wcześniejsze
+// wystawienie: nic nie zapisano, więc wywołujący ma transakcję wycofać.
+func (s *Service) createCertificateTx(ctx context.Context, tx txScope, prepared preparedCertificate) (CreateCertificateResult, error) {
+	input := prepared.input
+	certificateDate := prepared.certificateDate
+	registryYear := prepared.registryYear
+
 	if input.IdempotencyKey != "" {
 		// Blokada klucza przed blokadą rejestru - stała kolejność wyklucza zakleszczenie.
-		if err = tx.queries.AcquireIdempotencyKeyLock(ctx, input.IdempotencyKey); err != nil {
+		if err := tx.queries.AcquireIdempotencyKeyLock(ctx, input.IdempotencyKey); err != nil {
 			return CreateCertificateResult{}, err
 		}
-		result, found, err := replayIdempotentCreate(ctx, tx.queries, input.IdempotencyKey, requestHash)
+		result, found, err := replayIdempotentCreate(ctx, tx.queries, input.IdempotencyKey, prepared.requestHash)
 		if err != nil || found {
 			return result, err
 		}
 	}
-	if err = tx.queries.AcquireRegistryLock(ctx, dbsqlc.AcquireRegistryLockParams{
+	if err := tx.queries.AcquireRegistryLock(ctx, dbsqlc.AcquireRegistryLockParams{
 		CourseID: strconv.FormatInt(input.CourseID, 10),
 		Year:     strconv.FormatInt(registryYear, 10),
 	}); err != nil {
@@ -240,13 +308,14 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 	registryNumber := input.RegistryNumber
 	if input.AssignRegistryNumber {
 		// Pod blokadą rejestru (kurs, rok) - równoległe żądania dostają kolejne numery.
-		registryNumber, err = tx.queries.GetNextRegistryNumber(ctx, dbsqlc.GetNextRegistryNumberParams{
+		next, err := tx.queries.GetNextRegistryNumber(ctx, dbsqlc.GetNextRegistryNumberParams{
 			CourseID: input.CourseID,
 			Year:     registryYear,
 		})
 		if err != nil {
 			return CreateCertificateResult{}, err
 		}
+		registryNumber = next
 	}
 
 	rows, err := tx.queries.ListRegistryDatesForCourseYear(ctx, dbsqlc.ListRegistryDatesForCourseYearParams{
@@ -286,11 +355,11 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 		input,
 		registryID,
 		certificateDate,
-		courseDateStart,
-		courseDateEnd,
-		studentSnapshot,
-		courseSnapshot,
-		languageCode,
+		prepared.courseDateStart,
+		prepared.courseDateEnd,
+		prepared.studentSnapshot,
+		prepared.courseSnapshot,
+		prepared.languageCode,
 	)
 	createdRow, err := tx.queries.CreateCertificate(ctx, certificateParams)
 	certificateID := createdRow.ID
@@ -307,7 +376,7 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 	if input.IdempotencyKey != "" {
 		if err := tx.queries.CreateIdempotencyKey(ctx, dbsqlc.CreateIdempotencyKeyParams{
 			Key:           input.IdempotencyKey,
-			RequestHash:   requestHash,
+			RequestHash:   prepared.requestHash,
 			CertificateID: certificateID,
 		}); err != nil {
 			return CreateCertificateResult{}, err
@@ -340,11 +409,6 @@ func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (Cre
 			return CreateCertificateResult{}, err
 		}
 	}
-
-	if err := tx.commit(ctx); err != nil {
-		return CreateCertificateResult{}, err
-	}
-	committed = true
 
 	return CreateCertificateResult{
 		ID:               certificateID,
