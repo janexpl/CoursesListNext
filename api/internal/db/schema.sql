@@ -146,6 +146,17 @@ CREATE TABLE certificates (
     duplicate_issued_at timestamptz,
     duplicate_issued_by_user_id bigint REFERENCES users(id) ON DELETE SET NULL,
     idempotency_key text,
+    -- Przedłużenie (migracja 0028): stary dokument wskazuje następcę. To nie jest
+    -- unieważnienie - dokument zostaje ważny do swojej daty, znika tylko z przypomnień
+    -- o wygasaniu.
+    renewed_at timestamptz,
+    renewed_by_certificate_id bigint REFERENCES certificates(id) ON DELETE RESTRICT,
+    renewed_by_user_id bigint REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT certificates_renewed_consistency CHECK (
+        (renewed_at IS NULL AND renewed_by_certificate_id IS NULL)
+        OR (renewed_at IS NOT NULL AND renewed_by_certificate_id IS NOT NULL)
+    ),
+    CONSTRAINT certificates_renewed_not_self CHECK (renewed_by_certificate_id <> id),
     CONSTRAINT certificates_revoke_consistency CHECK (
         (revoked_at IS NULL AND revoke_reason IS NULL)
         OR (revoked_at IS NOT NULL AND revoke_reason IS NOT NULL AND btrim(revoke_reason) <> '')
@@ -162,6 +173,12 @@ CREATE TABLE certificates (
     CONSTRAINT certificates_verification_code_format
         CHECK (verification_code ~ '^[2-9A-HJ-NP-Z]{12}$')
 );
+
+-- Ten sam następca nie może przedłużać dwóch dokumentów. Miękko skasowany następca
+-- nie blokuje wystawienia kolejnego.
+CREATE UNIQUE INDEX certificates_renewed_by_certificate_id_uidx
+    ON certificates (renewed_by_certificate_id)
+    WHERE renewed_by_certificate_id IS NOT NULL AND deleted_at IS NULL;
 
 -- Kod weryfikacyjny: losowy, unikalny, niezmienny (migracja 0021).
 CREATE FUNCTION generate_certificate_verification_code() RETURNS text

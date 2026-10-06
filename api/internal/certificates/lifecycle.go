@@ -46,11 +46,11 @@ func (s *Service) Revoke(ctx context.Context, certificateID int64, reason string
 	if _, err := tx.queries.LockCertificateForLifecycle(ctx, certificateID); err != nil {
 		return notFoundAs(err, ErrCertificateNotFound)
 	}
-	revoked, err := tx.queries.GetCertificateLifecycleState(ctx, certificateID)
+	state, err := tx.queries.GetCertificateLifecycleState(ctx, certificateID)
 	if err != nil {
 		return err
 	}
-	if revoked {
+	if state.Revoked {
 		return ErrCertificateAlreadyRevoked
 	}
 
@@ -126,11 +126,11 @@ func (s *Service) Duplicate(ctx context.Context, certificateID int64, reason str
 	if _, err := tx.queries.LockCertificateForLifecycle(ctx, certificateID); err != nil {
 		return notFoundAs(err, ErrCertificateNotFound)
 	}
-	revoked, err := tx.queries.GetCertificateLifecycleState(ctx, certificateID)
+	state, err := tx.queries.GetCertificateLifecycleState(ctx, certificateID)
 	if err != nil {
 		return err
 	}
-	if revoked {
+	if state.Revoked {
 		return ErrCertificateRevoked
 	}
 

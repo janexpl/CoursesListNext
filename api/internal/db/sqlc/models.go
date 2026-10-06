@@ -75,6 +75,9 @@ type Certificate struct {
 	DuplicateIssuedAt         pgtype.Timestamptz `json:"duplicate_issued_at"`
 	DuplicateIssuedByUserID   pgtype.Int8        `json:"duplicate_issued_by_user_id"`
 	IdempotencyKey            pgtype.Text        `json:"idempotency_key"`
+	RenewedAt                 pgtype.Timestamptz `json:"renewed_at"`
+	RenewedByCertificateID    pgtype.Int8        `json:"renewed_by_certificate_id"`
+	RenewedByUserID           pgtype.Int8        `json:"renewed_by_user_id"`
 }
 
 type CertificatePrintAsset struct {

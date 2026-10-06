@@ -14,6 +14,9 @@ SELECT COUNT(*)
 FROM certificates c
 WHERE c.deleted_at IS NULL
   AND c.revoked_at IS NULL
+  -- Ten sam filtr co w ListExpiringCertificates wyżej - licznik i lista muszą opisywać
+  -- ten sam zbiór.
+  AND c.renewed_at IS NULL
   AND (
       CASE
           WHEN c.coursedateend IS NOT NULL AND c.course_expiry_time_snapshot ~ '^[0-9]+$'
@@ -74,6 +77,10 @@ WITH expiring AS (
     FROM certificates c
     WHERE c.deleted_at IS NULL
       AND c.revoked_at IS NULL
+      -- Przedłużony dokument nie wygasa - zastąpił go następca. Ten sam filtr stoi
+      -- w CountExpiringCertificates niżej oraz w certificates.sql
+      -- ListExpiringCertificateNotificationCandidates.
+      AND c.renewed_at IS NULL
 )
 SELECT
     e.id,

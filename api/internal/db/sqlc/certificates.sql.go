@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearCertificateRenewalBySuccessor = `-- name: ClearCertificateRenewalBySuccessor :exec
+UPDATE certificates
+SET renewed_at = NULL,
+    renewed_by_certificate_id = NULL,
+    renewed_by_user_id = NULL
+WHERE renewed_by_certificate_id = $1
+`
+
+// Następca został skasowany, więc poprzednik przestaje być przedłużony i wraca
+// do przypomnień o wygasaniu. Bez tego dokument bez żywego zamiennika zniknąłby
+// z zestawień na zawsze.
+func (q *Queries) ClearCertificateRenewalBySuccessor(ctx context.Context, successorID pgtype.Int8) error {
+	_, err := q.db.Exec(ctx, clearCertificateRenewalBySuccessor, successorID)
+	return err
+}
+
 const countCertificatesByCompanyID = `-- name: CountCertificatesByCompanyID :one
   SELECT COUNT(*)
   FROM certificates c
@@ -198,8 +214,17 @@ SELECT
     c.revoke_reason,
     c.duplicate_reason,
     c.duplicate_issued_at,
-    c.idempotency_key
+    c.idempotency_key,
+    c.renewed_at,
+    c.renewed_by_certificate_id,
+    -- Wskazanie odwrotne: czego przedłużeniem jest ten dokument. Dołączone przez LEFT JOIN,
+    -- a nie podzapytaniem skalarnym, bo sqlc otypowałby podzapytanie jako wartość
+    -- nienullowalną i skanowanie NULL-a kończyłoby się błędem. Indeks
+    -- certificates_renewed_by_certificate_id_uidx gwarantuje najwyżej jeden taki wiersz,
+    -- więc złączenie nie powiela wyniku.
+    prev.id AS renewal_of_certificate_id
 FROM certificates c
+LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = c.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
@@ -208,41 +233,49 @@ WHERE c.id = $1
 `
 
 type GetCertificateByIDRow struct {
-	ID                int64              `json:"id"`
-	Date              pgtype.Date        `json:"date"`
-	StudentID         int32              `json:"student_id"`
-	StudentFirstname  string             `json:"student_firstname"`
-	StudentSecondname pgtype.Text        `json:"student_secondname"`
-	StudentLastname   string             `json:"student_lastname"`
-	StudentBirthdate  pgtype.Date        `json:"student_birthdate"`
-	StudentBirthplace string             `json:"student_birthplace"`
-	StudentPesel      pgtype.Text        `json:"student_pesel"`
-	CompanyName       pgtype.Text        `json:"company_name"`
-	CourseDateStart   pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
-	RegistryID        int64              `json:"registry_id"`
-	RegistryYear      int64              `json:"registry_year"`
-	RegistryNumber    int64              `json:"registry_number"`
-	CourseID          int64              `json:"course_id"`
-	CourseName        string             `json:"course_name"`
-	CourseSymbol      string             `json:"course_symbol"`
-	CourseExpiryTime  pgtype.Text        `json:"course_expiry_time"`
-	CourseProgram     string             `json:"course_program"`
-	CertFrontPage     string             `json:"cert_front_page"`
-	LanguageCode      string             `json:"language_code"`
-	JournalAttendeeID pgtype.Int8        `json:"journal_attendee_id"`
-	JournalID         pgtype.Int8        `json:"journal_id"`
-	JournalTitle      pgtype.Text        `json:"journal_title"`
-	JournalStatus     pgtype.Text        `json:"journal_status"`
-	ExpiryDate        interface{}        `json:"expiry_date"`
-	VerificationCode  string             `json:"verification_code"`
-	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
-	RevokeReason      pgtype.Text        `json:"revoke_reason"`
-	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
-	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
-	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
+	ID                     int64              `json:"id"`
+	Date                   pgtype.Date        `json:"date"`
+	StudentID              int32              `json:"student_id"`
+	StudentFirstname       string             `json:"student_firstname"`
+	StudentSecondname      pgtype.Text        `json:"student_secondname"`
+	StudentLastname        string             `json:"student_lastname"`
+	StudentBirthdate       pgtype.Date        `json:"student_birthdate"`
+	StudentBirthplace      string             `json:"student_birthplace"`
+	StudentPesel           pgtype.Text        `json:"student_pesel"`
+	CompanyName            pgtype.Text        `json:"company_name"`
+	CourseDateStart        pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd          pgtype.Date        `json:"course_date_end"`
+	RegistryID             int64              `json:"registry_id"`
+	RegistryYear           int64              `json:"registry_year"`
+	RegistryNumber         int64              `json:"registry_number"`
+	CourseID               int64              `json:"course_id"`
+	CourseName             string             `json:"course_name"`
+	CourseSymbol           string             `json:"course_symbol"`
+	CourseExpiryTime       pgtype.Text        `json:"course_expiry_time"`
+	CourseProgram          string             `json:"course_program"`
+	CertFrontPage          string             `json:"cert_front_page"`
+	LanguageCode           string             `json:"language_code"`
+	JournalAttendeeID      pgtype.Int8        `json:"journal_attendee_id"`
+	JournalID              pgtype.Int8        `json:"journal_id"`
+	JournalTitle           pgtype.Text        `json:"journal_title"`
+	JournalStatus          pgtype.Text        `json:"journal_status"`
+	ExpiryDate             interface{}        `json:"expiry_date"`
+	VerificationCode       string             `json:"verification_code"`
+	RevokedAt              pgtype.Timestamptz `json:"revoked_at"`
+	RevokeReason           pgtype.Text        `json:"revoke_reason"`
+	DuplicateReason        pgtype.Text        `json:"duplicate_reason"`
+	DuplicateIssuedAt      pgtype.Timestamptz `json:"duplicate_issued_at"`
+	IdempotencyKey         pgtype.Text        `json:"idempotency_key"`
+	RenewedAt              pgtype.Timestamptz `json:"renewed_at"`
+	RenewedByCertificateID pgtype.Int8        `json:"renewed_by_certificate_id"`
+	RenewalOfCertificateID pgtype.Int8        `json:"renewal_of_certificate_id"`
 }
 
+// UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
+// więc oba zapytania muszą zwracać identyczną listę kolumn - te same nazwy, typy
+// i KOLEJNOŚĆ. Nowe kolumny dopisuj na końcu obu list naraz; rozjechana kolejność przy
+// zgodnych typach (renewed_at i duplicate_issued_at są oba timestamptz) byłaby cichą
+// podmianą pól, której kompilator nie wyłapie.
 func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertificateByIDRow, error) {
 	row := q.db.QueryRow(ctx, getCertificateByID, id)
 	var i GetCertificateByIDRow
@@ -280,6 +313,9 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.DuplicateReason,
 		&i.DuplicateIssuedAt,
 		&i.IdempotencyKey,
+		&i.RenewedAt,
+		&i.RenewedByCertificateID,
+		&i.RenewalOfCertificateID,
 	)
 	return i, err
 }
@@ -299,16 +335,26 @@ func (q *Queries) GetCertificateIDByVerificationCode(ctx context.Context, verifi
 }
 
 const getCertificateLifecycleState = `-- name: GetCertificateLifecycleState :one
-SELECT (revoked_at IS NOT NULL)::boolean AS revoked
+SELECT
+    (revoked_at IS NOT NULL)::boolean AS revoked,
+    (renewed_at IS NOT NULL)::boolean AS renewed,
+    renewed_by_certificate_id
 FROM certificates
 WHERE id = $1
 `
 
-func (q *Queries) GetCertificateLifecycleState(ctx context.Context, id int64) (bool, error) {
+type GetCertificateLifecycleStateRow struct {
+	Revoked                bool        `json:"revoked"`
+	Renewed                bool        `json:"renewed"`
+	RenewedByCertificateID pgtype.Int8 `json:"renewed_by_certificate_id"`
+}
+
+// Cały stan cyklu życia jednym zapytaniem, czytany po uzyskaniu blokady wiersza.
+func (q *Queries) GetCertificateLifecycleState(ctx context.Context, id int64) (GetCertificateLifecycleStateRow, error) {
 	row := q.db.QueryRow(ctx, getCertificateLifecycleState, id)
-	var revoked bool
-	err := row.Scan(&revoked)
-	return revoked, err
+	var i GetCertificateLifecycleStateRow
+	err := row.Scan(&i.Revoked, &i.Renewed, &i.RenewedByCertificateID)
+	return i, err
 }
 
 const listCertificates = `-- name: ListCertificates :many
@@ -336,7 +382,8 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    c.duplicate_issued_at
+    c.duplicate_issued_at,
+    c.renewed_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
 WHERE
@@ -381,6 +428,7 @@ type ListCertificatesRow struct {
 	ExpiryDate        interface{}        `json:"expiry_date"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
+	RenewedAt         pgtype.Timestamptz `json:"renewed_at"`
 }
 
 func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesParams) ([]ListCertificatesRow, error) {
@@ -413,6 +461,7 @@ func (q *Queries) ListCertificates(ctx context.Context, arg ListCertificatesPara
 			&i.ExpiryDate,
 			&i.RevokedAt,
 			&i.DuplicateIssuedAt,
+			&i.RenewedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -449,7 +498,8 @@ const listCertificatesByCompanyID = `-- name: ListCertificatesByCompanyID :many
           ''
       ) AS expiry_date,
       c.revoked_at,
-      c.duplicate_issued_at
+      c.duplicate_issued_at,
+      c.renewed_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
   WHERE c.company_id_snapshot = $1
@@ -485,6 +535,7 @@ type ListCertificatesByCompanyIDRow struct {
 	ExpiryDate        interface{}        `json:"expiry_date"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
+	RenewedAt         pgtype.Timestamptz `json:"renewed_at"`
 }
 
 func (q *Queries) ListCertificatesByCompanyID(ctx context.Context, arg ListCertificatesByCompanyIDParams) ([]ListCertificatesByCompanyIDRow, error) {
@@ -518,6 +569,7 @@ func (q *Queries) ListCertificatesByCompanyID(ctx context.Context, arg ListCerti
 			&i.ExpiryDate,
 			&i.RevokedAt,
 			&i.DuplicateIssuedAt,
+			&i.RenewedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -554,7 +606,8 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    c.duplicate_issued_at
+    c.duplicate_issued_at,
+    c.renewed_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
 WHERE r.course_id = $1
@@ -590,6 +643,7 @@ type ListCertificatesByCourseIDRow struct {
 	ExpiryDate        interface{}        `json:"expiry_date"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
+	RenewedAt         pgtype.Timestamptz `json:"renewed_at"`
 }
 
 func (q *Queries) ListCertificatesByCourseID(ctx context.Context, arg ListCertificatesByCourseIDParams) ([]ListCertificatesByCourseIDRow, error) {
@@ -623,6 +677,7 @@ func (q *Queries) ListCertificatesByCourseID(ctx context.Context, arg ListCertif
 			&i.ExpiryDate,
 			&i.RevokedAt,
 			&i.DuplicateIssuedAt,
+			&i.RenewedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +707,8 @@ const listCertificatesByStudentID = `-- name: ListCertificatesByStudentID :many
           ELSE NULL::text
       END, '') AS expiry_date,
       c.revoked_at,
-      c.duplicate_issued_at
+      c.duplicate_issued_at,
+      c.renewed_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
   WHERE c.student_id = $1
@@ -672,6 +728,7 @@ type ListCertificatesByStudentIDRow struct {
 	ExpiryDate        interface{}        `json:"expiry_date"`
 	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
 	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
+	RenewedAt         pgtype.Timestamptz `json:"renewed_at"`
 }
 
 func (q *Queries) ListCertificatesByStudentID(ctx context.Context, studentID int32) ([]ListCertificatesByStudentIDRow, error) {
@@ -695,6 +752,7 @@ func (q *Queries) ListCertificatesByStudentID(ctx context.Context, studentID int
 			&i.ExpiryDate,
 			&i.RevokedAt,
 			&i.DuplicateIssuedAt,
+			&i.RenewedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -733,6 +791,10 @@ const listExpiringCertificateNotificationCandidates = `-- name: ListExpiringCert
     WHERE c.deleted_at IS NULL
       -- Unieważniony dokument nie wygasa.
       AND c.revoked_at IS NULL
+      -- Przedłużony też nie: przypomnienie dotyczy już jego następcy.
+      -- Ten sam filtr stoi w dwóch pozostałych zestawieniach wygasających:
+      -- dashboard.sql ListExpiringCertificates i CountExpiringCertificates.
+      AND c.renewed_at IS NULL
       AND comp.expiry_notifications_enabled = true
       AND c.coursedateend IS NOT NULL
       AND c.course_expiry_time_snapshot IS NOT NULL
@@ -849,8 +911,9 @@ type LockCertificateForLifecycleRow struct {
 	CourseID        int64       `json:"course_id"`
 }
 
-// Blokuje wiersz zaświadczenia na czas unieważnienia lub wystawienia duplikatu.
-// Stan (unieważnione, zastąpione) sprawdzaj OSOBNYM zapytaniem po uzyskaniu blokady -
+// Blokuje wiersz zaświadczenia na czas unieważnienia, wystawienia duplikatu
+// albo przedłużenia.
+// Stan (unieważnione, przedłużone) sprawdzaj OSOBNYM zapytaniem po uzyskaniu blokady -
 // w READ COMMITTED podzapytanie w tym samym poleceniu widziałoby stan sprzed czekania.
 func (q *Queries) LockCertificateForLifecycle(ctx context.Context, id int64) (LockCertificateForLifecycleRow, error) {
 	row := q.db.QueryRow(ctx, lockCertificateForLifecycle, id)
@@ -882,6 +945,27 @@ type MarkCertificateDuplicateIssuedParams struct {
 // wtórnika, a wydruk adnotację "DUPLIKAT". Kolejne wystawienie nadpisuje datę.
 func (q *Queries) MarkCertificateDuplicateIssued(ctx context.Context, arg MarkCertificateDuplicateIssuedParams) error {
 	_, err := q.db.Exec(ctx, markCertificateDuplicateIssued, arg.Reason, arg.DuplicateIssuedByUserID, arg.ID)
+	return err
+}
+
+const markCertificateRenewed = `-- name: MarkCertificateRenewed :exec
+UPDATE certificates
+SET renewed_at = now(),
+    renewed_by_certificate_id = $1,
+    renewed_by_user_id = $2
+WHERE id = $3
+`
+
+type MarkCertificateRenewedParams struct {
+	RenewedByCertificateID pgtype.Int8 `json:"renewed_by_certificate_id"`
+	RenewedByUserID        pgtype.Int8 `json:"renewed_by_user_id"`
+	ID                     int64       `json:"id"`
+}
+
+// Przedłużenie odnotowujemy na STARYM dokumencie: wskazuje on następcę i przez to
+// wypada z przypomnień o wygasaniu. Ważności nie traci - to nie jest unieważnienie.
+func (q *Queries) MarkCertificateRenewed(ctx context.Context, arg MarkCertificateRenewedParams) error {
+	_, err := q.db.Exec(ctx, markCertificateRenewed, arg.RenewedByCertificateID, arg.RenewedByUserID, arg.ID)
 	return err
 }
 
@@ -948,7 +1032,7 @@ WITH updated AS (
       AND c.deleted_at IS NULL
     -- RETURNING całego wiersza: główne zapytanie widzi migawkę sprzed UPDATE w CTE, więc
     -- dane zaświadczenia muszą pochodzić z RETURNING, a nie z ponownego odczytu tabeli.
-    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.duplicate_reason, c.duplicate_issued_at, c.duplicate_issued_by_user_id, c.idempotency_key
+    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.duplicate_reason, c.duplicate_issued_at, c.duplicate_issued_by_user_id, c.idempotency_key, c.renewed_at, c.renewed_by_certificate_id, c.renewed_by_user_id
 )
 SELECT
     u.id,
@@ -992,8 +1076,12 @@ SELECT
     u.revoke_reason,
     u.duplicate_reason,
     u.duplicate_issued_at,
-    u.idempotency_key
+    u.idempotency_key,
+    u.renewed_at,
+    u.renewed_by_certificate_id,
+    prev.id AS renewal_of_certificate_id
 FROM updated u
+LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = u.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id
@@ -1016,41 +1104,49 @@ type UpdateCertificateParams struct {
 }
 
 type UpdateCertificateRow struct {
-	ID                int64              `json:"id"`
-	Date              pgtype.Date        `json:"date"`
-	StudentID         int32              `json:"student_id"`
-	StudentFirstname  string             `json:"student_firstname"`
-	StudentSecondname pgtype.Text        `json:"student_secondname"`
-	StudentLastname   string             `json:"student_lastname"`
-	StudentBirthdate  pgtype.Date        `json:"student_birthdate"`
-	StudentBirthplace string             `json:"student_birthplace"`
-	StudentPesel      pgtype.Text        `json:"student_pesel"`
-	CompanyName       pgtype.Text        `json:"company_name"`
-	CourseDateStart   pgtype.Date        `json:"course_date_start"`
-	CourseDateEnd     pgtype.Date        `json:"course_date_end"`
-	RegistryID        int64              `json:"registry_id"`
-	RegistryYear      int64              `json:"registry_year"`
-	RegistryNumber    int64              `json:"registry_number"`
-	CourseID          int64              `json:"course_id"`
-	CourseName        string             `json:"course_name"`
-	CourseSymbol      string             `json:"course_symbol"`
-	CourseExpiryTime  pgtype.Text        `json:"course_expiry_time"`
-	CourseProgram     string             `json:"course_program"`
-	CertFrontPage     string             `json:"cert_front_page"`
-	LanguageCode      string             `json:"language_code"`
-	JournalAttendeeID pgtype.Int8        `json:"journal_attendee_id"`
-	JournalID         pgtype.Int8        `json:"journal_id"`
-	JournalTitle      pgtype.Text        `json:"journal_title"`
-	JournalStatus     pgtype.Text        `json:"journal_status"`
-	ExpiryDate        interface{}        `json:"expiry_date"`
-	VerificationCode  string             `json:"verification_code"`
-	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
-	RevokeReason      pgtype.Text        `json:"revoke_reason"`
-	DuplicateReason   pgtype.Text        `json:"duplicate_reason"`
-	DuplicateIssuedAt pgtype.Timestamptz `json:"duplicate_issued_at"`
-	IdempotencyKey    pgtype.Text        `json:"idempotency_key"`
+	ID                     int64              `json:"id"`
+	Date                   pgtype.Date        `json:"date"`
+	StudentID              int32              `json:"student_id"`
+	StudentFirstname       string             `json:"student_firstname"`
+	StudentSecondname      pgtype.Text        `json:"student_secondname"`
+	StudentLastname        string             `json:"student_lastname"`
+	StudentBirthdate       pgtype.Date        `json:"student_birthdate"`
+	StudentBirthplace      string             `json:"student_birthplace"`
+	StudentPesel           pgtype.Text        `json:"student_pesel"`
+	CompanyName            pgtype.Text        `json:"company_name"`
+	CourseDateStart        pgtype.Date        `json:"course_date_start"`
+	CourseDateEnd          pgtype.Date        `json:"course_date_end"`
+	RegistryID             int64              `json:"registry_id"`
+	RegistryYear           int64              `json:"registry_year"`
+	RegistryNumber         int64              `json:"registry_number"`
+	CourseID               int64              `json:"course_id"`
+	CourseName             string             `json:"course_name"`
+	CourseSymbol           string             `json:"course_symbol"`
+	CourseExpiryTime       pgtype.Text        `json:"course_expiry_time"`
+	CourseProgram          string             `json:"course_program"`
+	CertFrontPage          string             `json:"cert_front_page"`
+	LanguageCode           string             `json:"language_code"`
+	JournalAttendeeID      pgtype.Int8        `json:"journal_attendee_id"`
+	JournalID              pgtype.Int8        `json:"journal_id"`
+	JournalTitle           pgtype.Text        `json:"journal_title"`
+	JournalStatus          pgtype.Text        `json:"journal_status"`
+	ExpiryDate             interface{}        `json:"expiry_date"`
+	VerificationCode       string             `json:"verification_code"`
+	RevokedAt              pgtype.Timestamptz `json:"revoked_at"`
+	RevokeReason           pgtype.Text        `json:"revoke_reason"`
+	DuplicateReason        pgtype.Text        `json:"duplicate_reason"`
+	DuplicateIssuedAt      pgtype.Timestamptz `json:"duplicate_issued_at"`
+	IdempotencyKey         pgtype.Text        `json:"idempotency_key"`
+	RenewedAt              pgtype.Timestamptz `json:"renewed_at"`
+	RenewedByCertificateID pgtype.Int8        `json:"renewed_by_certificate_id"`
+	RenewalOfCertificateID pgtype.Int8        `json:"renewal_of_certificate_id"`
 }
 
+// UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
+// więc oba zapytania muszą zwracać identyczną listę kolumn - te same nazwy, typy
+// i KOLEJNOŚĆ. Nowe kolumny dopisuj na końcu obu list naraz; rozjechana kolejność przy
+// zgodnych typach (renewed_at i duplicate_issued_at są oba timestamptz) byłaby cichą
+// podmianą pól, której kompilator nie wyłapie.
 func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificateParams) (UpdateCertificateRow, error) {
 	row := q.db.QueryRow(ctx, updateCertificate,
 		arg.Date,
@@ -1102,6 +1198,9 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.DuplicateReason,
 		&i.DuplicateIssuedAt,
 		&i.IdempotencyKey,
+		&i.RenewedAt,
+		&i.RenewedByCertificateID,
+		&i.RenewalOfCertificateID,
 	)
 	return i, err
 }

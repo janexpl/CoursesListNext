@@ -23,7 +23,8 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    c.duplicate_issued_at
+    c.duplicate_issued_at,
+    c.renewed_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
 WHERE
@@ -44,6 +45,11 @@ WHERE
 ORDER BY c.date DESC, c.id DESC
 LIMIT sqlc.arg(limit_count);
 
+-- UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
+-- więc oba zapytania muszą zwracać identyczną listę kolumn - te same nazwy, typy
+-- i KOLEJNOŚĆ. Nowe kolumny dopisuj na końcu obu list naraz; rozjechana kolejność przy
+-- zgodnych typach (renewed_at i duplicate_issued_at są oba timestamptz) byłaby cichą
+-- podmianą pól, której kompilator nie wyłapie.
 -- name: GetCertificateByID :one
 SELECT
     c.id,
@@ -87,8 +93,17 @@ SELECT
     c.revoke_reason,
     c.duplicate_reason,
     c.duplicate_issued_at,
-    c.idempotency_key
+    c.idempotency_key,
+    c.renewed_at,
+    c.renewed_by_certificate_id,
+    -- Wskazanie odwrotne: czego przedłużeniem jest ten dokument. Dołączone przez LEFT JOIN,
+    -- a nie podzapytaniem skalarnym, bo sqlc otypowałby podzapytanie jako wartość
+    -- nienullowalną i skanowanie NULL-a kończyłoby się błędem. Indeks
+    -- certificates_renewed_by_certificate_id_uidx gwarantuje najwyżej jeden taki wiersz,
+    -- więc złączenie nie powiela wyniku.
+    prev.id AS renewal_of_certificate_id
 FROM certificates c
+LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = c.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
@@ -157,13 +172,19 @@ RETURNING id, verification_code;
           ELSE NULL::text
       END, '') AS expiry_date,
       c.revoked_at,
-      c.duplicate_issued_at
+      c.duplicate_issued_at,
+      c.renewed_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
   WHERE c.student_id = $1
   AND c.deleted_at IS NULL
   ORDER BY c.date DESC, c.id DESC;
 
+-- UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
+-- więc oba zapytania muszą zwracać identyczną listę kolumn - te same nazwy, typy
+-- i KOLEJNOŚĆ. Nowe kolumny dopisuj na końcu obu list naraz; rozjechana kolejność przy
+-- zgodnych typach (renewed_at i duplicate_issued_at są oba timestamptz) byłaby cichą
+-- podmianą pól, której kompilator nie wyłapie.
 -- name: UpdateCertificate :one
 WITH updated AS (
     UPDATE certificates AS c
@@ -228,8 +249,12 @@ SELECT
     u.revoke_reason,
     u.duplicate_reason,
     u.duplicate_issued_at,
-    u.idempotency_key
+    u.idempotency_key,
+    u.renewed_at,
+    u.renewed_by_certificate_id,
+    prev.id AS renewal_of_certificate_id
 FROM updated u
+LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = u.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id;
@@ -278,7 +303,8 @@ SELECT
         ''
     ) AS expiry_date,
     c.revoked_at,
-    c.duplicate_issued_at
+    c.duplicate_issued_at,
+    c.renewed_at
 FROM certificates c
 JOIN registries r ON r.id = c.registry_id
 WHERE r.course_id = sqlc.arg(course_id)
@@ -322,7 +348,8 @@ OFFSET sqlc.arg(offset_count);
           ''
       ) AS expiry_date,
       c.revoked_at,
-      c.duplicate_issued_at
+      c.duplicate_issued_at,
+      c.renewed_at
   FROM certificates c
   JOIN registries r ON r.id = c.registry_id
   WHERE c.company_id_snapshot = sqlc.arg(company_id)
@@ -360,6 +387,10 @@ OFFSET sqlc.arg(offset_count);
     WHERE c.deleted_at IS NULL
       -- Unieważniony dokument nie wygasa.
       AND c.revoked_at IS NULL
+      -- Przedłużony też nie: przypomnienie dotyczy już jego następcy.
+      -- Ten sam filtr stoi w dwóch pozostałych zestawieniach wygasających:
+      -- dashboard.sql ListExpiringCertificates i CountExpiringCertificates.
+      AND c.renewed_at IS NULL
       AND comp.expiry_notifications_enabled = true
       AND c.coursedateend IS NOT NULL
       AND c.course_expiry_time_snapshot IS NOT NULL
@@ -388,8 +419,9 @@ WHERE verification_code = $1
   AND deleted_at IS NULL;
 
 -- name: LockCertificateForLifecycle :one
--- Blokuje wiersz zaświadczenia na czas unieważnienia lub wystawienia duplikatu.
--- Stan (unieważnione, zastąpione) sprawdzaj OSOBNYM zapytaniem po uzyskaniu blokady -
+-- Blokuje wiersz zaświadczenia na czas unieważnienia, wystawienia duplikatu
+-- albo przedłużenia.
+-- Stan (unieważnione, przedłużone) sprawdzaj OSOBNYM zapytaniem po uzyskaniu blokady -
 -- w READ COMMITTED podzapytanie w tym samym poleceniu widziałoby stan sprzed czekania.
 SELECT
     c.id,
@@ -403,7 +435,11 @@ WHERE c.id = $1
 FOR UPDATE OF c;
 
 -- name: GetCertificateLifecycleState :one
-SELECT (revoked_at IS NOT NULL)::boolean AS revoked
+-- Cały stan cyklu życia jednym zapytaniem, czytany po uzyskaniu blokady wiersza.
+SELECT
+    (revoked_at IS NOT NULL)::boolean AS revoked,
+    (renewed_at IS NOT NULL)::boolean AS renewed,
+    renewed_by_certificate_id
 FROM certificates
 WHERE id = $1;
 
@@ -422,3 +458,22 @@ SET duplicate_issued_at = now(),
     duplicate_reason = sqlc.arg(reason)::text,
     duplicate_issued_by_user_id = sqlc.narg(duplicate_issued_by_user_id)
 WHERE id = sqlc.arg(id);
+
+-- name: MarkCertificateRenewed :exec
+-- Przedłużenie odnotowujemy na STARYM dokumencie: wskazuje on następcę i przez to
+-- wypada z przypomnień o wygasaniu. Ważności nie traci - to nie jest unieważnienie.
+UPDATE certificates
+SET renewed_at = now(),
+    renewed_by_certificate_id = sqlc.arg(renewed_by_certificate_id),
+    renewed_by_user_id = sqlc.narg(renewed_by_user_id)
+WHERE id = sqlc.arg(id);
+
+-- name: ClearCertificateRenewalBySuccessor :exec
+-- Następca został skasowany, więc poprzednik przestaje być przedłużony i wraca
+-- do przypomnień o wygasaniu. Bez tego dokument bez żywego zamiennika zniknąłby
+-- z zestawień na zawsze.
+UPDATE certificates
+SET renewed_at = NULL,
+    renewed_by_certificate_id = NULL,
+    renewed_by_user_id = NULL
+WHERE renewed_by_certificate_id = sqlc.arg(successor_id);
