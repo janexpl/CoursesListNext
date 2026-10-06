@@ -129,6 +129,52 @@ webhooks:
         "5XX":
           description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
 
+  certificate.renewed:
+    post:
+      tags: [webhooks]
+      operationId: webhookCertificateRenewed
+      summary: Przedłużono zaświadczenie (kursant ma nowszy dokument)
+      description: >-
+        Wysyłane po `POST /certificates/{id}/renew` dla **przedłużanego** dokumentu wystawionego
+        z `Idempotency-Key`. Znaczy „przestań przypominać o tym numerze": poprzednik **nie traci
+        ważności** i nadal jest autentyczny — po prostu kursant ukończył kolejne szkolenie.
+
+        Brama stoi na starym dokumencie, nie na nowym. Przedłużenie dokumentu platformowego
+        wykonane w aplikacji webowej **dojdzie** do odbiorcy, mimo że nowy dokument nie ma klucza
+        idempotencji i nie wyśle własnego `certificate.issued`. Dlatego ładunek niesie dane obu
+        dokumentów: `renewed_by_*` może być pierwszą i jedyną informacją o następcy.
+
+        Kolejność zdarzeń między różnymi dokumentami nie jest gwarantowana — `certificate.issued`
+        następcy może dojść po tym zdarzeniu.
+      x-signature-header: X-Az-Signature
+      parameters:
+        - name: X-Az-Signature
+          in: header
+          required: true
+          description: >-
+            HMAC-SHA256 z **surowego** ciała żądania, kluczem jest sekret odbiorcy; hex, małe litery.
+            Licz z bajtów, które przyszły, i porównuj stałoczasowo.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookCertificateRenewed"
+      responses:
+        "200":
+          description: Przetworzone albo świadomie pominięte jako przestarzałe. Każde 2xx kończy doręczenie.
+        "400":
+          description: Brak wymaganego pola — błąd trwały, bez ponowień.
+        "401":
+          description: Zły podpis — błąd trwały, bez ponowień.
+        "422":
+          description: Nieznany dokument lub program — błąd trwały, bez ponowień.
+        "5XX":
+          description: Błąd przejściowy — doręczenie jest ponawiane (jak brak odpowiedzi i timeout).
+
   certificate.revoked:
     post:
       tags: [webhooks]
@@ -1789,6 +1835,88 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /certificates/{id}/renew:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [certificates]
+      operationId: renewCertificate
+      summary: Przedłużenie zaświadczenia (wystawienie następcy)
+      description: >-
+        **Powstaje NOWY dokument** dla tego samego kursanta i kursu, a wskazane zaświadczenie dostaje
+        `renewedAt` i `renewedByCertificateId`. Odpowiedź zawiera nowy dokument, nie przedłużany.
+
+        Przedłużenie **nie jest unieważnieniem**: stary dokument zostaje ważny do swojego terminu,
+        nadal się drukuje, nadal weryfikuje publicznie jako `valid` i nadal wolno go zmieniać,
+        duplikować oraz unieważniać. Znacznik wyłącza go wyłącznie z przypomnień o wygasaniu
+        (`GET /internal/notifications/expiring-certificates`) i z kafelka wygasających na pulpicie.
+
+        Kursanta i kursu **nie podaje się** — API bierze je z przedłużanego dokumentu, a pole spoza
+        schematu kończy się 400. Numer rejestru nadaje serwer jako kolejny w kursie i roku wynikającym
+        z `courseDateEnd` (bez niej z `courseDateStart`). Dlatego data wystawienia wcześniejsza niż
+        daty zaświadczeń o wyższych numerach w tym samym kursie i roku zostanie odrzucona jako
+        `invalid certificate data` — w praktyce przedłużaj z datą bieżącą.
+
+        Jeden dokument przedłuża się raz (`409`); kolejne szkolenie okresowe przedłuża już następcę,
+        więc łańcuchy są dozwolone. `Idempotency-Key` działa jak przy wystawianiu: ponowienie z tym
+        samym kluczem i ciałem zwraca `200` z tym samym dokumentem, a z innym ciałem `409`. Klucz
+        jest wspólną przestrzenią z `POST /certificates` — nie używaj tej samej wartości dla obu.
+      x-required-scope: certificates:write
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateRenew"
+      responses:
+        "201":
+          description: Nowe zaświadczenie (kształt jak w GET); `renewalOfCertificateId` wskazuje przedłużony dokument.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "200":
+          description: Ponowienie z tym samym `Idempotency-Key` i ciałem — ten sam dokument, nic nie powstało.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetailsResponse"
+        "400":
+          description: >-
+            `invalid certificate ID`, `invalid request body` (pole spoza schematu, np. `studentId`),
+            `invalid certificate data` (braki, złe daty, kolizja z chronologią rejestru),
+            `certificate date cannot be before course end date`, `certificate translation not found`,
+            `invalid Idempotency-Key header`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "Przedłużane zaświadczenie nie istnieje lub jest usunięte (`certificate not found`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            `certificate already renewed`, `certificate is revoked`,
+            `idempotency key reused with different payload`,
+            `registry number already taken for the given year`, a także `student not found`
+            i `course not found` — kursant albo kurs z przedłużanego dokumentu już nie istnieje.
+            Te dwa są konfliktem, a nie 404: 404 na tej trasie znaczy „nie ma takiego zaświadczenia".
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /certificates/{id}/audit-log:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -2990,6 +3118,11 @@ components:
         (kolejność pól i białe znaki JSON nie mają znaczenia; pominięty `languageCode` = `pl`). Klucz jest
         pamiętany co najmniej 30 dni od wystawienia; potem może zostać usunięty i ponowne użycie wystawi nowe
         zaświadczenie.
+
+        Przy `POST /certificates/{id}/renew` odcisk obejmuje dodatkowo **identyfikator przedłużanego
+        dokumentu**, a pominięty `languageCode` znaczy tam „język poprzednika", więc pominięcie i jawne
+        `"pl"` to dwa różne ciała. Przestrzeń kluczy jest wspólna dla obu tras: ta sama wartość użyta raz
+        do wystawienia i raz do przedłużenia da 409 `idempotency key reused with different payload`.
       schema:
         type: string
         minLength: 1
@@ -3204,6 +3337,36 @@ components:
           $ref: "#/components/schemas/Date"
         reason:
           type: string
+    WebhookCertificateRenewed:
+      type: object
+      additionalProperties: false
+      description: >-
+        Dokument `certificate_number` został przedłużony dokumentem `renewed_by_certificate_number`.
+        Stary zostaje ważny do `valid_until` — nie unieważniaj go, tylko przestań o nim przypominać.
+      required: [event, timestamp, certificate_number, valid_until, renewed_at, renewed_by_certificate_number, renewed_by_issued_at, renewed_by_valid_until, renewed_by_verification_code]
+      properties:
+        event:
+          const: certificate.renewed
+        timestamp:
+          $ref: "#/components/schemas/WebhookTimestamp"
+        certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        valid_until:
+          allOf:
+            - $ref: "#/components/schemas/NullableDate"
+          description: Termin ważności PRZEDŁUŻANEGO dokumentu; `null` dla bezterminowego.
+        renewed_at:
+          $ref: "#/components/schemas/Date"
+        renewed_by_certificate_number:
+          $ref: "#/components/schemas/WebhookCertificateNumber"
+        renewed_by_issued_at:
+          $ref: "#/components/schemas/Date"
+        renewed_by_valid_until:
+          allOf:
+            - $ref: "#/components/schemas/NullableDate"
+          description: Termin ważności NOWEGO dokumentu; `null` dla bezterminowego.
+        renewed_by_verification_code:
+          $ref: "#/components/schemas/VerificationCode"
     WebhookCertificateRevoked:
       type: object
       additionalProperties: false
@@ -3397,7 +3560,7 @@ components:
           description: "`null` = kursant bez firmy."
     StudentCertificate:
       type: object
-      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, revokedAt, duplicateIssuedAt]
+      required: [id, date, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, revokedAt, duplicateIssuedAt, renewedAt]
       properties:
         id:
           type: integer
@@ -3422,6 +3585,10 @@ components:
           $ref: "#/components/schemas/NullableLocalTimestamp"
         duplicateIssuedAt:
           $ref: "#/components/schemas/NullableLocalTimestamp"
+        renewedAt:
+          allOf:
+            - $ref: "#/components/schemas/NullableLocalTimestamp"
+          description: Niepuste, gdy kursant ma już nowszy dokument z tego kursu. To nie unieważnienie.
     StudentCertificatesResponse:
       type: object
       required: [data]
@@ -3772,7 +3939,7 @@ components:
         lub okresu ważności.
     CertificateListItem:
       type: object
-      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode, revokedAt, duplicateIssuedAt]
+      required: [id, date, studentName, companyName, courseName, courseSymbol, registryYear, registryNumber, courseDateStart, courseDateEnd, expiryDate, languageCode, revokedAt, duplicateIssuedAt, renewedAt]
       properties:
         id:
           type: integer
@@ -3806,6 +3973,10 @@ components:
           $ref: "#/components/schemas/NullableLocalTimestamp"
         duplicateIssuedAt:
           $ref: "#/components/schemas/NullableLocalTimestamp"
+        renewedAt:
+          allOf:
+            - $ref: "#/components/schemas/NullableLocalTimestamp"
+          description: Niepuste, gdy kursant ma już nowszy dokument z tego kursu. To nie unieważnienie.
     CertificateListResponse:
       type: object
       required: [data]
@@ -3854,7 +4025,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, duplicateIssuedAt, duplicateReason]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, duplicateIssuedAt, duplicateReason, renewedAt, renewedByCertificateId, renewalOfCertificateId]
       properties:
         id:
           type: integer
@@ -3949,6 +4120,41 @@ components:
           description: >-
             Powód ostatniego wystawienia duplikatu; `null`, dopóki wtórnika nie wystawiono. Razem
             z `duplicateIssuedAt` trafia na wydruk jako adnotacja „DUPLIKAT".
+        renewedAt:
+          allOf:
+            - $ref: "#/components/schemas/NullableLocalTimestamp"
+          description: >-
+            Kiedy dokument został przedłużony; `null`, dopóki nie ma następcy. Dokument przedłużony
+            zachowuje ważność - wypada tylko z zestawień wygasających.
+        renewedByCertificateId:
+          type: [integer, "null"]
+          format: int64
+          description: Identyfikator następcy, czyli dokumentu wystawionego w zamian; `null` bez przedłużenia.
+        renewalOfCertificateId:
+          type: [integer, "null"]
+          format: int64
+          description: >-
+            Identyfikator dokumentu, którego TEN jest przedłużeniem; `null`, gdy nie powstał przez
+            `POST /certificates/{id}/renew`. Wyliczane, nie przechowywane.
+    CertificateRenew:
+      type: object
+      additionalProperties: false
+      description: >-
+        Daty nowego dokumentu. Kursanta, kursu ani numeru rejestru się nie podaje: pierwsze dwa API
+        bierze z przedłużanego zaświadczenia, numer nadaje sam.
+      required: [certificateDate, courseDateStart]
+      properties:
+        certificateDate:
+          $ref: "#/components/schemas/Date"
+        courseDateStart:
+          $ref: "#/components/schemas/Date"
+        courseDateEnd:
+          $ref: "#/components/schemas/NullableDate"
+        languageCode:
+          type: string
+          description: >-
+            Język nowego dokumentu. Pominięty lub pusty oznacza język przedłużanego zaświadczenia.
+            Kurs musi mieć tłumaczenie na wskazany język.
     CertificateLifecycleReason:
       type: object
       additionalProperties: false
@@ -4057,7 +4263,7 @@ components:
       description: >-
         Dane zaświadczenia widoczne dla każdego, kto ma kod z dokumentu. Celowo węższe niż
         `CertificateDetails`: tylko to, co i tak widnieje na papierze.
-      required: [verificationCode, certificateNumber, studentName, courseName, courseDateStart, courseDateEnd, issuedAt, validUntil, status, expired, duplicateIssued, duplicateIssuedAt, revokedAt]
+      required: [verificationCode, certificateNumber, studentName, courseName, courseDateStart, courseDateEnd, issuedAt, validUntil, status, expired, duplicateIssued, duplicateIssuedAt, revokedAt, renewed]
       properties:
         verificationCode:
           $ref: "#/components/schemas/VerificationCode"
@@ -4085,7 +4291,8 @@ components:
           type: string
           enum: [valid, revoked]
           description: >-
-            Wystawienie duplikatu nie zmienia statusu - to ten sam dokument.
+            Wystawienie duplikatu nie zmienia statusu - to ten sam dokument. Przedłużenie również
+            nie: dokument z następcą pozostaje ważny i ma osobne pole `renewed`.
         expired:
           type: boolean
           description: >-
@@ -4099,6 +4306,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/NullableLocalTimestamp"
           description: Sam powód unieważnienia nie jest publikowany - bywa wewnętrzną notatką.
+        renewed:
+          type: boolean
+          description: >-
+            Czy posiadacz ma już nowsze zaświadczenie z tego kursu. Osobne pole, a NIE trzecia
+            wartość `status`: dokument przedłużony jest ważny. Numeru ani kodu następcy nie
+            ujawniamy - na tym papierze ich nie ma.
     CertificateCreate:
       type: object
       additionalProperties: false

@@ -7,6 +7,26 @@ e-learningowa mogła wydawać zaświadczenia za kursy ukończone zdalnie.
 Czytaj razem z `INTEGRATION.md` i `openapi.yaml` w tym repozytorium — one
 opisują stan dzisiejszy, ten plik opisuje różnicę.
 
+> **Nota po wdrożeniu (2026-10).** Dwie nazwy z tego dokumentu są **wycofane** i nie
+> istnieją w API — nie szukaj ich w `openapi.yaml`:
+>
+> - **`supersedesId`** (punkty 5.2 i 11) oraz **`supersedes_certificate_number`** i
+>   **`certificate.superseded`** (punkt 12). Założenie, że duplikat tworzy nowy dokument
+>   wskazujący oryginał, zostało odwrócone: **duplikat to ten sam dokument** z adnotacją
+>   „DUPLIKAT" i tą samą tożsamością (numer, kod weryfikacyjny, ważność). Kolumna
+>   `supersedes_id` powstała w migracji 0023 i została usunięta w 0025. Problem z punktu 12
+>   — nadpisanie oryginału danymi duplikatu — rozwiązano mocniej, niż proponował punkt 12:
+>   duplikat ma własne zdarzenie **`certificate.duplicate_issued`**, które niczego nie
+>   tworzy ani nie nadpisuje, więc pola rozróżniającego nie potrzeba.
+>
+> Czego za to w zleceniu nie było, a istnieje: **`POST /certificates/{id}/renew`**
+> (przedłużenie). To jedyna operacja, która **wystawia nowy dokument powiązany ze starym** —
+> tak, jak punkt 5.2 wyobrażał sobie duplikat. Powiązanie nazywa się `renewedByCertificateId`
+> i `renewalOfCertificateId`, a zdarzenie **`certificate.renewed`**. Różnica wobec tamtego
+> pomysłu jest istotna: stary dokument **nie jest zastąpiony ani unieważniony** — zostaje
+> ważny do swojego terminu, a znacznik wyłącza go tylko z przypomnień o wygasaniu.
+> Szczegóły w sekcji 5 i 6.7 `INTEGRATION.md`.
+
 ---
 
 ## 0. Kontekst: kto to woła i po co

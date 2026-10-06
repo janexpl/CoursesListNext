@@ -302,6 +302,35 @@ func TestRenewCertificateIsIdempotent(t *testing.T) {
 	}
 }
 
+// Udokumentowane w openapi.yaml i INTEGRATION.md: klucze idempotencji wystawiania
+// i przedłużania są jedną przestrzenią, a pominięty languageCode znaczy przy
+// przedłużaniu "język poprzednika", nie "pl".
+func TestRenewIdempotencyKeySpaceIsSharedWithIssuing(t *testing.T) {
+	e := requireEnv(t)
+	course := e.seedCourse(t)
+	key := fmt.Sprintf("shared-%d", nextSeed())
+
+	issued, _ := e.issueWithKey(t, course.ID, key)
+	reuse := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/renew", issued.ID),
+		renewPayload(), map[string]string{"Idempotency-Key": key})
+	if reuse.Status != http.StatusConflict || reuse.errorMessage(t) != "idempotency key reused with different payload" {
+		t.Fatalf("klucz użyty już przy wystawianiu: expected 409 idempotency key reused, got %d: %s", reuse.Status, reuse.Body)
+	}
+
+	// Pominięty languageCode to inne ciało niż jawne "pl".
+	predecessor := e.seedExpiringCertificate(t, course.ID, e.seedCompanyWithNotifications(t), 10)
+	renewKey := map[string]string{"Idempotency-Key": fmt.Sprintf("lang-%d", nextSeed())}
+	if first := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/renew", predecessor.ID), renewPayload(), renewKey); first.Status != http.StatusCreated {
+		t.Fatalf("przedłużenie bez languageCode: expected 201, got %d: %s", first.Status, first.Body)
+	}
+	explicit := renewPayload()
+	explicit["languageCode"] = "pl"
+	second := e.mustCall(t, http.MethodPost, fmt.Sprintf("/certificates/%d/renew", predecessor.ID), explicit, renewKey)
+	if second.Status != http.StatusConflict || second.errorMessage(t) != "idempotency key reused with different payload" {
+		t.Fatalf("jawne languageCode to inne ciało: expected 409 idempotency key reused, got %d: %s", second.Status, second.Body)
+	}
+}
+
 func TestRenewCertificateRequiresCertificatesWriteScope(t *testing.T) {
 	e := requireEnv(t)
 	course := e.seedCourse(t)

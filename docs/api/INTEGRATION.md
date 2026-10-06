@@ -26,7 +26,7 @@ Firma ──< Kursant ──< Zaświadczenie >── Kurs ──< Tłumaczenie k
 | Firma | `companies` | Pracodawca kursantów. NIP unikalny. Może mieć `externalId` platformy. Może dostawać e-maile o wygasających zaświadczeniach. |
 | Kursant | `students` | Opcjonalnie przypisany do jednej firmy. Może mieć `externalId` platformy. |
 | Kurs | `courses` | Symbol unikalny. Zawiera program szkolenia i szablon HTML zaświadczenia (+ tłumaczenia). Flaga `deliveredByPlatform` wyznacza katalog platformy. |
-| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok), i kod weryfikacyjny. Może zostać unieważnione; wtórnik to ten sam dokument z adnotacją „DUPLIKAT". |
+| Zaświadczenie | `certificates` | Wystawiane kursantowi z kursu. Ma numer rejestru `numer/SYMBOL/rok`, unikalny w obrębie (kurs, rok), i kod weryfikacyjny. Może zostać unieważnione albo przedłużone nowym dokumentem; wtórnik to ten sam dokument z adnotacją „DUPLIKAT". |
 | Dziennik szkolenia | `journals` | Dokumentacja jednej edycji kursu: sesje, uczestnicy, obecność, skany. Status `draft` → `closed`. |
 | Uczestnik | `journals/{id}/attendees` | Kursant dodany do dziennika. **Ma własne `id`, różne od `studentId`.** |
 
@@ -253,16 +253,34 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    w rejestrze i nie wpływa na ważność.
    Operację można powtórzyć (kursant może zgubić dokument ponownie) — liczy się data ostatniego wystawienia,
    a każde zostaje w historii zmian. Unieważnionego dokumentu nie da się zduplikować (409 `certificate is revoked`).
-5. Przypomnienia o wygasaniu (pulpit, `/internal/notifications/expiring-certificates`) pomijają dokumenty
-   unieważnione. Wystawienie wtórnika niczego tu nie zmienia — to nadal ten sam dokument.
-6. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
+5. `POST /certificates/{id}/renew` **przedłuża** zaświadczenie: wystawia **nowy dokument** dla tego samego
+   kursanta i kursu (kolejny numer rejestru, nowy kod weryfikacyjny), a wskazany dostaje `renewedAt`
+   i `renewedByCertificateId`. Odpowiedź `201` zawiera **nowy** dokument, w którym `renewalOfCertificateId`
+   wskazuje przedłużony. Kursanta i kursu się nie podaje — API bierze je ze starego dokumentu, a pole spoza
+   schematu (np. `studentId`) kończy się 400.
+   **To nie jest unieważnienie.** Stary dokument zostaje ważny do swojego terminu, nadal się drukuje, nadal
+   weryfikuje publicznie jako `valid` i nadal wolno go zmieniać, duplikować oraz unieważniać. Znacznik
+   wyłącza go **wyłącznie** z przypomnień o wygasaniu (punkt 6).
+   Jeden dokument przedłuża się raz (409 `certificate already renewed`); kolejne szkolenie okresowe przedłuża
+   już następcę, więc łańcuchy są dozwolone. Unieważnionego nie da się przedłużyć (409 `certificate is revoked`).
+   `Idempotency-Key` działa jak przy wystawianiu, ale **przestrzeń kluczy jest wspólna** z `POST /certificates`
+   — nie używaj tej samej wartości dla wystawienia i przedłużenia, bo drugie żądanie zobaczy inne ciało i da 409.
+   Numer nadaje serwer jako kolejny w kursie i roku nowego dokumentu, dlatego data wystawienia wcześniejsza niż
+   daty zaświadczeń o wyższych numerach w tym kursie i roku zostanie odrzucona jako `invalid certificate data`.
+   W praktyce przedłużaj z datą bieżącą.
+   Gdy następca zostanie usunięty (`DELETE`), znacznik u poprzednika jest zdejmowany w tym samym poleceniu
+   i dokument wraca do przypomnień — inaczej zniknąłby z nich na zawsze, mając zamiennik, którego już nie ma.
+6. Przypomnienia o wygasaniu (pulpit, `/internal/notifications/expiring-certificates`) pomijają dokumenty
+   unieważnione **oraz przedłużone** (`renewedAt` niepuste) — w drugim przypadku sprawa jest już załatwiona
+   nowym dokumentem. Wystawienie wtórnika niczego tu nie zmienia — to nadal ten sam dokument.
+7. Każde zaświadczenie ma `verificationCode` — 12 znaków z alfabetu bez `0`, `O`, `1`, `I`, `l`, losowy, unikalny
    i niezmienny. Dostają go wszystkie dokumenty (API, aplikacja webowa, dziennik, także te sprzed wprowadzenia kodu).
    Zwracany w `CertificateDetails` i w odpowiedzi na `POST /certificates`. Zaświadczenie po kodzie:
    `GET /certificates/by-verification-code/{code}` (`certificates:read`, wielkość liter bez znaczenia).
    Na wydruku PDF kod pojawia się jako **kod QR** prowadzący do publicznej strony weryfikacji
    (`GET /public/certificates/{code}`, sekcja 6.8), podpisany „Sprawdź ważność" — samego kodu
    tekstem na dokumencie nie ma.
-7. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
+8. PESEL kursanta **nie jest walidowany** — pole przechowuje też numery dokumentów cudzoziemców
    (w obecnych danych większość wartości nie jest poprawnym PESEL-em). Nie odrzucaj takich wartości po swojej stronie.
 
 ### Kursy
@@ -470,6 +488,11 @@ GET /api/v1/certificates?dateFrom=2021-01-01&dateTo=2021-12-31&limit=100   # cer
 
 Pole `expiryDate` jest wyliczane (`courseDateEnd` + lata ważności × 365 dni) i nie da się po nim filtrować w API.
 
+Dokument **przedłużony** (`renewedAt` niepuste) nie pojawia się ani na pulpicie, ani w przypomnieniach:
+kursant ma już nowsze zaświadczenie. Sam dokument pozostaje ważny i widoczny w `GET /certificates/{id}`
+oraz na listach — zniknął tylko z zestawienia wygasających. Jeśli budujesz własne przypomnienia na
+`GET /certificates`, pomijaj wiersze z niepustym `renewedAt`, tak jak pomijasz `revokedAt`.
+
 ### 6.6. Synchronizacja katalogu kursów
 
 Katalog platformy to kursy z `deliveredByPlatform = true`. Flagę ustawia CoursesList (strona kursu w aplikacji
@@ -538,6 +561,7 @@ ok := hmac.Equal([]byte(r.Header.Get("X-Az-Signature")), []byte(hex.EncodeToStri
 | `certificate.issued` | `POST /certificates` z `Idempotency-Key` | `timestamp`, `idempotency_key`, `certificate_number`, `issued_at`; opcjonalnie `valid_until`, `pdf_url`, `verification_code` |
 | `certificate.duplicate_issued` | wystawienie wtórnika (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `duplicate_issued_at`, `reason` |
 | `certificate.revoked` | unieważnienie (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `reason` |
+| `certificate.renewed` | przedłużenie, czyli wystawienie następcy (API lub aplikacja webowa) | `timestamp`, `certificate_number`, `valid_until`, `renewed_at`, `renewed_by_certificate_number`, `renewed_by_issued_at`, `renewed_by_valid_until`, `renewed_by_verification_code` |
 | `certificate.validity_changed` | `PATCH /certificates/{id}` zmienił termin ważności | `timestamp`, `certificate_number`, `valid_until` (`null` = bez terminu) |
 | `program.updated` | zmiana nazwy, programu lub okresu ważności kursu z `deliveredByPlatform` | `timestamp`, `external_program_id` (= `id` kursu) |
 
@@ -554,6 +578,15 @@ Wystawienie wtórnika tego samego zaświadczenia:
  "certificate_number":"12/BHP/2026","duplicate_issued_at":"2026-10-02","reason":"Kursant zgubił oryginał"}
 ```
 
+Przedłużenie zaświadczenia (poprzednik zostaje ważny do `valid_until`):
+
+```json
+{"event":"certificate.renewed","timestamp":"2026-10-06T09:12:40.771004Z",
+ "certificate_number":"12/BHP/2026","valid_until":"2026-11-14","renewed_at":"2026-10-06",
+ "renewed_by_certificate_number":"118/BHP/2026","renewed_by_issued_at":"2026-10-06",
+ "renewed_by_valid_until":"2031-10-05","renewed_by_verification_code":"R4TM9XQA7KZB"}
+```
+
 - **Zdarzenia o zaświadczeniach dotyczą wyłącznie dokumentów wystawionych z `Idempotency-Key`**. Dokumenty
   z aplikacji webowej i dzienników nie generują zdarzeń — odbiorca nie miałby ich z czym powiązać.
 - **Duplikat nie jest nowym dokumentem.** `certificate.duplicate_issued` mówi tylko, że dla zaświadczenia
@@ -561,6 +594,22 @@ Wystawienie wtórnika tego samego zaświadczenia:
   bez zmian, więc **nie twórz drugiego dokumentu** — odnotuj datę. Duplikat bywa wystawiany w aplikacji
   webowej (kursant zgubił oryginał), więc zdarzenie przychodzi też bez udziału platformy. Ponowne wystawienie
   wtórnika wysyła kolejne zdarzenie z nowszą datą.
+- **Przedłużenie wysyła dwa zdarzenia o dwóch różnych dokumentach**: `certificate.issued` o następcy
+  (jeśli przedłużenie wykonano z `Idempotency-Key`) i `certificate.renewed` o poprzedniku.
+  `certificate.renewed` znaczy „przestań przypominać o tym numerze", a **nie** „ten dokument przestał być
+  ważny" — poprzednik zachowuje ważność do `valid_until` i nadal weryfikuje się publicznie jako `valid`.
+- **Brama `certificate.renewed` stoi na starym dokumencie, nie na nowym.** Jest to jedyna asymetria w tych
+  zdarzeniach i łatwo ją źle odczytać. Przypadek, o który chodzi: dokument wystawiła platforma
+  (ma `Idempotency-Key`), a przedłużył go pracownik w aplikacji webowej. Wtedy `certificate.renewed`
+  **przyjdzie** (odbiorca zna ten numer i musi przestać o nim przypominać), ale `certificate.issued`
+  o nowym dokumencie **nie przyjdzie** — nowy nie ma klucza idempotencji, więc odbiorca nie miałby go
+  z czym powiązać. Dlatego dane nowego dokumentu jadą w ładunku `certificate.renewed` jako `renewed_by_*`:
+  bywają jedyną informacją o następcy. Odwrotnie: przedłużenie dokumentu, który nie powstał przez API,
+  nie wysyła niczego.
+- **Kolejność między różnymi dokumentami nie jest gwarantowana.** Gwarancja dotyczy zdarzeń o jednym
+  zaświadczeniu, a tu podmioty są dwa, więc `certificate.issued` następcy może dojść po
+  `certificate.renewed` poprzednika. Nie zakładaj, że w chwili odbioru `certificate.renewed` numer
+  z `renewed_by_certificate_number` jest już u ciebie znany.
 - `pdf_url` wymaga klucza API z `certificates:read`; dla unieważnionego dokumentu zwraca 409.
 - `timestamp` to ISO 8601 w UTC z `Z` i mikrosekundami. Rośnie ściśle w obrębie zaświadczenia (i kursu).
 
@@ -604,7 +653,10 @@ GET /api/v1/public/certificates/{code}
 - **Bez uwierzytelniania** — żadnego klucza API ani sesji; to jedyna taka trasa poza `/healthz`.
 - Zwraca wyłącznie to, co i tak widnieje na papierze: `studentName` (imię, drugie imię, nazwisko),
   `certificateNumber`, `courseName`, `courseDateStart`, `courseDateEnd`, `issuedAt`, `validUntil`,
-  `status` (`valid` albo `revoked`), `expired`, `duplicateIssued`, `duplicateIssuedAt`, `revokedAt`.
+  `status` (`valid` albo `revoked`), `expired`, `duplicateIssued`, `duplicateIssuedAt`, `revokedAt`,
+  `renewed`.
+  `status` pozostaje enumem **dwuwartościowym**: przedłużenie nie jest trzecią wartością, bo dokument
+  z następcą jest ważny. Numeru ani kodu następcy nie ujawniamy — na tym papierze ich nie ma.
   **Bez PESEL, bez daty i miejsca urodzenia, bez firmy i bez powodu unieważnienia** — powód bywa
   wewnętrzną notatką.
 - Kod jest normalizowany do wielkich liter. Zły format to `400 invalid verification code`,
@@ -690,8 +742,8 @@ obsługują — nagłówek `Idempotency-Key` jest przez nie ignorowany.
 - sterowania kodem QR na wydruku — pojawia się na każdym dokumencie, gdy adres weryfikacji jest
   skonfigurowany; jego miejsce wybiera się wyłącznie znacznikiem `{{ kod_qr }}` w szablonie kursu
   (bez znacznika ląduje w prawym dolnym rogu);
-- idempotencji operacji zapisu innych niż `POST /certificates` (poza naturalnie idempotentnymi
-  `PUT .../by-external-id/...`, unieważnieniem i duplikatem);
+- idempotencji operacji zapisu innych niż `POST /certificates` i `POST /certificates/{id}/renew`
+  (poza naturalnie idempotentnymi `PUT .../by-external-id/...`, unieważnieniem i duplikatem);
 - operacji zbiorczych (np. obecność wielu osób jednym żądaniem);
 - usuwania kursantów, firm i kursów;
 - wersjonowania poza prefiksem `/api/v1` — specyfikacja opisuje stan kodu z gałęzi `api_and_webhook`
