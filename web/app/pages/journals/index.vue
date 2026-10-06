@@ -247,13 +247,12 @@ function companyLabel(journal: JournalSummary) {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Dzienniki
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Dzienniki szkoleń
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Kontroluj otwarte i zamknięte dzienniki szkoleniowe, filtruj je po statusie i terminach
-          oraz przygotowuj grunt pod uzupełnianie uczestników i przebiegu zajęć.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Dzienniki szkoleń
+          </h1>
+          <HelpHint text="Kontroluj otwarte i zamknięte dzienniki szkoleniowe, filtruj je po statusie i terminach oraz przygotowuj grunt pod uzupełnianie uczestników i przebiegu zajęć." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -364,10 +363,8 @@ function companyLabel(journal: JournalSummary) {
         </label>
       </div>
 
-      <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-xs leading-5 text-slate-500">
-          Filtry obejmują całą listę dzienników, nie tylko wpisy widoczne na ekranie.
-        </p>
+      <div class="mt-4 flex flex-wrap items-center justify-end gap-3">
+        <HelpHint text="Filtry obejmują całą listę dzienników, nie tylko wpisy widoczne na ekranie." />
 
         <button
           type="button"

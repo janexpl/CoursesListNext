@@ -311,12 +311,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Kursanci
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Nowy kursant
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dodaj nową osobę do bazy i opcjonalnie przypisz ją od razu do firmy.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Nowy kursant
+          </h1>
+          <HelpHint text="Dodaj nową osobę do bazy i opcjonalnie przypisz ją od razu do firmy." />
+        </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <span
@@ -402,23 +402,23 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Dane osobowe
-            </h2>
-            <p class="text-sm text-slate-500">
-              Najpierw uzupełnij pola wymagane. Dane dodatkowe możesz rozwinąć niżej.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Dane osobowe
+              </h2>
+              <HelpHint text="Najpierw uzupełnij pola wymagane. Dane dodatkowe możesz rozwinąć niżej." />
+            </div>
           </div>
 
           <div class="mt-5 rounded-md border border-slate-200 bg-slate-50/80 p-4">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-slate-900">
-                  Dane wymagane
-                </h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">
-                  Wystarczą, aby zapisać kursanta i później wystawiać mu zaświadczenia.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Dane wymagane
+                  </h3>
+                  <HelpHint text="Wystarczą, aby zapisać kursanta i później wystawiać mu zaświadczenia." />
+                </div>
               </div>
 
               <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">
@@ -542,12 +542,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Firma
-            </h2>
-            <p class="text-sm text-slate-500">
-              Możesz przypisać kursanta do istniejącej firmy już na etapie tworzenia.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Firma
+              </h2>
+              <HelpHint text="Możesz przypisać kursanta do istniejącej firmy już na etapie tworzenia." />
+            </div>
           </div>
 
           <div class="relative mt-5 space-y-3">
@@ -661,12 +661,12 @@ useSeoMeta({
             >
               <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h3 class="text-base font-semibold text-slate-900">
-                    Szybkie dodanie firmy
-                  </h3>
-                  <p class="mt-1 text-sm text-slate-500">
-                    Po zapisaniu nowa firma zostanie od razu przypisana do kursanta.
-                  </p>
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-base font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                      Szybkie dodanie firmy
+                    </h3>
+                    <HelpHint text="Po zapisaniu nowa firma zostanie od razu przypisana do kursanta." />
+                  </div>
                 </div>
 
                 <button
@@ -688,12 +688,12 @@ useSeoMeta({
               <div class="mt-4 rounded-md border border-slate-200 bg-white/90 p-4">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <h4 class="text-sm font-semibold text-slate-900">
-                      Dane wymagane
-                    </h4>
-                    <p class="mt-1 text-xs leading-5 text-slate-500">
-                      Wystarczą, aby zapisać firmę i od razu przypisać ją do kursanta.
-                    </p>
+                    <div class="flex items-center gap-2">
+                      <h4 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                        Dane wymagane
+                      </h4>
+                      <HelpHint text="Wystarczą, aby zapisać firmę i od razu przypisać ją do kursanta." />
+                    </div>
                   </div>
 
                   <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">

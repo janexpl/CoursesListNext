@@ -25,6 +25,9 @@ const lifecycleAction = ref<LifecycleAction | null>(null)
 const lifecycleReason = ref('')
 const lifecyclePending = ref(false)
 const lifecycleError = ref('')
+const lifecycleActionHint = computed(() => lifecycleAction.value === 'revoke'
+  ? 'Dokument pozostanie w rejestrze jako unieważniony, a jego numer nie zostanie użyty ponownie.'
+  : 'Zaświadczenie zachowa numer i treść, a na wydruku pojawi się adnotacja „DUPLIKAT” z dzisiejszą datą. Kolejne wystawienie duplikatu nadpisuje tę datę.')
 
 // Przedłużenie ma własny stan, a nie wspólny z panelem powodu: tamten renderuje jedno
 // pole tekstowe, ten trzy daty, i oba panele nie powinny się nawzajem czyścić.
@@ -1020,12 +1023,12 @@ useSeoMeta({
     >
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Zaświadczenia</p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          {{ certificateNumber || 'Szczegół zaświadczenia' }}
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Szczegóły wybranego wpisu z rejestru wraz z danymi kursanta, kursem i zakresem dat.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            {{ certificateNumber || 'Szczegół zaświadczenia' }}
+          </h1>
+          <HelpHint text="Szczegóły wybranego wpisu z rejestru wraz z danymi kursanta, kursem i zakresem dat." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -1159,11 +1162,14 @@ useSeoMeta({
         v-if="certificate.revokedAt"
         class="rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-sm text-red-800"
       >
-        <p class="text-base font-semibold text-red-900">
-          Zaświadczenie unieważnione {{ certificate.revokedAt }}
-        </p>
+        <div class="flex items-center gap-2">
+          <p class="text-base font-semibold text-red-900 min-w-0 [overflow-wrap:anywhere]">
+            Zaświadczenie unieważnione {{ certificate.revokedAt }}
+          </p>
+          <HelpHint text="Numer w rejestrze pozostaje zajęty, a wydruk jest niedostępny." />
+        </div>
         <p class="mt-1">
-          Powód: {{ certificate.revokeReason }}. Numer w rejestrze pozostaje zajęty, a wydruk jest niedostępny.
+          Powód: {{ certificate.revokeReason }}.
         </p>
       </div>
 
@@ -1171,12 +1177,17 @@ useSeoMeta({
         v-if="certificate.duplicateIssuedAt"
         class="rounded-xl border border-sky-200 bg-sky-50 px-6 py-5 text-sm text-sky-900"
       >
-        <p class="text-base font-semibold text-sky-950">
-          Duplikat wystawiony {{ certificate.duplicateIssuedAt }}
-        </p>
-        <p class="mt-1">
-          <span v-if="certificate.duplicateReason">Powód: {{ certificate.duplicateReason }}. </span>
-          To ten sam dokument o tym samym numerze — wydruk nosi adnotację „DUPLIKAT" z datą wystawienia.
+        <div class="flex items-center gap-2">
+          <p class="text-base font-semibold text-sky-950 min-w-0 [overflow-wrap:anywhere]">
+            Duplikat wystawiony {{ certificate.duplicateIssuedAt }}
+          </p>
+          <HelpHint text="To ten sam dokument o tym samym numerze — wydruk nosi adnotację „DUPLIKAT” z datą wystawienia." />
+        </div>
+        <p
+          v-if="certificate.duplicateReason"
+          class="mt-1"
+        >
+          Powód: {{ certificate.duplicateReason }}.
         </p>
       </div>
 
@@ -1184,14 +1195,17 @@ useSeoMeta({
         v-if="certificate.renewedAt"
         class="rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-5 text-sm text-emerald-900"
       >
-        <p class="text-base font-semibold text-emerald-950">
-          Zaświadczenie przedłużone {{ certificate.renewedAt }}
-        </p>
-        <p class="mt-1">
-          Kursant ma nowsze zaświadczenie z tego kursu. Ten dokument pozostaje ważny do swojego
-          terminu i dalej się drukuje — przestaje tylko pojawiać się w zestawieniu wygasających.
+        <div class="flex items-center gap-2">
+          <p class="text-base font-semibold text-emerald-950 min-w-0 [overflow-wrap:anywhere]">
+            Zaświadczenie przedłużone {{ certificate.renewedAt }}
+          </p>
+          <HelpHint text="Kursant ma nowsze zaświadczenie z tego kursu. Ten dokument pozostaje ważny do swojego terminu i dalej się drukuje — przestaje tylko pojawiać się w zestawieniu wygasających." />
+        </div>
+        <p
+          v-if="certificate.renewedByCertificateId"
+          class="mt-1"
+        >
           <NuxtLink
-            v-if="certificate.renewedByCertificateId"
             :to="`/certificates/${certificate.renewedByCertificateId}`"
             class="font-medium underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-500"
           >
@@ -1221,19 +1235,17 @@ useSeoMeta({
       >
         <div class="space-y-4">
           <div class="space-y-2">
-            <h2 class="text-lg font-semibold text-emerald-900">
-              Przedłuż zaświadczenie
-            </h2>
-            <p class="text-sm leading-6 text-emerald-900">
-              Powstanie nowe zaświadczenie dla tego samego kursanta i kursu, z kolejnym numerem
-              w rejestrze nadanym przez serwer. Ten dokument zostanie oznaczony jako przedłużony:
-              zachowa ważność i wydruk, ale zniknie z zestawienia wygasających.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-emerald-900 min-w-0 [overflow-wrap:anywhere]">
+                Przedłuż zaświadczenie
+              </h2>
+              <HelpHint text="Powstanie nowe zaświadczenie dla tego samego kursanta i kursu, z kolejnym numerem w rejestrze nadanym przez serwer. Ten dokument zostanie oznaczony jako przedłużony: zachowa ważność i wydruk, ale zniknie z zestawienia wygasających." />
+            </div>
           </div>
 
           <div class="grid gap-4 md:grid-cols-3">
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-emerald-900">Data wystawienia</span>
+              <span class="flex items-center gap-2 text-sm font-medium text-emerald-900">Data wystawienia <HelpHint text="Data wystawienia nie może być wcześniejsza niż zakończenie szkolenia ani wcześniejsza niż daty zaświadczeń o wyższych numerach w tym kursie i roku." /></span>
               <input
                 v-model="renewForm.certificateDate"
                 type="date"
@@ -1253,7 +1265,7 @@ useSeoMeta({
             </label>
 
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-emerald-900">Zakończenie szkolenia</span>
+              <span class="flex items-center gap-2 text-sm font-medium text-emerald-900">Zakończenie szkolenia <HelpHint text="Od daty zakończenia szkolenia liczony jest termin ważności nowego dokumentu." /></span>
               <input
                 v-model="renewForm.courseDateEnd"
                 type="date"
@@ -1261,12 +1273,6 @@ useSeoMeta({
               >
             </label>
           </div>
-
-          <p class="text-xs leading-5 text-emerald-800">
-            Od daty zakończenia szkolenia liczony jest termin ważności nowego dokumentu.
-            Data wystawienia nie może być wcześniejsza niż zakończenie szkolenia ani wcześniejsza
-            niż daty zaświadczeń o wyższych numerach w tym kursie i roku.
-          </p>
 
           <div
             v-if="renewError"
@@ -1303,15 +1309,19 @@ useSeoMeta({
       >
         <div class="space-y-4">
           <div class="space-y-2">
-            <h2 class="text-lg font-semibold text-amber-900">
-              {{ lifecycleAction === 'revoke' ? 'Unieważnij zaświadczenie' : 'Wystaw duplikat zaświadczenia' }}
-            </h2>
-            <p class="text-sm leading-6 text-amber-900">
-              {{
-                lifecycleAction === 'revoke'
-                  ? 'Dokument pozostanie w rejestrze jako unieważniony, a jego numer nie zostanie użyty ponownie. Operacji nie można cofnąć.'
-                  : 'Zaświadczenie zachowa numer i treść, a na wydruku pojawi się adnotacja „DUPLIKAT" z dzisiejszą datą. Kolejne wystawienie duplikatu nadpisuje tę datę.'
-              }}
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-amber-900 min-w-0 [overflow-wrap:anywhere]">
+                {{ lifecycleAction === 'revoke' ? 'Unieważnij zaświadczenie' : 'Wystaw duplikat zaświadczenia' }}
+              </h2>
+              <HelpHint :text="lifecycleActionHint" />
+            </div>
+            <!-- Ostrzeżenie o nieodwracalności zostaje na wierzchu: schowane w podpowiedzi
+                 łatwo je przeoczyć przed kliknięciem. -->
+            <p
+              v-if="lifecycleAction === 'revoke'"
+              class="text-sm font-medium text-amber-900"
+            >
+              Operacji nie można cofnąć.
             </p>
           </div>
 
@@ -1363,12 +1373,12 @@ useSeoMeta({
             <p class="text-sm font-medium uppercase tracking-[0.16em] text-red-700">
               Operacja administracyjna
             </p>
-            <h2 class="text-lg font-semibold text-red-900">
-              Usuń zaświadczenie z aktywnego obiegu
-            </h2>
-            <p class="text-sm leading-6 text-red-800">
-              Rekord zostanie usunięty logicznie. Numer w rejestrze pozostanie zajęty.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-red-900 min-w-0 [overflow-wrap:anywhere]">
+                Usuń zaświadczenie z aktywnego obiegu
+              </h2>
+              <HelpHint text="Rekord zostanie usunięty logicznie. Numer w rejestrze pozostanie zajęty." />
+            </div>
           </div>
 
           <label class="block space-y-2">

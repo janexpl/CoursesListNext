@@ -524,13 +524,12 @@ async function onSubmit() {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Zaświadczenia
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Nowe zaświadczenie
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Wybierz kursanta i kurs, ustaw daty oraz numer rejestru, a następnie zapisz nowe
-          zaświadczenie w obecnej bazie.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Nowe zaświadczenie
+          </h1>
+          <HelpHint text="Wybierz kursanta i kurs, ustaw daty oraz numer rejestru, a następnie zapisz nowe zaświadczenie w obecnej bazie." />
+        </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <span
@@ -699,12 +698,12 @@ async function onSubmit() {
           >
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 class="text-base font-semibold text-slate-900">
-                  Szybkie dodanie kursanta
-                </h3>
-                <p class="mt-1 text-sm text-slate-500">
-                  Po zapisaniu nowy kursant zostanie od razu wybrany do zaświadczenia.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Szybkie dodanie kursanta
+                  </h3>
+                  <HelpHint text="Po zapisaniu nowy kursant zostanie od razu wybrany do zaświadczenia." />
+                </div>
               </div>
 
               <button
@@ -726,12 +725,12 @@ async function onSubmit() {
             <div class="mt-4 rounded-md border border-slate-200 bg-white/90 p-4">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h4 class="text-sm font-semibold text-slate-900">
-                    Dane wymagane
-                  </h4>
-                  <p class="mt-1 text-xs leading-5 text-slate-500">
-                    Wystarczą do szybkiego utworzenia kursanta i przypisania go do zaświadczenia.
-                  </p>
+                  <div class="flex items-center gap-2">
+                    <h4 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                      Dane wymagane
+                    </h4>
+                    <HelpHint text="Wystarczą do szybkiego utworzenia kursanta i przypisania go do zaświadczenia." />
+                  </div>
                 </div>
 
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">
@@ -1040,9 +1039,7 @@ async function onSubmit() {
               >
                 Dodaj nowy kurs
               </NuxtLink>
-              <span class="text-xs text-slate-400">
-                Zachowamy wybranego kursanta i daty.
-              </span>
+              <HelpHint text="Zachowamy wybranego kursanta i daty." />
             </div>
           </div>
 
@@ -1062,16 +1059,14 @@ async function onSubmit() {
           </div>
 
           <div class="mt-4 flex justify-end">
-            <div class="flex flex-col items-end gap-2">
+            <div class="flex items-center gap-2">
               <NuxtLink
                 :to="newCourseLink"
                 class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
               >
                 Nowy kurs
               </NuxtLink>
-              <p class="text-xs text-slate-400">
-                Otworzy się osobny formularz, a po zapisie wrócisz tutaj.
-              </p>
+              <HelpHint text="Otworzy się osobny formularz, a po zapisie wrócisz tutaj." />
             </div>
           </div>
         </section>
@@ -1159,9 +1154,7 @@ async function onSubmit() {
               Pobierz kolejny numer
             </button>
 
-            <p class="text-sm text-slate-500">
-              Numer zostanie pobrany automatycznie po wyborze kursu i roku.
-            </p>
+            <HelpHint text="Numer zostanie pobrany automatycznie po wyborze kursu i roku." />
           </div>
         </section>
 
@@ -1181,9 +1174,7 @@ async function onSubmit() {
             {{ submitPending ? 'Zapisywanie...' : 'Zapisz zaświadczenie' }}
           </button>
 
-          <span class="text-sm text-slate-500">
-            Po zapisaniu numer rejestru zostanie odświeżony.
-          </span>
+          <HelpHint text="Po zapisaniu numer rejestru zostanie odświeżony." />
         </div>
       </form>
 
@@ -1192,12 +1183,12 @@ async function onSubmit() {
           <p class="text-sm uppercase tracking-[0.18em] text-sky-300">
             Numer zaświadczenia
           </p>
-          <p class="mt-4 text-3xl font-semibold tracking-tight">
-            {{ certificateNumberPreview }}
-          </p>
-          <p class="mt-3 text-sm leading-6 text-slate-300">
-            Podgląd numeru na podstawie wybranego kursu oraz bieżącego roku rejestru.
-          </p>
+          <div class="mt-4 flex items-center gap-2">
+            <p class="text-3xl font-semibold tracking-tight min-w-0 [overflow-wrap:anywhere]">
+              {{ certificateNumberPreview }}
+            </p>
+            <HelpHint text="Podgląd numeru na podstawie wybranego kursu oraz bieżącego roku rejestru." />
+          </div>
         </section>
 
         <section class="rounded-lg border border-slate-200 bg-white/90 p-6 shadow-sm">

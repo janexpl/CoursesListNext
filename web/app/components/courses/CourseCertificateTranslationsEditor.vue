@@ -343,6 +343,7 @@ ${templatePreviewQrCss}
             <h2 class="text-lg font-semibold text-slate-900">
               Wersje obcojęzyczne
             </h2>
+            <HelpHint text="Dodaj kompletne wersje zaświadczenia dla innych języków. Przy zapisie wysyłana jest cała aktualna lista." />
             <span class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
               {{ translations.length }} języków
             </span>
@@ -355,10 +356,6 @@ ${templatePreviewQrCss}
               {{ translations.length > 0 ? `${readyTranslationsCount}/${translations.length} gotowych` : 'Sekcja opcjonalna' }}
             </span>
           </div>
-
-          <p class="max-w-3xl text-sm leading-6 text-slate-500">
-            Dodaj kompletne wersje zaświadczenia dla innych języków. Przy zapisie wysyłana jest cała aktualna lista.
-          </p>
         </div>
 
         <button
@@ -418,6 +415,7 @@ ${templatePreviewQrCss}
                 <h3 class="text-lg font-semibold text-slate-900">
                   {{ getLanguageLabel(activeTranslation.languageCode) }}
                 </h3>
+                <HelpHint text="Ustal kod języka, przetłumacz nazwę kursu i przygotuj komplet programu oraz szablonu." />
                 <span
                   class="inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium"
                   :class="isCourseCertificateTranslationReady(activeTranslation, translations)
@@ -427,10 +425,6 @@ ${templatePreviewQrCss}
                   {{ isCourseCertificateTranslationReady(activeTranslation, translations) ? 'Gotowe do zapisu' : 'Wymaga uzupełnienia' }}
                 </span>
               </div>
-
-              <p class="text-sm text-slate-500">
-                Ustal kod języka, przetłumacz nazwę kursu i przygotuj komplet programu oraz szablonu.
-              </p>
             </div>
 
             <button
@@ -479,12 +473,12 @@ ${templatePreviewQrCss}
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div class="space-y-1">
-              <h3 class="text-lg font-semibold text-slate-900">
-                Program w wybranym języku
-              </h3>
-              <p class="text-sm text-slate-500">
-                Tlumacz tematy i zachowaj odpowiednie liczby godzin teorii oraz praktyki.
-              </p>
+              <div class="flex items-center gap-2">
+                <h3 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                  Program w wybranym języku
+                </h3>
+                <HelpHint text="Tłumacz tematy i zachowaj odpowiednie liczby godzin teorii oraz praktyki." />
+              </div>
             </div>
 
             <button
@@ -505,12 +499,12 @@ ${templatePreviewQrCss}
             >
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                    Temat {{ index + 1 }}
-                  </p>
-                  <p class="mt-1 text-sm text-slate-500">
-                    Przetłumacz nazwę tematu i skoryguj godziny tylko wtedy, gdy to potrzebne.
-                  </p>
+                  <div class="flex items-center gap-2">
+                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400 min-w-0 [overflow-wrap:anywhere]">
+                      Temat {{ index + 1 }}
+                    </p>
+                    <HelpHint text="Przetłumacz nazwę tematu i skoryguj godziny tylko wtedy, gdy to potrzebne." />
+                  </div>
                 </div>
 
                 <div class="flex items-center gap-2 self-start sm:self-auto">
@@ -599,12 +593,12 @@ ${templatePreviewQrCss}
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h3 class="text-lg font-semibold text-slate-900">
-              Szablon w wybranym języku
-            </h3>
-            <p class="text-sm text-slate-500">
-              Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie.
-            </p>
+            <div class="flex items-center gap-2">
+              <h3 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Szablon w wybranym języku
+              </h3>
+              <HelpHint text="Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie." />
+            </div>
           </div>
 
           <div class="mt-5 space-y-5">
@@ -750,10 +744,8 @@ ${templatePreviewQrCss}
               </div>
             </ClientOnly>
 
-            <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <p class="text-sm text-slate-500">
-                Pracuj wizualnie, a w razie potrzeby podejrzyj lub popraw surowy HTML.
-              </p>
+            <div class="flex items-center justify-end gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <HelpHint text="Pracuj wizualnie, a w razie potrzeby podejrzyj lub popraw surowy HTML." />
               <button
                 type="button"
                 class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"

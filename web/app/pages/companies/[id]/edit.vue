@@ -241,12 +241,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Firmy
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja firmy
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Zaktualizuj dane kontaktowe, adresowe i organizacyjne wybranego klienta.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja firmy
+          </h1>
+          <HelpHint text="Zaktualizuj dane kontaktowe, adresowe i organizacyjne wybranego klienta." />
+        </div>
       </div>
 
       <div class="flex flex-col items-stretch gap-3 sm:items-end">
@@ -332,12 +332,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Podstawowe dane
-            </h2>
-            <p class="text-sm text-slate-500">
-              Uzupełnij dane identyfikacyjne firmy i główny kontakt.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Podstawowe dane
+              </h2>
+              <HelpHint text="Uzupełnij dane identyfikacyjne firmy i główny kontakt." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -363,10 +363,8 @@ useSeoMeta({
                   class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 >
 
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <p class="text-xs leading-5 text-slate-500">
-                    Możesz zaktualizować nazwę i adres firmy na podstawie rejestru GUS.
-                  </p>
+                <div class="flex flex-wrap items-center justify-end gap-3">
+                  <HelpHint text="Możesz zaktualizować nazwę i adres firmy na podstawie rejestru GUS." />
 
                   <button
                     type="button"
@@ -430,12 +428,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Adres
-            </h2>
-            <p class="text-sm text-slate-500">
-              Dane adresowe używane w całym systemie i na widokach list.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Adres
+              </h2>
+              <HelpHint text="Dane adresowe używane w całym systemie i na widokach list." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_10rem_12rem]">
@@ -477,12 +475,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Powiadomienia
-            </h2>
-            <p class="text-sm text-slate-500">
-              Steruje wysyłką informacji o kończącej się ważności zaświadczeń dla tego klienta.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Powiadomienia
+              </h2>
+              <HelpHint text="Steruje wysyłką informacji o kończącej się ważności zaświadczeń dla tego klienta." />
+            </div>
           </div>
 
           <div class="mt-5 rounded-lg border border-sky-100 bg-sky-50/70 p-4">
@@ -493,11 +491,9 @@ useSeoMeta({
                 class="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
               >
               <span>
-                <span class="block text-sm font-medium text-slate-800">
+                <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
                   Wysyłaj powiadomienia o wygasających zaświadczeniach
-                </span>
-                <span class="mt-1 block text-xs leading-5 text-slate-500">
-                  Wyłączenie tej opcji blokuje wysyłkę niezależnie od adresu e-mail firmy.
+                  <HelpHint text="Wyłączenie tej opcji blokuje wysyłkę niezależnie od adresu e-mail firmy." />
                 </span>
               </span>
             </label>
@@ -507,7 +503,7 @@ useSeoMeta({
               :data-show-validation="notificationEmailsError ? 'true' : null"
             >
               <span class="flex items-center justify-between gap-3">
-                <span class="text-sm font-medium text-slate-700">Adresy do powiadomień</span>
+                <span class="flex items-center gap-2 text-sm font-medium text-slate-700">Adresy do powiadomień <HelpHint text="Oddziel adresy przecinkami. Puste pole oznacza wysyłkę na główny e-mail firmy." /></span>
                 <span class="text-xs tabular-nums text-slate-400">
                   {{ customNotificationRecipients.length }}/{{ MAX_NOTIFICATION_RECIPIENTS }}
                 </span>
@@ -527,24 +523,18 @@ useSeoMeta({
               >
                 {{ notificationEmailsError }}
               </p>
-              <p
-                v-else
-                class="text-xs leading-5 text-slate-500"
-              >
-                Oddziel adresy przecinkami. Puste pole oznacza wysyłkę na główny e-mail firmy.
-              </p>
             </label>
           </div>
         </section>
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Notatka
-            </h2>
-            <p class="text-sm text-slate-500">
-              Pole opcjonalne na dodatkowe informacje o firmie.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Notatka
+              </h2>
+              <HelpHint text="Pole opcjonalne na dodatkowe informacje o firmie." />
+            </div>
           </div>
 
           <label class="mt-5 block space-y-2">

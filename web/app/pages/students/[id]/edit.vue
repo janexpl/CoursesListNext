@@ -182,12 +182,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Kursanci
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja kursanta
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Zaktualizuj dane osobowe, kontaktowe i przypisanie do firmy.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja kursanta
+          </h1>
+          <HelpHint text="Zaktualizuj dane osobowe, kontaktowe i przypisanie do firmy." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -253,12 +253,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Dane osobowe
-            </h2>
-            <p class="text-sm text-slate-500">
-              Podstawowe informacje identyfikujące kursanta.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Dane osobowe
+              </h2>
+              <HelpHint text="Podstawowe informacje identyfikujące kursanta." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -324,12 +324,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Kontakt i adres
-            </h2>
-            <p class="text-sm text-slate-500">
-              Dane kontaktowe i adresowe potrzebne w dokumentach.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Kontakt i adres
+              </h2>
+              <HelpHint text="Dane kontaktowe i adresowe potrzebne w dokumentach." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_12rem]">
@@ -373,12 +373,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Firma
-            </h2>
-            <p class="text-sm text-slate-500">
-              Wyszukaj firmę i przypisz ją do kursanta lub usuń obecne przypisanie.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Firma
+              </h2>
+              <HelpHint text="Wyszukaj firmę i przypisz ją do kursanta lub usuń obecne przypisanie." />
+            </div>
           </div>
 
           <div class="mt-5 space-y-4">

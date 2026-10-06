@@ -223,12 +223,12 @@ async function refreshAll() {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Administracja
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja użytkownika
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Zaktualizuj dane konta i rolę użytkownika. Zmiana hasła pozostaje osobną operacją.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja użytkownika
+          </h1>
+          <HelpHint text="Zaktualizuj dane konta i rolę użytkownika. Zmiana hasła pozostaje osobną operacją." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -408,12 +408,12 @@ async function refreshAll() {
             <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
               Bezpieczeństwo
             </p>
-            <h2 class="text-xl font-semibold tracking-tight text-slate-900">
-              Reset hasła
-            </h2>
-            <p class="text-sm leading-6 text-slate-600">
-              Ustaw nowe hasło dla tego użytkownika. Wszystkie aktywne sesje tego konta zostaną unieważnione.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Reset hasła
+              </h2>
+              <HelpHint text="Ustaw nowe hasło dla tego użytkownika. Wszystkie aktywne sesje tego konta zostaną unieważnione." />
+            </div>
           </div>
 
           <label class="block space-y-2">

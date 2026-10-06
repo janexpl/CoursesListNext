@@ -22,10 +22,10 @@ function formatDateTime(value: string | null) {
 <template>
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
     <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-slate-900">Informacje techniczne</h2>
-      <p class="text-sm text-slate-500">
-        Daty systemowe i informacje administracyjne dla tego dziennika.
-      </p>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Informacje techniczne</h2>
+        <HelpHint text="Daty systemowe i informacje administracyjne dla tego dziennika." />
+      </div>
     </div>
 
     <dl class="mt-5 grid gap-4 text-sm">

@@ -139,12 +139,12 @@ useSeoMeta({
     >
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Kursanci</p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          {{ fullName || 'Szczegół kursanta' }}
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dane osobowe wybranego kursanta i szybkie przejście do wystawienia nowego zaświadczenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            {{ fullName || 'Szczegół kursanta' }}
+          </h1>
+          <HelpHint text="Dane osobowe wybranego kursanta i szybkie przejście do wystawienia nowego zaświadczenia." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -260,10 +260,10 @@ useSeoMeta({
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 class="text-lg font-semibold text-slate-900">Historia zaświadczeń</h2>
-                <p class="mt-1 text-sm text-slate-500">
-                  Wystawione zaświadczenia powiązane z tym kursantem.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Historia zaświadczeń</h2>
+                  <HelpHint text="Wystawione zaświadczenia powiązane z tym kursantem." />
+                </div>
               </div>
 
               <NuxtLink

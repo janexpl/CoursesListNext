@@ -233,13 +233,11 @@ function hasPayload(value: unknown) {
 
 <template>
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-slate-900">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
         {{ title }}
       </h2>
-      <p class="text-sm text-slate-500">
-        {{ description }}
-      </p>
+      <HelpHint :text="description" />
     </div>
 
     <div

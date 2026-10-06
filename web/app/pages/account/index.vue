@@ -187,10 +187,10 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Konto użytkownika
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Moje konto</h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Zmień dane profilu i hasło dostępu do aplikacji.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">Moje konto</h1>
+          <HelpHint text="Zmień dane profilu i hasło dostępu do aplikacji." />
+        </div>
       </div>
 
       <div
@@ -211,10 +211,10 @@ useSeoMeta({
         <div class="flex items-start justify-between gap-4">
           <div class="space-y-2">
             <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Profil</p>
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-900">Dane użytkownika</h2>
-            <p class="text-sm leading-6 text-slate-600">
-              Zaktualizuj adres e-mail oraz dane wyświetlane w panelu.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-2xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">Dane użytkownika</h2>
+              <HelpHint text="Zaktualizuj adres e-mail oraz dane wyświetlane w panelu." />
+            </div>
           </div>
 
           <span
@@ -313,11 +313,10 @@ useSeoMeta({
       >
         <div class="space-y-2">
           <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Bezpieczeństwo</p>
-          <h2 class="text-2xl font-semibold tracking-tight text-slate-900">Zmiana hasła</h2>
-          <p class="text-sm leading-6 text-slate-600">
-            Po zapisaniu hasła wszystkie aktywne sesje zostaną unieważnione i trzeba będzie
-            zalogować się ponownie.
-          </p>
+          <div class="flex items-center gap-2">
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">Zmiana hasła</h2>
+            <HelpHint text="Po zapisaniu hasła wszystkie aktywne sesje zostaną unieważnione i trzeba będzie zalogować się ponownie." />
+          </div>
         </div>
 
         <form

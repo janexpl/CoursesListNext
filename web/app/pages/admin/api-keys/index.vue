@@ -314,13 +314,12 @@ async function onRevokeKey(key: ApiKey) {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Administracja
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Klucze API
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Klucze pozwalają zewnętrznym programom korzystać z API bez logowania. Każdy klucz działa
-          w imieniu wybranego konta i tylko w zakresie nadanych uprawnień.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Klucze API
+          </h1>
+          <HelpHint text="Klucze pozwalają zewnętrznym programom korzystać z API bez logowania. Każdy klucz działa w imieniu wybranego konta i tylko w zakresie nadanych uprawnień." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -548,12 +547,12 @@ async function onRevokeKey(key: ApiKey) {
             <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
               Nowy klucz
             </p>
-            <h2 class="text-xl font-semibold tracking-tight text-slate-900">
-              Wystaw klucz API
-            </h2>
-            <p class="text-sm leading-6 text-slate-600">
-              Klucz zobaczysz tylko raz, zaraz po utworzeniu.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Wystaw klucz API
+              </h2>
+              <HelpHint text="Klucz zobaczysz tylko raz, zaraz po utworzeniu." />
+            </div>
           </div>
 
           <form
@@ -562,7 +561,7 @@ async function onRevokeKey(key: ApiKey) {
             @submit.prevent="onCreateKey"
           >
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-slate-700">Nazwa</span>
+              <span class="flex items-center gap-2 text-sm font-medium text-slate-700">Nazwa <HelpHint text="Po nazwie rozpoznasz klucz na liście — wpisz, do czego służy." /></span>
               <input
                 v-model="form.name"
                 type="text"
@@ -570,13 +569,10 @@ async function onRevokeKey(key: ApiKey) {
                 required
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
-              <span class="block text-xs leading-5 text-slate-500">
-                Po nazwie rozpoznasz klucz na liście — wpisz, do czego służy.
-              </span>
             </label>
 
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-slate-700">Konto, w imieniu którego działa klucz</span>
+              <span class="flex items-center gap-2 text-sm font-medium text-slate-700">Konto, w imieniu którego działa klucz <HelpHint text="Operacje wykonane kluczem zapiszą się w historii zmian na tym koncie." /></span>
               <div class="relative">
                 <select
                   v-model="form.userId"
@@ -599,9 +595,6 @@ async function onRevokeKey(key: ApiKey) {
                   class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
                 />
               </div>
-              <span class="block text-xs leading-5 text-slate-500">
-                Operacje wykonane kluczem zapiszą się w historii zmian na tym koncie.
-              </span>
             </label>
 
             <div
@@ -614,8 +607,9 @@ async function onRevokeKey(key: ApiKey) {
             </div>
 
             <fieldset class="space-y-3">
-              <legend class="text-sm font-medium text-slate-700">
+              <legend class="flex items-center gap-2 text-sm font-medium text-slate-700">
                 Uprawnienia
+                <HelpHint text="Nadaj tylko to, czego integracja naprawdę potrzebuje. Zapis obejmuje odczyt." />
               </legend>
 
               <div class="space-y-2 rounded-lg border border-slate-200 p-3">
@@ -670,22 +664,15 @@ async function onRevokeKey(key: ApiKey) {
                   </div>
                 </div>
               </div>
-
-              <p class="text-xs leading-5 text-slate-500">
-                Nadaj tylko to, czego integracja naprawdę potrzebuje. Zapis obejmuje odczyt.
-              </p>
             </fieldset>
 
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-slate-700">Wygasa (opcjonalnie)</span>
+              <span class="flex items-center gap-2 text-sm font-medium text-slate-700">Wygasa (opcjonalnie) <HelpHint text="Klucz działa przez cały wskazany dzień. Puste pole oznacza klucz bezterminowy." /></span>
               <input
                 v-model="form.expiresAt"
                 type="date"
                 class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               >
-              <span class="block text-xs leading-5 text-slate-500">
-                Klucz działa przez cały wskazany dzień. Puste pole oznacza klucz bezterminowy.
-              </span>
             </label>
 
             <div
@@ -717,19 +704,18 @@ async function onRevokeKey(key: ApiKey) {
         </div>
 
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm leading-6 text-slate-600">
-          <h3 class="font-medium text-slate-900">
-            Jak używać klucza
-          </h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-medium text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+              Jak używać klucza
+            </h3>
+            <HelpHint text="Klucz nie pozwala zarządzać kontami ani innymi kluczami — te operacje wymagają zalogowania w przeglądarce." />
+          </div>
           <p class="mt-2">
             Program powinien wysyłać klucz w nagłówku HTTP:
           </p>
           <code class="mt-2 block overflow-x-auto rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-800">
             Authorization: Bearer clk_...
           </code>
-          <p class="mt-3 text-xs leading-5 text-slate-500">
-            Klucz nie pozwala zarządzać kontami ani innymi kluczami — te operacje wymagają
-            zalogowania w przeglądarce.
-          </p>
         </div>
       </aside>
     </div>

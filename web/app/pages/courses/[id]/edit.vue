@@ -653,12 +653,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Kursy
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja kursu
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Aktualizuj nazwę, symbol, program oraz szablon zaświadczenia dla wybranego kursu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja kursu
+          </h1>
+          <HelpHint text="Aktualizuj nazwę, symbol, program oraz szablon zaświadczenia dla wybranego kursu." />
+        </div>
       </div>
 
       <div class="flex flex-col items-stretch gap-3 sm:items-end">
@@ -802,12 +802,12 @@ useSeoMeta({
         >
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="space-y-1">
-              <h2 class="text-lg font-semibold text-slate-900">
-                Podstawowe dane
-              </h2>
-              <p class="text-sm text-slate-500">
-                Nazwa, symbol i okres ważności kursu.
-              </p>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                  Podstawowe dane
+                </h2>
+                <HelpHint text="Nazwa, symbol i okres ważności kursu." />
+              </div>
             </div>
 
             <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -917,12 +917,12 @@ useSeoMeta({
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div class="space-y-1">
-                <h2 class="text-lg font-semibold text-slate-900">
-                  Program kursu
-                </h2>
-                <p class="text-sm text-slate-500">
-                  Ułóż tematy szkolenia i przypisz godziny bez edycji JSON-a.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Program kursu
+                  </h2>
+                  <HelpHint text="Ułóż tematy szkolenia i przypisz godziny bez edycji JSON-a." />
+                </div>
               </div>
 
               <button
@@ -942,12 +942,12 @@ useSeoMeta({
               >
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                      Temat {{ index + 1 }}
-                    </p>
-                    <p class="mt-1 text-sm text-slate-500">
-                      Uzupełnij temat oraz liczbę godzin teorii i praktyki.
-                    </p>
+                    <div class="flex items-center gap-2">
+                      <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400 min-w-0 [overflow-wrap:anywhere]">
+                        Temat {{ index + 1 }}
+                      </p>
+                      <HelpHint text="Uzupełnij temat oraz liczbę godzin teorii i praktyki." />
+                    </div>
                   </div>
 
                   <div class="flex items-center gap-2 self-start sm:self-auto">
@@ -1124,12 +1124,12 @@ useSeoMeta({
         >
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="space-y-1">
-              <h2 class="text-lg font-semibold text-slate-900">
-                Szablon zaświadczenia
-              </h2>
-              <p class="text-sm text-slate-500">
-                Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie.
-              </p>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                  Szablon zaświadczenia
+                </h2>
+                <HelpHint text="Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie." />
+              </div>
             </div>
 
             <div class="mt-5 space-y-4">
@@ -1257,10 +1257,8 @@ useSeoMeta({
                 />
               </ClientOnly>
 
-              <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                <p class="text-sm text-slate-500">
-                  Możesz pracować wizualnie, a w razie potrzeby podejrzeć też surowy HTML.
-                </p>
+              <div class="flex items-center justify-end gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <HelpHint text="Możesz pracować wizualnie, a w razie potrzeby podejrzeć też surowy HTML." />
                 <button
                   type="button"
                   class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"

@@ -236,12 +236,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Dzienniki
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja nagłówka dziennika
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Zaktualizuj dane organizacyjne szkolenia bez ingerencji w uczestników, obecności i program.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja nagłówka dziennika
+          </h1>
+          <HelpHint text="Zaktualizuj dane organizacyjne szkolenia bez ingerencji w uczestników, obecności i program." />
+        </div>
       </div>
 
       <div class="flex flex-col items-stretch gap-3 sm:items-end">
@@ -334,23 +334,23 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Podstawowe informacje
-            </h2>
-            <p class="text-sm text-slate-500">
-              Zmieniasz tylko nagłówek dziennika. Kurs i liczba godzin pozostają bez zmian.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Podstawowe informacje
+              </h2>
+              <HelpHint text="Zmieniasz tylko nagłówek dziennika. Kurs i liczba godzin pozostają bez zmian." />
+            </div>
           </div>
 
           <div class="mt-5 rounded-md border border-slate-200 bg-slate-50/80 p-4">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-slate-900">
-                  Dane wymagane
-                </h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">
-                  Te pola definiują tożsamość i ramy organizacyjne szkolenia.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Dane wymagane
+                  </h3>
+                  <HelpHint text="Te pola definiują tożsamość i ramy organizacyjne szkolenia." />
+                </div>
               </div>
 
               <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">
@@ -576,12 +576,12 @@ useSeoMeta({
       <aside class="space-y-4">
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Podsumowanie
-            </h2>
-            <p class="text-sm text-slate-500">
-              Szybki podgląd danych, które zapiszesz w nagłówku dziennika.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Podsumowanie
+              </h2>
+              <HelpHint text="Szybki podgląd danych, które zapiszesz w nagłówku dziennika." />
+            </div>
           </div>
 
           <dl class="mt-5 grid gap-4 text-sm">

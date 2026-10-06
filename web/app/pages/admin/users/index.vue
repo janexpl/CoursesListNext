@@ -177,12 +177,12 @@ async function onDeleteUser(user: AdminUser) {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Administracja
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Użytkownicy systemu
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dodawaj nowych operatorów i administratorów oraz usuwaj konta, które nie powinny już mieć dostępu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Użytkownicy systemu
+          </h1>
+          <HelpHint text="Dodawaj nowych operatorów i administratorów oraz usuwaj konta, które nie powinny już mieć dostępu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -342,12 +342,12 @@ async function onDeleteUser(user: AdminUser) {
             <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
               Nowy użytkownik
             </p>
-            <h2 class="text-xl font-semibold tracking-tight text-slate-900">
-              Dodaj konto
-            </h2>
-            <p class="text-sm leading-6 text-slate-600">
-              Nowe konto zacznie działać od razu po zapisaniu.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Dodaj konto
+              </h2>
+              <HelpHint text="Nowe konto zacznie działać od razu po zapisaniu." />
+            </div>
           </div>
 
           <form

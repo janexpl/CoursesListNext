@@ -143,18 +143,10 @@ watch(assets, (value) => {
     <AdminTabs />
 
     <div class="space-y-2">
-      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Nadruki zaświadczeń</h1>
-      <p class="max-w-3xl text-sm leading-6 text-slate-600">
-        Pieczątki i podpis trafiają wyłącznie na zaświadczenia wystawiane przez platformę
-        e-learningową — takie dokumenty kursant dostaje elektronicznie i nikt nie przystawia
-        na nich pieczątki ręcznie. Wydruki z aplikacji idą na papier firmowy i zostają bez zmian.
-      </p>
-      <p class="max-w-3xl text-sm leading-6 text-slate-600">
-        Każdy nadruk jest opcjonalny. Miejsce na dokumencie wskazuje znacznik w szablonie
-        kursu — bez znacznika nadruk trafia na pasek u dołu pierwszej strony.
-        Najlepszy plik to <strong>PNG z przezroczystym tłem</strong>: pieczątka na białym
-        prostokącie zasłoni gilosz pod spodem.
-      </p>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">Nadruki zaświadczeń</h1>
+        <HelpHint text="Pieczątki i podpis trafiają wyłącznie na zaświadczenia wystawiane przez platformę e-learningową — takie dokumenty kursant dostaje elektronicznie i nikt nie przystawia na nich pieczątki ręcznie. Wydruki z aplikacji idą na papier firmowy i zostają bez zmian. Każdy nadruk jest opcjonalny. Miejsce na dokumencie wskazuje znacznik w szablonie kursu — bez znacznika nadruk trafia na pasek u dołu pierwszej strony. Najlepszy plik to PNG z przezroczystym tłem: pieczątka na białym prostokącie zasłoni gilosz pod spodem." />
+      </div>
     </div>
 
     <div v-if="loadError" class="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
@@ -248,11 +240,10 @@ watch(assets, (value) => {
     </div>
 
     <div class="rounded-xl border border-slate-200 bg-white/90 p-5 shadow-sm">
-      <h2 class="text-sm font-semibold text-slate-900">Tło giloszowe</h2>
-      <p class="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-        Wzór pochodzi z blankietu organizatora i jest wbudowany w API — nie ma czego wgrywać
-        ani konfigurować. Przód niesie monogram, odwrót samą ramkę z siatką.
-      </p>
+      <div class="flex items-center gap-2">
+        <h2 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Tło giloszowe</h2>
+        <HelpHint text="Wzór pochodzi z blankietu organizatora i jest wbudowany w API — nie ma czego wgrywać ani konfigurować. Przód niesie monogram, odwrót samą ramkę z siatką." />
+      </div>
       <div class="mt-4 flex flex-wrap gap-4">
         <figure class="space-y-1">
           <img

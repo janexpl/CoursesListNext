@@ -67,12 +67,12 @@ async function onSubmit() {
         <p class="text-sm uppercase tracking-[0.2em] text-sky-700">
           CoursesList
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-950">
-          Logowanie
-        </h1>
-        <p class="text-sm leading-6 text-slate-500">
-          Zaloguj się do nowego panelu operacyjnego.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-950 min-w-0 [overflow-wrap:anywhere]">
+            Logowanie
+          </h1>
+          <HelpHint text="Zaloguj się do nowego panelu operacyjnego." />
+        </div>
       </div>
 
       <div class="pt-6">
@@ -80,12 +80,12 @@ async function onSubmit() {
           <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
             Logowanie
           </p>
-          <h2 class="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
-            Zaloguj się do panelu
-          </h2>
-          <p class="mt-2 text-sm leading-6 text-slate-500">
-            Użyj danych z tabeli <code>users</code> z obecnej aplikacji.
-          </p>
+          <div class="mt-3 flex items-center gap-2">
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+              Zaloguj się do panelu
+            </h2>
+            <HelpHint text="Użyj danych z tabeli users z obecnej aplikacji." />
+          </div>
         </div>
 
         <form

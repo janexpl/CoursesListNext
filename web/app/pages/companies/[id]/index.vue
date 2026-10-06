@@ -143,12 +143,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Firmy
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          {{ company?.name || 'Szczegół firmy' }}
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dane firmy oraz lista kursantów przypisanych do tego klienta.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            {{ company?.name || 'Szczegół firmy' }}
+          </h1>
+          <HelpHint text="Dane firmy oraz lista kursantów przypisanych do tego klienta." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -348,12 +348,12 @@ useSeoMeta({
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 class="text-lg font-semibold text-slate-900">
-                  Kursanci firmy
-                </h2>
-                <p class="mt-1 text-sm text-slate-500">
-                  Aktualnie przypisane osoby. Historyczne zaświadczenia są dostępne osobno.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Kursanci firmy
+                  </h2>
+                  <HelpHint text="Aktualnie przypisane osoby. Historyczne zaświadczenia są dostępne osobno." />
+                </div>
               </div>
 
               <NuxtLink

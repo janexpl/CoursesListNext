@@ -302,13 +302,12 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Dzienniki
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Nowy dziennik szkolenia
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Załóż nagłówek dziennika, a potem uzupełnisz uczestników i przebieg zajęć.
-          Teraz wpisujesz podstawowe informacje o szkoleniu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Nowy dziennik szkolenia
+          </h1>
+          <HelpHint text="Załóż nagłówek dziennika, a potem uzupełnisz uczestników i przebieg zajęć. Teraz wpisujesz podstawowe informacje o szkoleniu." />
+        </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <span
@@ -386,23 +385,23 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Podstawowe informacje
-            </h2>
-            <p class="text-sm text-slate-500">
-              Wskaż kurs, nazwę dziennika i kluczowe informacje organizacyjne.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Podstawowe informacje
+              </h2>
+              <HelpHint text="Wskaż kurs, nazwę dziennika i kluczowe informacje organizacyjne." />
+            </div>
           </div>
 
           <div class="mt-5 rounded-md border border-slate-200 bg-slate-50/80 p-4">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-slate-900">
-                  Dane wymagane
-                </h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">
-                  Te pola są potrzebne, aby utworzyć dziennik i nadać mu podstawowy kontekst szkolenia.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Dane wymagane
+                  </h3>
+                  <HelpHint text="Te pola są potrzebne, aby utworzyć dziennik i nadać mu podstawowy kontekst szkolenia." />
+                </div>
               </div>
 
               <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">
@@ -690,12 +689,12 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
       <aside class="space-y-4">
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Podgląd dziennika
-            </h2>
-            <p class="text-sm text-slate-500">
-              Szybkie podsumowanie najważniejszych danych przed zapisem.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Podgląd dziennika
+              </h2>
+              <HelpHint text="Szybkie podsumowanie najważniejszych danych przed zapisem." />
+            </div>
           </div>
 
           <dl class="mt-5 grid gap-4 text-sm">
@@ -763,12 +762,12 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Co dalej
-            </h2>
-            <p class="text-sm text-slate-500">
-              Po zapisaniu dziennika będziesz mógł wrócić do listy i przejść dalej do rozbudowy modułu.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Co dalej
+              </h2>
+              <HelpHint text="Po zapisaniu dziennika będziesz mógł wrócić do listy i przejść dalej do rozbudowy modułu." />
+            </div>
           </div>
 
           <ul class="mt-4 grid gap-3 text-sm text-slate-600">

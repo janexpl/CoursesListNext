@@ -387,12 +387,12 @@ async function refreshAll() {
     >
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Kursy</p>
-        <h1 class="wrap-break-word text-3xl font-semibold tracking-tight text-slate-900">
-          {{ course?.name || 'Szczegół kursu' }}
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Program kursu, okres ważności i szablon zaświadczenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="wrap-break-word text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            {{ course?.name || 'Szczegół kursu' }}
+          </h1>
+          <HelpHint text="Program kursu, okres ważności i szablon zaświadczenia." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -533,11 +533,10 @@ async function refreshAll() {
 
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="space-y-1">
-              <h2 class="text-lg font-semibold text-slate-900">Warianty zaświadczenia</h2>
-              <p class="text-sm text-slate-500">
-                Wybierz wersję podstawową albo obcojęzyczną, aby podejrzeć odpowiadający jej program
-                i szablon.
-              </p>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Warianty zaświadczenia</h2>
+                <HelpHint text="Wybierz wersję podstawową albo obcojęzyczną, aby podejrzeć odpowiadający jej program i szablon." />
+              </div>
             </div>
 
             <div class="mt-5 flex flex-wrap gap-2">
@@ -565,11 +564,10 @@ async function refreshAll() {
               <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div class="space-y-1">
-                    <h3 class="text-base font-semibold text-slate-900">Program szkolenia</h3>
-                    <p class="text-sm text-slate-500">
-                      Zakres tematyczny i liczba godzin dla wariantu
-                      {{ activeCertificateVariant.label }}.
-                    </p>
+                    <div class="flex items-center gap-2">
+                      <h3 class="text-base font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Program szkolenia</h3>
+                      <HelpHint :text="`Zakres tematyczny i liczba godzin dla wariantu ${activeCertificateVariant.label}.`" />
+                    </div>
                   </div>
 
                   <span
@@ -650,10 +648,10 @@ async function refreshAll() {
 
               <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="space-y-1">
-                  <h3 class="text-base font-semibold text-slate-900">Podgląd szablonu</h3>
-                  <p class="text-sm text-slate-500">
-                    Podgląd frontu zaświadczenia dla wariantu {{ activeCertificateVariant.label }}.
-                  </p>
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-base font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Podgląd szablonu</h3>
+                    <HelpHint :text="`Podgląd frontu zaświadczenia dla wariantu ${activeCertificateVariant.label}.`" />
+                  </div>
                 </div>
 
                 <div
@@ -680,11 +678,10 @@ async function refreshAll() {
 
         <aside class="space-y-6">
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-            <h2 class="text-lg font-semibold text-slate-900">Platforma e-learningowa</h2>
-            <p class="mt-2 text-sm text-slate-500">
-              Kurs oznaczony jako dostarczany przez platformę pojawia się w jej katalogu. Nie zaznaczaj szkoleń
-              wymagających części praktycznej.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Platforma e-learningowa</h2>
+              <HelpHint text="Kurs oznaczony jako dostarczany przez platformę pojawia się w jej katalogu. Nie zaznaczaj szkoleń wymagających części praktycznej." />
+            </div>
 
             <div class="mt-5 flex items-center justify-between gap-4">
               <span class="text-sm font-medium text-slate-900">

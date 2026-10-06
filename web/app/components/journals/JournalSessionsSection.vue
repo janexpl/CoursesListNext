@@ -33,10 +33,10 @@ function formatSessionHours(value: number) {
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold text-slate-900">Program szkolenia</h2>
-        <p class="text-sm text-slate-500">
-          Tematy i liczba godzin skopiowane z programu kursu do tego dziennika.
-        </p>
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Program szkolenia</h2>
+          <HelpHint text="Tematy i liczba godzin skopiowane z programu kursu do tego dziennika. Możesz zaktualizować datę realizacji i prowadzącego dla każdej pozycji programu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -91,12 +91,6 @@ function formatSessionHours(value: number) {
       </div>
     </div>
 
-    <p
-      class="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500"
-    >
-      Możesz zaktualizować datę realizacji i prowadzącego dla każdej pozycji programu.
-    </p>
-
     <div
       v-if="hasError"
       class="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
@@ -143,12 +137,12 @@ function formatSessionHours(value: number) {
             </div>
 
             <div>
-              <h3 class="text-base font-semibold leading-6 text-slate-900">
-                {{ session.topic }}
-              </h3>
-              <p class="mt-1 text-sm text-slate-500">
-                Data jest wstępnie wyliczana z programu szkolenia przy limicie 8 godzin dziennie.
-              </p>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-semibold leading-6 text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                  {{ session.topic }}
+                </h3>
+                <HelpHint text="Data jest wstępnie wyliczana z programu szkolenia przy limicie 8 godzin dziennie." />
+              </div>
             </div>
           </div>
 

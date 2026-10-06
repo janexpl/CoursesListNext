@@ -33,10 +33,10 @@ defineExpose({
 <template>
   <section class="rounded-xl border border-slate-200 bg-white/90 p-5 shadow-sm">
     <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-slate-900">Dodaj uczestnika</h2>
-      <p class="text-sm leading-6 text-slate-500">
-        Wyszukaj kursanta i dodawaj kolejne osoby bez opuszczania tej sekcji.
-      </p>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Dodaj uczestnika</h2>
+        <HelpHint text="Wyszukaj kursanta i dodawaj kolejne osoby bez opuszczania tej sekcji." />
+      </div>
     </div>
 
     <div

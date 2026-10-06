@@ -9,10 +9,10 @@ defineProps<{
 <template>
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
     <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-slate-900">Informacje podstawowe</h2>
-      <p class="text-sm text-slate-500">
-        Nagłówek dziennika i dane organizacyjne zapisane w momencie utworzenia.
-      </p>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Informacje podstawowe</h2>
+        <HelpHint text="Nagłówek dziennika i dane organizacyjne zapisane w momencie utworzenia." />
+      </div>
     </div>
 
     <dl class="mt-5 grid gap-4 text-sm md:grid-cols-2">

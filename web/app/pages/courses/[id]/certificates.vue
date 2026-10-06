@@ -162,12 +162,12 @@ useSeoMeta({
     >
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Kursy</p>
-        <h1 class="wrap-break-word text-3xl font-semibold tracking-tight text-slate-900">
-          {{ course?.name || 'Zaświadczenia kursu' }}
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Lista wydanych zaświadczeń dla wybranego kursu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="wrap-break-word text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            {{ course?.name || 'Zaświadczenia kursu' }}
+          </h1>
+          <HelpHint text="Lista wydanych zaświadczeń dla wybranego kursu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">

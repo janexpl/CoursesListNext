@@ -161,12 +161,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Zaświadczenia
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Edycja zaświadczenia
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Możesz skorygować kursanta i daty. Kurs oraz numer rejestru są tutaj tylko do podglądu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Edycja zaświadczenia
+          </h1>
+          <HelpHint text="Możesz skorygować kursanta i daty. Kurs oraz numer rejestru są tutaj tylko do podglądu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -232,12 +232,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Kursant
-            </h2>
-            <p class="text-sm text-slate-500">
-              Wyszukaj osobę, dla której wpis ma pozostać przypisany.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Kursant
+              </h2>
+              <HelpHint text="Wyszukaj osobę, dla której wpis ma pozostać przypisany." />
+            </div>
           </div>
 
           <div class="mt-5 space-y-4">
@@ -327,12 +327,12 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Daty
-            </h2>
-            <p class="text-sm text-slate-500">
-              Daty wpisu i zakres szkolenia używane przy wyliczaniu ważności.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Daty
+              </h2>
+              <HelpHint text="Daty wpisu i zakres szkolenia używane przy wyliczaniu ważności." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-3">

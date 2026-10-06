@@ -66,10 +66,10 @@ function onAttendanceChange(sessionId: number, attendeeId: number, event: Event)
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold text-slate-900">Obecność uczestników</h2>
-        <p class="text-sm text-slate-500">
-          Zaznacz obecność dla każdej pozycji programu. Zmiana zapisuje się od razu po kliknięciu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Obecność uczestników</h2>
+          <HelpHint text="Zaznacz obecność dla każdej pozycji programu. Zmiana zapisuje się od razu po kliknięciu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">

@@ -209,12 +209,12 @@ useSeoMeta({
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Firmy
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Nowa firma
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dodaj nowego klienta do bazy, aby przypisywać do niego kursantów i wystawiać zaświadczenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Nowa firma
+          </h1>
+          <HelpHint text="Dodaj nowego klienta do bazy, aby przypisywać do niego kursantów i wystawiać zaświadczenia." />
+        </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <span
@@ -292,23 +292,23 @@ useSeoMeta({
 
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Dane firmy
-            </h2>
-            <p class="text-sm text-slate-500">
-              Najpierw uzupełnij dane wymagane. Dane dodatkowe możesz rozwinąć niżej.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                Dane firmy
+              </h2>
+              <HelpHint text="Najpierw uzupełnij dane wymagane. Dane dodatkowe możesz rozwinąć niżej." />
+            </div>
           </div>
 
           <div class="mt-5 rounded-md border border-slate-200 bg-slate-50/80 p-4">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-slate-900">
-                  Dane wymagane
-                </h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">
-                  Te pola są potrzebne, żeby zapisać firmę i przypisywać do niej kursantów.
-                </p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Dane wymagane
+                  </h3>
+                  <HelpHint text="Te pola są potrzebne, żeby zapisać firmę i przypisywać do niej kursantów." />
+                </div>
               </div>
 
               <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">
@@ -339,10 +339,8 @@ useSeoMeta({
                     class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   >
 
-                  <div class="flex flex-wrap items-center justify-between gap-3">
-                    <p class="text-xs leading-5 text-slate-500">
-                      Nazwa i adres mogą zostać uzupełnione automatycznie na podstawie rejestru GUS.
-                    </p>
+                  <div class="flex flex-wrap items-center justify-end gap-3">
+                    <HelpHint text="Nazwa i adres mogą zostać uzupełnione automatycznie na podstawie rejestru GUS." />
 
                     <button
                       type="button"
@@ -460,11 +458,9 @@ useSeoMeta({
                     class="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                   >
                   <span>
-                    <span class="block text-sm font-medium text-slate-800">
+                    <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
                       Wysyłaj powiadomienia o wygasających zaświadczeniach
-                    </span>
-                    <span class="mt-1 block text-xs leading-5 text-slate-500">
-                      Ustawienie będzie wykorzystywane przez mikroserwis powiadomień.
+                      <HelpHint text="Ustawienie będzie wykorzystywane przez mikroserwis powiadomień." />
                     </span>
                   </span>
                 </label>
@@ -474,7 +470,7 @@ useSeoMeta({
                   :data-show-validation="notificationEmailsError ? 'true' : null"
                 >
                   <span class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-medium text-slate-700">Adresy do powiadomień</span>
+                    <span class="flex items-center gap-2 text-sm font-medium text-slate-700">Adresy do powiadomień <HelpHint text="Oddziel adresy przecinkami. Puste pole oznacza wysyłkę na główny e-mail firmy." /></span>
                     <span class="text-xs tabular-nums text-slate-400">
                       {{ customNotificationRecipients.length }}/{{ MAX_NOTIFICATION_RECIPIENTS }}
                     </span>
@@ -493,12 +489,6 @@ useSeoMeta({
                     class="text-xs leading-5 text-red-600"
                   >
                     {{ notificationEmailsError }}
-                  </p>
-                  <p
-                    v-else
-                    class="text-xs leading-5 text-slate-500"
-                  >
-                    Oddziel adresy przecinkami. Puste pole oznacza wysyłkę na główny e-mail firmy.
                   </p>
                 </label>
               </div>

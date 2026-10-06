@@ -1961,12 +1961,12 @@ async function onSetAttendanceForAttendee(attendeeId: number, present: boolean) 
             >
 
             <div class="space-y-1">
-              <h2 class="text-lg font-semibold text-slate-900">
-                Załączniki dziennika
-              </h2>
-              <p class="text-xs leading-5 text-slate-500">
-                Podpisana lista obecności i podpisany dziennik.
-              </p>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                  Załączniki dziennika
+                </h2>
+                <HelpHint text="Podpisana lista obecności i podpisany dziennik." />
+              </div>
             </div>
 
             <div class="mt-4 grid gap-3 lg:grid-cols-2">

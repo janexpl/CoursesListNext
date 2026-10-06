@@ -48,10 +48,10 @@ function formatCertificateNumber(certificate: {
   <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold text-slate-900">Uczestnicy dziennika</h2>
-        <p class="text-sm text-slate-500">
-          Lista uczestników przypisanych do tego szkolenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Uczestnicy dziennika</h2>
+          <HelpHint text="Lista uczestników przypisanych do tego szkolenia." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">

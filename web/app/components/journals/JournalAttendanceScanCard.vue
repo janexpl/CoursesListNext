@@ -60,16 +60,17 @@ function formatFileSize(value: number) {
       ? 'rounded-lg border border-slate-200 bg-slate-50/40 p-3'
       : 'rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm'"
   >
-    <div class="space-y-1">
+    <div class="flex items-center gap-2">
       <component
         :is="props.embedded ? 'h3' : 'h2'"
+        class="min-w-0 [overflow-wrap:anywhere]"
         :class="props.embedded ? 'text-base font-semibold text-slate-900' : 'text-lg font-semibold text-slate-900'"
       >
         {{ title }}
       </component>
-      <p :class="props.embedded ? 'text-xs leading-5 text-slate-500' : 'text-sm text-slate-500'">
-        {{ description }}
-      </p>
+      <!-- Ograniczenia pliku są w tej samej podpowiedzi co opis: osobny znak zapytania
+           przy polu wyboru pliku dublowałby się z nią w wąskiej karcie. -->
+      <HelpHint :text="`${description} Obsługiwane formaty: PDF, JPG, PNG. Maksymalny rozmiar pliku: 16 MB.`" />
     </div>
 
     <div
@@ -156,9 +157,6 @@ function formatFileSize(value: number) {
             <div class="min-w-0">
               <p class="truncate text-sm text-slate-700">
                 {{ selectedFileName || 'Nie wybrano pliku' }}
-              </p>
-              <p class="mt-1 text-xs text-slate-400">
-                PDF, JPG lub PNG do 16 MB
               </p>
             </div>
 
@@ -261,10 +259,6 @@ function formatFileSize(value: number) {
         </div>
 
         <div class="mt-4 space-y-3">
-          <p class="text-xs leading-5 text-slate-500">
-            Obsługiwane formaty: PDF, JPG, PNG. Maksymalny rozmiar pliku: 16 MB.
-          </p>
-
           <div
             class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
           >

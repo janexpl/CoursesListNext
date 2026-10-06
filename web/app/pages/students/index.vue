@@ -42,13 +42,12 @@ const students = computed(() => data.value?.data ?? [])
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Kursanci
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Baza kursantów
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Wyszukuj osoby po nazwisku, imieniu albo numerze PESEL i przechodź do formularza
-          wystawiania nowego zaświadczenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Baza kursantów
+          </h1>
+          <HelpHint text="Wyszukuj osoby po nazwisku, imieniu albo numerze PESEL i przechodź do formularza wystawiania nowego zaświadczenia." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">

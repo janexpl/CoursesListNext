@@ -539,10 +539,10 @@ useSeoMeta({
     >
       <div class="space-y-2">
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">Kursy</p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Nowy kurs</h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Dodaj kurs wraz z programem i szablonem zaświadczenia.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">Nowy kurs</h1>
+          <HelpHint text="Dodaj kurs wraz z programem i szablonem zaświadczenia." />
+        </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <span
@@ -711,8 +711,10 @@ useSeoMeta({
       <div v-if="activeTab === 'general'" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">Podstawowe dane</h2>
-            <p class="text-sm text-slate-500">Nazwa, symbol i okres ważności kursu.</p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Podstawowe dane</h2>
+              <HelpHint text="Nazwa, symbol i okres ważności kursu." />
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -811,10 +813,10 @@ useSeoMeta({
       >
         <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
           <div class="space-y-1">
-            <h2 class="text-lg font-semibold text-slate-900">Program kursu</h2>
-            <p class="text-sm text-slate-500">
-              Ułóż tematy szkolenia i przypisz godziny bez edycji JSON-a.
-            </p>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Program kursu</h2>
+              <HelpHint text="Ułóż tematy szkolenia i przypisz godziny bez edycji JSON-a." />
+            </div>
           </div>
 
           <div class="mt-5 space-y-4">
@@ -826,12 +828,12 @@ useSeoMeta({
               <div class="space-y-1">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                      Temat {{ index + 1 }}
-                    </p>
-                    <p class="mt-1 text-sm text-slate-500">
-                      Uzupełnij temat oraz liczbę godzin teorii i praktyki.
-                    </p>
+                    <div class="flex items-center gap-2">
+                      <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400 min-w-0 [overflow-wrap:anywhere]">
+                        Temat {{ index + 1 }}
+                      </p>
+                      <HelpHint text="Uzupełnij temat oraz liczbę godzin teorii i praktyki." />
+                    </div>
                   </div>
 
                   <div class="flex items-center gap-2 self-start sm:self-auto">
@@ -979,10 +981,10 @@ useSeoMeta({
         <section class="space-y-6">
           <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
             <div class="space-y-1">
-              <h2 class="text-lg font-semibold text-slate-900">Edytor szablonu</h2>
-              <p class="text-sm text-slate-500">
-                Twórz front zaświadczenia bez ręcznego pisania kodu HTML.
-              </p>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">Edytor szablonu</h2>
+                <HelpHint text="Twórz front zaświadczenia bez ręcznego pisania kodu HTML." />
+              </div>
             </div>
 
             <div class="mt-5 space-y-5">

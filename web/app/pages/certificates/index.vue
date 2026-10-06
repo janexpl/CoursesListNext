@@ -152,13 +152,12 @@ function clearFilters() {
         <p class="text-sm font-medium uppercase tracking-[0.18em] text-sky-700">
           Zaświadczenia
         </p>
-        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">
-          Lista zaświadczeń
-        </h1>
-        <p class="max-w-3xl text-sm leading-6 text-slate-600">
-          Ostatnie wpisy z rejestru. Możesz wyszukać kursanta, kurs lub numer zaświadczenia,
-          a potem przejść do szczegółu.
-        </p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-3xl font-semibold tracking-tight text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+            Lista zaświadczeń
+          </h1>
+          <HelpHint text="Ostatnie wpisy z rejestru. Możesz wyszukać kursanta, kurs lub numer zaświadczenia, a potem przejść do szczegółu." />
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
