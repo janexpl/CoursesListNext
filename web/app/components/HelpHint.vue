@@ -13,6 +13,10 @@
 // etykietę, a stuknięcie w niego przenosiłoby fokus do pola i wysuwało klawiaturę
 // telefonu. Kliknięcie ma wyłączone działanie domyślne z tego samego powodu.
 //
+// Tło dymka jest jasne na sztywno, a nie z motywu biblioteki (bg-default): przy ciemnym
+// motywie systemu biblioteka przełączała je na ciemne, a reszta aplikacji - w tym tekst
+// dymka - ciemnego motywu nie ma, więc wychodził ciemny tekst na ciemnym tle.
+//
 // Czytniki ekranu nie ogłaszają dymków otwieranych po najechaniu, dlatego pełna treść
 // jest też w samym wyzwalaczu jako tekst niewidoczny.
 withDefaults(defineProps<{
@@ -30,6 +34,7 @@ withDefaults(defineProps<{
     :open-delay="120"
     :close-delay="150"
     :content="{ side: 'top', sideOffset: 6, collisionPadding: 12 }"
+    :ui="{ content: 'bg-white ring-slate-200', arrow: 'fill-white stroke-slate-200' }"
     arrow
   >
     <span
