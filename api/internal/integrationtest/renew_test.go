@@ -210,6 +210,23 @@ func TestRenewCertificateRemovesPredecessorFromExpiringViews(t *testing.T) {
 		t.Fatalf("licznik wygasających ma spaść dokładnie o 1: %d -> %d", countBefore, countAfter)
 	}
 
+	// Historia zmian: poprzednik ma wpis przedłużenia, następca - wystawienia.
+	var operation string
+	var renewedBy int64
+	if err := e.pool.QueryRow(t.Context(), `
+		SELECT metadata->>'operation', (metadata->>'renewedByCertificateId')::bigint
+		FROM audit_log
+		WHERE entity_type = 'certificate' AND entity_id = $1 AND action = 'update'
+		ORDER BY id DESC LIMIT 1`, predecessor.ID).Scan(&operation, &renewedBy); err != nil {
+		t.Fatalf("historia zmian poprzednika: %v", err)
+	}
+	if operation != "renew" || renewedBy != successor.ID {
+		t.Fatalf("wpis poprzednika musi nazywać operację i wskazywać następcę, jest %q/%d", operation, renewedBy)
+	}
+	if n := e.countRows(t, `SELECT count(*) FROM audit_log WHERE entity_type = 'certificate' AND entity_id = $1 AND action = 'create'`, successor.ID); n != 1 {
+		t.Fatalf("następca musi mieć wpis wystawienia, ma %d", n)
+	}
+
 	// A poza przypomnieniami nie traci nic: dalej się drukuje i weryfikuje jako ważny.
 	pdf := e.mustCall(t, http.MethodGet, fmt.Sprintf("/certificates/%d/pdf", predecessor.ID), nil, nil)
 	if pdf.Status != http.StatusOK {
