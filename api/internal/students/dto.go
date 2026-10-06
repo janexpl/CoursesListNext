@@ -51,6 +51,7 @@ type CertificateByStudentDTO struct {
 	ExpiryDate        *string `json:"expiryDate"`
 	RevokedAt         *string `json:"revokedAt"`
 	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
+	RenewedAt         *string `json:"renewedAt"`
 }
 
 type ListCertificatesByStudentResponse struct {

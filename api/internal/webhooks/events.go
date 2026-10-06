@@ -24,6 +24,11 @@ const (
 	EventCertificateIssued          = "certificate.issued"
 	EventCertificateDuplicateIssued = "certificate.duplicate_issued"
 	EventCertificateRevoked         = "certificate.revoked"
+	// EventCertificateRenewed - kursant ma już nowe zaświadczenie z tego kursu.
+	// Nazwa mówi, co się stało; poprzednik NIE przestaje być ważny, więc nie jest to
+	// "superseded" z wycofanego modelu (migracja 0023 wprowadzała supersedes_id,
+	// 0025 go skasowała).
+	EventCertificateRenewed         = "certificate.renewed"
 	EventCertificateValidityChanged = "certificate.validity_changed"
 	EventProgramUpdated             = "program.updated"
 )
@@ -69,6 +74,21 @@ type certificateRevokedPayload struct {
 	Timestamp         string `json:"timestamp"`
 	CertificateNumber string `json:"certificate_number"`
 	Reason            string `json:"reason"`
+}
+
+// certificateRenewedPayload - dokument został przedłużony, więc odbiorca ma przestać
+// przypominać o tym numerze. Niesie dane OBU dokumentów, bo kolejność zdarzeń między
+// podmiotami nie jest gwarantowana: certificate.issued następcy może dojść później.
+type certificateRenewedPayload struct {
+	Event                      string  `json:"event"`
+	Timestamp                  string  `json:"timestamp"`
+	CertificateNumber          string  `json:"certificate_number"`
+	ValidUntil                 *string `json:"valid_until"`
+	RenewedAt                  string  `json:"renewed_at"`
+	RenewedByCertificateNumber string  `json:"renewed_by_certificate_number"`
+	RenewedByIssuedAt          string  `json:"renewed_by_issued_at"`
+	RenewedByValidUntil        *string `json:"renewed_by_valid_until"`
+	RenewedByVerificationCode  string  `json:"renewed_by_verification_code"`
 }
 
 type certificateValidityChangedPayload struct {
@@ -141,6 +161,32 @@ func (p *Publisher) CertificateDuplicateIssued(ctx context.Context, q *dbsqlc.Qu
 			CertificateNumber: CertificateNumber(cert),
 			DuplicateIssuedAt: cert.DuplicateIssuedAt.Time.Format(time.DateOnly),
 			Reason:            reason,
+		}
+	})
+}
+
+// CertificateRenewed zapisuje certificate.renewed na PRZEDŁUŻONYM dokumencie.
+//
+// Bramka stoi na poprzedniku, nie na następcy: przedłużenie dokumentu platformowego
+// z aplikacji webowej ma dojść do odbiorcy, a przedłużenie dokumentu, którego odbiorca
+// nigdy nie widział, nie ma po co iść - dostalibyśmy 422 i WEBHOOK ALERT przy każdym
+// przedłużeniu wystawionym w aplikacji. Zdarzenie certificate.issued następcy rządzi
+// się własnym kryterium (ma klucz idempotencji albo nie).
+func (p *Publisher) CertificateRenewed(ctx context.Context, q *dbsqlc.Queries, cert, successor dbsqlc.GetCertificateByIDRow) error {
+	if !IsPlatformCertificate(cert) {
+		return nil
+	}
+	return p.enqueue(ctx, q, EventCertificateRenewed, certificateSubject(cert.ID), func(timestamp string) any {
+		return certificateRenewedPayload{
+			Event:                      EventCertificateRenewed,
+			Timestamp:                  timestamp,
+			CertificateNumber:          CertificateNumber(cert),
+			ValidUntil:                 validUntil(cert),
+			RenewedAt:                  cert.RenewedAt.Time.Format(time.DateOnly),
+			RenewedByCertificateNumber: CertificateNumber(successor),
+			RenewedByIssuedAt:          successor.Date.Time.Format(time.DateOnly),
+			RenewedByValidUntil:        validUntil(successor),
+			RenewedByVerificationCode:  successor.VerificationCode,
 		}
 	})
 }

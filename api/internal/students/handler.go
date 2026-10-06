@@ -417,6 +417,7 @@ func mapCertByStudentsRow(row dbsqlc.ListCertificatesByStudentIDRow) Certificate
 		ExpiryDate:        pgutil.NullableString(row.ExpiryDate),
 		RevokedAt:         pgutil.NullableTimestampz(row.RevokedAt),
 		DuplicateIssuedAt: pgutil.NullableTimestampz(row.DuplicateIssuedAt),
+		RenewedAt:         pgutil.NullableTimestampz(row.RenewedAt),
 	}
 	return dto
 }

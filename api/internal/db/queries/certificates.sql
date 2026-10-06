@@ -260,14 +260,31 @@ LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id;
 
 -- name: SoftDeleteCertificate :one
-  UPDATE certificates
-  SET
-      deleted_at = now(),
-      deleted_by_user_id = $2,
-      delete_reason = $3
-  WHERE id = $1
-    AND deleted_at IS NULL
-  RETURNING id;
+-- Jedno polecenie, bo usunięcie następcy musi odznaczyć poprzednika niepodzielnie:
+-- dokument "przedłużony" zamiennikiem, którego już nie ma, twierdziłby, że sprawa jest
+-- załatwiona, i zniknąłby z przypomnień o wygasaniu na zawsze - czyli dokładnie problem,
+-- który przedłużanie naprawia (patrz migracja 0028). Polecenia modyfikujące w WITH
+-- wykonują się zawsze, niezależnie od tego, czy zapytanie główne czyta ich wynik.
+WITH deleted AS (
+    UPDATE certificates
+    SET
+        deleted_at = now(),
+        deleted_by_user_id = $2,
+        delete_reason = $3
+    WHERE certificates.id = $1
+      AND deleted_at IS NULL
+    RETURNING certificates.id
+), predecessor AS (
+    UPDATE certificates
+    SET renewed_at = NULL,
+        renewed_by_certificate_id = NULL,
+        renewed_by_user_id = NULL
+    -- Gdy "deleted" jest puste (dokument już usunięty), podzapytanie daje NULL
+    -- i warunek nie trafia w żaden wiersz.
+    WHERE renewed_by_certificate_id = (SELECT deleted.id FROM deleted)
+    RETURNING certificates.id
+)
+SELECT deleted.id FROM deleted;
 
 -- name: CountCertificatesByCourseID :one
 SELECT COUNT(*)
@@ -468,12 +485,3 @@ SET renewed_at = now(),
     renewed_by_user_id = sqlc.narg(renewed_by_user_id)
 WHERE id = sqlc.arg(id);
 
--- name: ClearCertificateRenewalBySuccessor :exec
--- Następca został skasowany, więc poprzednik przestaje być przedłużony i wraca
--- do przypomnień o wygasaniu. Bez tego dokument bez żywego zamiennika zniknąłby
--- z zestawień na zawsze.
-UPDATE certificates
-SET renewed_at = NULL,
-    renewed_by_certificate_id = NULL,
-    renewed_by_user_id = NULL
-WHERE renewed_by_certificate_id = sqlc.arg(successor_id);

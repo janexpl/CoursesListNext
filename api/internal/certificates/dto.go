@@ -15,6 +15,9 @@ type CertificateDTO struct {
 	LanguageCode      string  `json:"languageCode"`
 	RevokedAt         *string `json:"revokedAt"`
 	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
+	// RenewedAt - dokument ma następcę z nowszego szkolenia. Nie jest unieważniony:
+	// zostaje ważny do swojej daty, tylko wypada z zestawień wygasających.
+	RenewedAt *string `json:"renewedAt"`
 }
 
 type CertificateDetailsDTO struct {
@@ -56,6 +59,12 @@ type CertificateDetailsDTO struct {
 	RevokeReason      *string                   `json:"revokeReason"`
 	DuplicateIssuedAt *string                   `json:"duplicateIssuedAt"`
 	DuplicateReason   *string                   `json:"duplicateReason"`
+	// Przedłużenie w obie strony: RenewedByCertificateID to następca tego dokumentu,
+	// RenewalOfCertificateID - dokument, którego ten jest przedłużeniem. Druga wartość
+	// nie ma własnej kolumny, wylicza ją zapytanie po indeksie.
+	RenewedAt              *string `json:"renewedAt"`
+	RenewedByCertificateID *int64  `json:"renewedByCertificateId"`
+	RenewalOfCertificateID *int64  `json:"renewalOfCertificateId"`
 }
 
 // CertificatePrintDecorDTO opisuje nadruki wydruku: gdzie po nie sięgnąć i jak szerokie
@@ -95,10 +104,27 @@ type PublicCertificateDTO struct {
 	DuplicateIssued   bool    `json:"duplicateIssued"`
 	DuplicateIssuedAt *string `json:"duplicateIssuedAt"`
 	RevokedAt         *string `json:"revokedAt"`
+	// Renewed - kursant ma już nowsze zaświadczenie z tego kursu. Osobne pole, a NIE
+	// trzecia wartość Status: dokument przedłużony jest ważny, a "status" jest
+	// udokumentowany jako enum [valid, revoked] i powtórzony w kliencie. Numeru ani
+	// kodu następcy nie ujawniamy - na tym papierze ich nie ma.
+	Renewed bool `json:"renewed"`
 }
 
 type PublicCertificateResponse struct {
 	Data PublicCertificateDTO `json:"data"`
+}
+
+// RenewCertificateRequest to ciało POST /certificates/{id}/renew. Kursanta, kursu
+// i numeru rejestru nie przyjmujemy: dwa pierwsze biorą się z przedłużanego dokumentu,
+// numer nadaje serwer. Nieznane pola są odrzucane, więc próba podmiany kursanta
+// kończy się 400.
+type RenewCertificateRequest struct {
+	CertificateDate string  `json:"certificateDate"`
+	CourseDateStart string  `json:"courseDateStart"`
+	CourseDateEnd   *string `json:"courseDateEnd"`
+	// LanguageCode pusty oznacza język poprzednika.
+	LanguageCode string `json:"languageCode"`
 }
 
 // LifecycleRequest to ciało POST /certificates/{id}/revoke i /duplicate.

@@ -150,6 +150,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Patch("/certificates/{id}", certificateHandler.Patch)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/revoke", certificateHandler.Revoke)
 			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/duplicate", certificateHandler.Duplicate)
+			// Przedłużenie wystawia nowy dokument, więc ten sam zakres co wystawianie.
+			r.With(auth.RequireScope(auth.ScopeCertificatesWrite)).Post("/certificates/{id}/renew", certificateHandler.Renew)
 
 			// Nadruki zaświadczeń: pieczątki i podpis. Odczyt jest dostępny dla każdego
 			// zalogowanego, bo podgląd zaświadczenia w przeglądarce musi pokazać to samo,

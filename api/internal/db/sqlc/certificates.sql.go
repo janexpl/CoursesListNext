@@ -11,22 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const clearCertificateRenewalBySuccessor = `-- name: ClearCertificateRenewalBySuccessor :exec
-UPDATE certificates
-SET renewed_at = NULL,
-    renewed_by_certificate_id = NULL,
-    renewed_by_user_id = NULL
-WHERE renewed_by_certificate_id = $1
-`
-
-// Następca został skasowany, więc poprzednik przestaje być przedłużony i wraca
-// do przypomnień o wygasaniu. Bez tego dokument bez żywego zamiennika zniknąłby
-// z zestawień na zawsze.
-func (q *Queries) ClearCertificateRenewalBySuccessor(ctx context.Context, successorID pgtype.Int8) error {
-	_, err := q.db.Exec(ctx, clearCertificateRenewalBySuccessor, successorID)
-	return err
-}
-
 const countCertificatesByCompanyID = `-- name: CountCertificatesByCompanyID :one
   SELECT COUNT(*)
   FROM certificates c
@@ -989,14 +973,26 @@ func (q *Queries) RevokeCertificate(ctx context.Context, arg RevokeCertificatePa
 }
 
 const softDeleteCertificate = `-- name: SoftDeleteCertificate :one
-  UPDATE certificates
-  SET
-      deleted_at = now(),
-      deleted_by_user_id = $2,
-      delete_reason = $3
-  WHERE id = $1
-    AND deleted_at IS NULL
-  RETURNING id
+WITH deleted AS (
+    UPDATE certificates
+    SET
+        deleted_at = now(),
+        deleted_by_user_id = $2,
+        delete_reason = $3
+    WHERE certificates.id = $1
+      AND deleted_at IS NULL
+    RETURNING certificates.id
+), predecessor AS (
+    UPDATE certificates
+    SET renewed_at = NULL,
+        renewed_by_certificate_id = NULL,
+        renewed_by_user_id = NULL
+    -- Gdy "deleted" jest puste (dokument już usunięty), podzapytanie daje NULL
+    -- i warunek nie trafia w żaden wiersz.
+    WHERE renewed_by_certificate_id = (SELECT deleted.id FROM deleted)
+    RETURNING certificates.id
+)
+SELECT deleted.id FROM deleted
 `
 
 type SoftDeleteCertificateParams struct {
@@ -1005,6 +1001,11 @@ type SoftDeleteCertificateParams struct {
 	DeleteReason    pgtype.Text `json:"delete_reason"`
 }
 
+// Jedno polecenie, bo usunięcie następcy musi odznaczyć poprzednika niepodzielnie:
+// dokument "przedłużony" zamiennikiem, którego już nie ma, twierdziłby, że sprawa jest
+// załatwiona, i zniknąłby z przypomnień o wygasaniu na zawsze - czyli dokładnie problem,
+// który przedłużanie naprawia (patrz migracja 0028). Polecenia modyfikujące w WITH
+// wykonują się zawsze, niezależnie od tego, czy zapytanie główne czyta ich wynik.
 func (q *Queries) SoftDeleteCertificate(ctx context.Context, arg SoftDeleteCertificateParams) (int64, error) {
 	row := q.db.QueryRow(ctx, softDeleteCertificate, arg.ID, arg.DeletedByUserID, arg.DeleteReason)
 	var id int64

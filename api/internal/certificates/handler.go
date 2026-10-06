@@ -212,6 +212,98 @@ func (h *Handler) Duplicate(w http.ResponseWriter, r *http.Request) {
 	h.writeCertificateDetails(w, r, http.StatusOK, id)
 }
 
+// certificateRenewer jest osobny od certificateLifecycle, bo przedłużenie nie jest
+// zmianą stanu jednego dokumentu: wystawia nowy i zwraca go w odpowiedzi.
+type certificateRenewer interface {
+	Renew(ctx context.Context, certificateID int64, input RenewCertificateInput) (CreateCertificateResult, error)
+}
+
+// Renew wystawia zaświadczenie zastępujące wskazane i zwraca NOWY dokument (201).
+// Stary dostaje znacznik przedłużenia i wypada z zestawień wygasających, ale zostaje
+// ważny - szczegóły w komentarzu przy Service.Renew.
+func (h *Handler) Renew(w http.ResponseWriter, r *http.Request) {
+	renewer, ok := h.creator.(certificateRenewer)
+	if !ok {
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to renew certificate")
+		return
+	}
+	id, input, ok := decodeRenewRequest(w, r)
+	if !ok {
+		return
+	}
+	result, err := renewer.Renew(r.Context(), id, input)
+	if err != nil {
+		writeRenewError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if result.Replayed {
+		// Ponowienie z tym samym kluczem i ciałem: ten sam dokument co pierwotne 201.
+		status = http.StatusOK
+	}
+	h.writeCertificateDetails(w, r, status, result.ID)
+}
+
+// decodeRenewRequest jest osobne od decodeLifecycleRequest: tamto wymaga wyłącznie
+// pola "reason" i odrzuca wszystko inne.
+func decodeRenewRequest(w http.ResponseWriter, r *http.Request) (int64, RenewCertificateInput, bool) {
+	id, err := response.ParsePositiveInt64PathValue(r, "id")
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate ID")
+		return 0, RenewCertificateInput{}, false
+	}
+	idempotencyKey, err := parseIdempotencyKey(r)
+	if err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid Idempotency-Key header")
+		return 0, RenewCertificateInput{}, false
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	req := RenewCertificateRequest{}
+	if err := decoder.Decode(&req); err != nil {
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+		return 0, RenewCertificateInput{}, false
+	}
+	return id, RenewCertificateInput{
+		CertificateDate: req.CertificateDate,
+		CourseDateStart: req.CourseDateStart,
+		CourseDateEnd:   req.CourseDateEnd,
+		LanguageCode:    req.LanguageCode,
+		IdempotencyKey:  idempotencyKey,
+	}, true
+}
+
+// writeRenewError łączy błędy cyklu życia (czego dotyczy żądanie) z błędami wystawiania
+// (co ma powstać). Brak kursanta albo kursu to tutaj 409, nie 404: 404 na tej trasie
+// czyta się jako "nie ma takiego zaświadczenia", a tu chodzi o dane, na które wskazuje
+// przedłużany dokument.
+func writeRenewError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrCertificateNotFound):
+		response.WriteError(w, http.StatusNotFound, response.CodeNotFound, "certificate not found")
+	case errors.Is(err, ErrCertificateAlreadyRenewed):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate already renewed")
+	case errors.Is(err, ErrCertificateRevoked):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "certificate is revoked")
+	case errors.Is(err, ErrIdempotencyKeyReused):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "idempotency key reused with different payload")
+	case errors.Is(err, ErrRegistryNumberTaken):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "registry number already taken for the given year")
+	case errors.Is(err, ErrStudentNotFound):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "student not found")
+	case errors.Is(err, ErrCourseNotFound):
+		response.WriteError(w, http.StatusConflict, response.CodeConflict, "course not found")
+	case errors.Is(err, ErrCertificateTranslationNotFound):
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate translation not found")
+	case errors.Is(err, ErrCertificateDateBeforeCourseEnd):
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "certificate date cannot be before course end date")
+	case errors.Is(err, ErrInvalidInput), errors.Is(err, ErrInvalidRegistryDate):
+		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid certificate data")
+	default:
+		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "failed to renew certificate")
+	}
+}
+
 // verificationCodeFinder to osobny interfejs, żeby nie rozszerzać Querier o metodę
 // potrzebną tylko jednej trasie.
 type verificationCodeFinder interface {
@@ -955,6 +1047,7 @@ func mapPublicCertificateResponse(certificate sqlc.GetCertificateByIDRow, now ti
 		DuplicateIssued:   certificate.DuplicateIssuedAt.Valid,
 		DuplicateIssuedAt: pgutil.NullableTimestampz(certificate.DuplicateIssuedAt),
 		RevokedAt:         pgutil.NullableTimestampz(certificate.RevokedAt),
+		Renewed:           certificate.RenewedAt.Valid,
 	}
 }
 
@@ -1005,8 +1098,13 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		RevokeReason:      pgutil.NullableString(certificate.RevokeReason),
 		DuplicateIssuedAt: pgutil.NullableTimestampz(certificate.DuplicateIssuedAt),
 		DuplicateReason:   pgutil.NullableString(certificate.DuplicateReason),
-		Journal:           journal,
-		PrintVariants:     printVariants,
+
+		RenewedAt:              pgutil.NullableTimestampz(certificate.RenewedAt),
+		RenewedByCertificateID: pgutil.NullableInt64(certificate.RenewedByCertificateID),
+		RenewalOfCertificateID: pgutil.NullableInt64(certificate.RenewalOfCertificateID),
+
+		Journal:       journal,
+		PrintVariants: printVariants,
 	}
 }
 
@@ -1158,6 +1256,7 @@ func mapCertificatesResponse(row sqlc.ListCertificatesRow) CertificateDTO {
 		ExpiryDate:        pgutil.NullableString(row.ExpiryDate),
 		RevokedAt:         pgutil.NullableTimestampz(row.RevokedAt),
 		DuplicateIssuedAt: pgutil.NullableTimestampz(row.DuplicateIssuedAt),
+		RenewedAt:         pgutil.NullableTimestampz(row.RenewedAt),
 	}
 }
 
