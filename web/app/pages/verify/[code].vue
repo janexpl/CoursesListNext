@@ -169,6 +169,13 @@ useSeoMeta({
                 {{ statusBadge.label }}
               </UBadge>
               <UBadge
+                v-if="certificate.renewed"
+                color="success"
+                variant="subtle"
+              >
+                Przedłużone
+              </UBadge>
+              <UBadge
                 v-if="certificate.duplicateIssued"
                 color="neutral"
                 variant="subtle"
@@ -185,6 +192,16 @@ useSeoMeta({
                 Duplikat wystawiono {{ formatDate(certificate.duplicateIssuedAt) }} — to ten sam
                 dokument o tym samym numerze.
               </span>
+            </p>
+            <!-- Osobne zdanie, a nie zmiana statusu: dokument przedłużony JEST ważny,
+                 więc "przedłużone" nie może brzmieć jak zastrzeżenie. Numeru nowego
+                 dokumentu nie ujawniamy - na tym papierze go nie ma. -->
+            <p
+              v-if="certificate.renewed"
+              class="text-sm leading-6 text-slate-700"
+            >
+              Posiadacz ukończył później kolejne szkolenie z tego zakresu i ma nowsze
+              zaświadczenie. Ten dokument pozostaje autentyczny i ważny do swojego terminu.
             </p>
           </div>
         </div>

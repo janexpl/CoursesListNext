@@ -624,6 +624,9 @@ export interface CertificateSummary {
   expiryDate: string | null
   revokedAt?: string | null
   duplicateIssuedAt?: string | null
+  // Dokument ma następcę z nowszego szkolenia. Nie jest unieważniony - zostaje ważny
+  // do swojej daty, tylko wypada z zestawień wygasających.
+  renewedAt?: string | null
 }
 
 export interface CertificatesResponse {
@@ -676,6 +679,11 @@ export interface CertificateDetails {
   revokeReason: string | null
   duplicateIssuedAt: string | null
   duplicateReason: string | null
+  // Przedłużenie w obie strony: renewedByCertificateId to następca tego dokumentu,
+  // renewalOfCertificateId - dokument, którego ten jest przedłużeniem.
+  renewedAt: string | null
+  renewedByCertificateId: number | null
+  renewalOfCertificateId: number | null
 }
 
 export interface CertificatePrintImage {
@@ -723,6 +731,9 @@ export interface PublicCertificate {
   duplicateIssued: boolean
   duplicateIssuedAt: string | null
   revokedAt: string | null
+  // Kursant ma już nowsze zaświadczenie z tego kursu. Osobne pole, nie trzecia
+  // wartość status - dokument przedłużony jest ważny.
+  renewed: boolean
 }
 
 export interface PublicCertificateResponse {
@@ -731,6 +742,16 @@ export interface PublicCertificateResponse {
 
 export interface CertificateLifecyclePayload {
   reason: string
+}
+
+// RenewCertificatePayload - dane nowego dokumentu. Kursanta, kursu ani numeru rejestru
+// nie wysyłamy: pierwsze dwa bierze serwer z przedłużanego zaświadczenia, numer nadaje
+// sam (pierwsze użycie automatycznej numeracji z przeglądarki).
+export interface RenewCertificatePayload {
+  certificateDate: string
+  courseDateStart: string
+  courseDateEnd?: string | null
+  languageCode?: string
 }
 
 export interface CertificateResponse {
@@ -806,6 +827,13 @@ const apiErrorMessages: Record<string, string> = {
   'bad_request:invalid verification code': 'Nieprawidłowy kod weryfikacyjny.',
   'not_found:certificate not found': 'Nie znaleziono zaświadczenia o tym kodzie.',
   'conflict:certificate is revoked': 'Operacja niedostępna dla unieważnionego zaświadczenia.',
+
+  // certificates: przedłużenie
+  'conflict:certificate already renewed': 'To zaświadczenie zostało już przedłużone.',
+  // Na trasie przedłużenia brak kursanta albo kursu to konflikt danych, na które
+  // wskazuje przedłużany dokument - nie "nie ma takiego zaświadczenia".
+  'conflict:student not found': 'Kursant z przedłużanego zaświadczenia już nie istnieje.',
+  'conflict:course not found': 'Kurs z przedłużanego zaświadczenia już nie istnieje.',
 
   // certificates
   'bad_request:certificate translation not found': 'Nie znaleziono tłumaczenia certyfikatu.',
@@ -1157,6 +1185,11 @@ export function useApi() {
       body: payload
     }),
     duplicateCertificate: async (id: number, payload: CertificateLifecyclePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}/duplicate`, {
+      method: 'POST',
+      body: payload
+    }),
+    // Zwraca NOWY dokument (następcę), nie przedłużany.
+    renewCertificate: async (id: number, payload: RenewCertificatePayload) => await request<CertificateResponse>(`/api/v1/certificates/${id}/renew`, {
       method: 'POST',
       body: payload
     })

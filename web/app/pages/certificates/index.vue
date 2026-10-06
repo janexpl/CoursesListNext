@@ -295,6 +295,14 @@ function clearFilters() {
               Unieważnione
             </UBadge>
             <UBadge
+              v-else-if="certificate.renewedAt"
+              color="success"
+              variant="subtle"
+              class="mt-1"
+            >
+              Przedłużone
+            </UBadge>
+            <UBadge
               v-else-if="certificate.duplicateIssuedAt"
               color="neutral"
               variant="subtle"

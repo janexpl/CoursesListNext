@@ -2,7 +2,13 @@
 import AuditHistoryPanel from '~/components/audit/AuditHistoryPanel.vue'
 
 definePageMeta({
-  middleware: 'auth'
+  middleware: 'auth',
+  // Klucz po ścieżce wymusza świeży komponent przy przejściu na INNY dokument.
+  // Przedłużenie przenosi na następcę, czyli z /certificates/5 na /certificates/9 -
+  // pierwsze w aplikacji przejście między dwoma id tej samej strony. Bez klucza Vue
+  // Router użyłby tego samego komponentu, a useAsyncData ma klucz policzony raz,
+  // więc widok zostałby na poprzednim zaświadczeniu.
+  key: route => route.path
 })
 
 const route = useRoute()
@@ -19,6 +25,17 @@ const lifecycleAction = ref<LifecycleAction | null>(null)
 const lifecycleReason = ref('')
 const lifecyclePending = ref(false)
 const lifecycleError = ref('')
+
+// Przedłużenie ma własny stan, a nie wspólny z panelem powodu: tamten renderuje jedno
+// pole tekstowe, ten trzy daty, i oba panele nie powinny się nawzajem czyścić.
+const showRenewPanel = ref(false)
+const renewPending = ref(false)
+const renewError = ref('')
+const renewForm = reactive({
+  certificateDate: '',
+  courseDateStart: '',
+  courseDateEnd: ''
+})
 
 const certificateId = computed(() => Number.parseInt(`${route.params.id}`, 10))
 
@@ -884,7 +901,67 @@ async function onDeleteCertificate() {
   }
 }
 
+function todayISO() {
+  const now = new Date()
+  const month = `${now.getMonth() + 1}`.padStart(2, '0')
+  const day = `${now.getDate()}`.padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+// Domyślnie dzisiejsza data: numer rejestru nadaje serwer jako kolejny w kursie i roku,
+// a wsteczna data wystawienia zderzyłaby się z chronologią rejestru komunikatem,
+// który nie wyjaśnia dlaczego.
+function openRenewPanel() {
+  showRenewPanel.value = !showRenewPanel.value
+  if (!showRenewPanel.value) {
+    return
+  }
+  lifecycleAction.value = null
+  renewError.value = ''
+  const today = todayISO()
+  renewForm.certificateDate = today
+  renewForm.courseDateStart = today
+  renewForm.courseDateEnd = today
+}
+
+async function onConfirmRenew() {
+  if (!renewForm.certificateDate || !renewForm.courseDateStart) {
+    renewError.value = 'Podaj datę wystawienia i datę rozpoczęcia szkolenia.'
+    return
+  }
+
+  renewError.value = ''
+  renewPending.value = true
+  try {
+    const response = await api.renewCertificate(certificateId.value, {
+      certificateDate: renewForm.certificateDate,
+      courseDateStart: renewForm.courseDateStart,
+      courseDateEnd: renewForm.courseDateEnd || null
+    })
+    showRenewPanel.value = false
+    // Przechodzimy na NOWY dokument - to on jest od teraz aktualnym zaświadczeniem.
+    await navigateTo(`/certificates/${response.data.id}`)
+  } catch (apiError) {
+    renewError.value = getApiErrorMessage(apiError, 'Nie udało się przedłużyć zaświadczenia.')
+  } finally {
+    renewPending.value = false
+  }
+}
+
+// Z pulpitu: /certificates/{id}?renew=1 otwiera panel od razu, żeby kafelek
+// "Wygasające" nie był ślepą uliczką.
+onMounted(() => {
+  if (route.query.renew !== '1') {
+    return
+  }
+  const current = certificate.value
+  if (current && !current.revokedAt && !current.renewedAt) {
+    openRenewPanel()
+  }
+})
+
 function openLifecycleAction(action: LifecycleAction) {
+  showRenewPanel.value = false
   lifecycleAction.value = lifecycleAction.value === action ? null : action
   lifecycleReason.value = ''
   lifecycleError.value = ''
@@ -983,6 +1060,15 @@ useSeoMeta({
         >
           Edytuj zaświadczenie
         </NuxtLink>
+
+        <button
+          v-if="certificate && !certificate.revokedAt && !certificate.renewedAt"
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+          @click="openRenewPanel"
+        >
+          Przedłuż
+        </button>
 
         <button
           v-if="certificate && !certificate.revokedAt"
@@ -1092,6 +1178,123 @@ useSeoMeta({
           <span v-if="certificate.duplicateReason">Powód: {{ certificate.duplicateReason }}. </span>
           To ten sam dokument o tym samym numerze — wydruk nosi adnotację „DUPLIKAT" z datą wystawienia.
         </p>
+      </div>
+
+      <div
+        v-if="certificate.renewedAt"
+        class="rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-5 text-sm text-emerald-900"
+      >
+        <p class="text-base font-semibold text-emerald-950">
+          Zaświadczenie przedłużone {{ certificate.renewedAt }}
+        </p>
+        <p class="mt-1">
+          Kursant ma nowsze zaświadczenie z tego kursu. Ten dokument pozostaje ważny do swojego
+          terminu i dalej się drukuje — przestaje tylko pojawiać się w zestawieniu wygasających.
+          <NuxtLink
+            v-if="certificate.renewedByCertificateId"
+            :to="`/certificates/${certificate.renewedByCertificateId}`"
+            class="font-medium underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-500"
+          >
+            Przejdź do nowego zaświadczenia
+          </NuxtLink>
+        </p>
+      </div>
+
+      <div
+        v-if="certificate.renewalOfCertificateId"
+        class="rounded-xl border border-slate-200 bg-slate-50 px-6 py-5 text-sm text-slate-700"
+      >
+        <p>
+          To zaświadczenie jest przedłużeniem wcześniejszego dokumentu.
+          <NuxtLink
+            :to="`/certificates/${certificate.renewalOfCertificateId}`"
+            class="font-medium underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500"
+          >
+            Zobacz poprzednie zaświadczenie
+          </NuxtLink>
+        </p>
+      </div>
+
+      <div
+        v-if="showRenewPanel"
+        class="rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-5"
+      >
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-lg font-semibold text-emerald-900">
+              Przedłuż zaświadczenie
+            </h2>
+            <p class="text-sm leading-6 text-emerald-900">
+              Powstanie nowe zaświadczenie dla tego samego kursanta i kursu, z kolejnym numerem
+              w rejestrze nadanym przez serwer. Ten dokument zostanie oznaczony jako przedłużony:
+              zachowa ważność i wydruk, ale zniknie z zestawienia wygasających.
+            </p>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-3">
+            <label class="block space-y-2">
+              <span class="text-sm font-medium text-emerald-900">Data wystawienia</span>
+              <input
+                v-model="renewForm.certificateDate"
+                type="date"
+                required
+                class="w-full rounded-md border border-emerald-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+              >
+            </label>
+
+            <label class="block space-y-2">
+              <span class="text-sm font-medium text-emerald-900">Rozpoczęcie szkolenia</span>
+              <input
+                v-model="renewForm.courseDateStart"
+                type="date"
+                required
+                class="w-full rounded-md border border-emerald-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+              >
+            </label>
+
+            <label class="block space-y-2">
+              <span class="text-sm font-medium text-emerald-900">Zakończenie szkolenia</span>
+              <input
+                v-model="renewForm.courseDateEnd"
+                type="date"
+                class="w-full rounded-md border border-emerald-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+              >
+            </label>
+          </div>
+
+          <p class="text-xs leading-5 text-emerald-800">
+            Od daty zakończenia szkolenia liczony jest termin ważności nowego dokumentu.
+            Data wystawienia nie może być wcześniejsza niż zakończenie szkolenia ani wcześniejsza
+            niż daty zaświadczeń o wyższych numerach w tym kursie i roku.
+          </p>
+
+          <div
+            v-if="renewError"
+            class="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm text-red-700"
+          >
+            {{ renewError }}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              :disabled="renewPending"
+              @click="onConfirmRenew"
+            >
+              {{ renewPending ? 'Wystawianie...' : 'Wystaw nowe zaświadczenie' }}
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition hover:border-emerald-300"
+              :disabled="renewPending"
+              @click="showRenewPanel = false"
+            >
+              Anuluj
+            </button>
+          </div>
+        </div>
       </div>
 
       <div

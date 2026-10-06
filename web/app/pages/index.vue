@@ -102,12 +102,15 @@ const expiringCount = computed(() => data.value?.data.expiring.in30Days ?? 0)
           <article
             v-for="certificate in expiringCertificates"
             :key="certificate.certificateId"
-            class="grid gap-3 px-6 py-5 md:grid-cols-[minmax(0,1fr)_15rem]"
+            class="grid gap-3 px-6 py-5 transition hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_15rem]"
           >
             <div class="space-y-1">
-              <p class="font-medium text-slate-900">
+              <NuxtLink
+                :to="`/certificates/${certificate.certificateId}`"
+                class="font-medium text-slate-900 underline decoration-transparent underline-offset-2 transition hover:decoration-slate-400"
+              >
                 {{ certificate.studentName }}
-              </p>
+              </NuxtLink>
               <p class="text-sm text-slate-600">
                 {{ certificate.companyName }}
               </p>
@@ -128,6 +131,15 @@ const expiringCount = computed(() => data.value?.data.expiring.in30Days ?? 0)
                   }}
                 </p>
               </div>
+              <!-- Kafelek był dotąd ślepą uliczką: pokazywał "te wygasają" i nie dawał
+                   nic z tym zrobić. Przedłużenia nie powielamy tu w całości, tylko
+                   otwieramy panel na dokumencie. -->
+              <NuxtLink
+                :to="`/certificates/${certificate.certificateId}?renew=1`"
+                class="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+              >
+                Przedłuż
+              </NuxtLink>
             </div>
           </article>
         </div>
