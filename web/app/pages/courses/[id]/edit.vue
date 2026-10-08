@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CourseCertificateTranslationsEditor from '~/components/courses/CourseCertificateTranslationsEditor.vue'
+import CourseLegalBasisPicker from '~/components/courses/CourseLegalBasisPicker.vue'
 import type {
   CourseCertificateTranslationForm,
   CourseCertificateTranslationProgramRow
@@ -66,6 +67,12 @@ const programRows = ref<CourseProgramRow[]>([])
 const translationForms = ref<CourseCertificateTranslationForm[]>([])
 const hasInvalidStoredProgram = ref(false)
 const templateEditorRef = ref<HTMLDivElement | null>(null)
+const legalBasisId = ref<number | null>(null)
+const { findLegalBasis } = useLegalBases()
+// Treść do podglądu szablonu - ta sama, która trafi na zaświadczenie.
+const selectedLegalBasisContent = computed(() => findLegalBasis(legalBasisId.value)?.content ?? null)
+const templateUsesLegalBasisTag = computed(() => templateUsesLegalBasis(form.certFrontPage)
+  || translationForms.value.some(translation => templateUsesLegalBasis(translation.certFrontPage)))
 let programRowSequence = 0
 let translationProgramRowSequence = 0
 let translationSequence = 0
@@ -377,7 +384,8 @@ function buildSnapshot() {
     expiryTime: trimmedExpiryTime.value,
     certFrontPage: form.certFrontPage,
     courseProgram: serializedCourseProgram.value,
-    certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
+    certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value),
+    legalBasisId: legalBasisId.value
   })
 }
 
@@ -391,6 +399,7 @@ function applyCourseToForm() {
   form.symbol = course.value.symbol || ''
   form.expiryTime = course.value.expiryTime?.toString() ?? ''
   form.certFrontPage = course.value.certFrontPage || ''
+  legalBasisId.value = course.value.legalBasis?.id ?? null
   const parsedProgram = parseProgramRows(course.value.courseProgram || '')
   hasInvalidStoredProgram.value = parsedProgram.invalid
   programRows.value = parsedProgram.rows.length ? parsedProgram.rows : [createProgramRow()]
@@ -574,7 +583,7 @@ ${templatePreviewQrCss}
   </head>
   <body>
     <div class="certificate-sheet">
-      ${renderTemplatePreviewQr(form.certFrontPage)}
+      ${renderTemplatePreviewQr(form.certFrontPage, selectedLegalBasisContent.value)}
     </div>
   </body>
 </html>`
@@ -630,7 +639,8 @@ async function onSubmit() {
       expiryTime: Number.parseInt(trimmedExpiryTime.value, 10),
       courseProgram: serializedCourseProgram.value,
       certFrontPage: form.certFrontPage,
-      certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value)
+      certificateTranslations: buildCourseCertificateTranslationPayloads(translationForms.value),
+      legalBasisId: legalBasisId.value
     })
 
     await navigateTo(`/courses/${courseId.value}`)
@@ -800,59 +810,67 @@ useSeoMeta({
           v-if="activeTab === 'general'"
           class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]"
         >
-          <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
-                  Podstawowe dane
-                </h2>
-                <HelpHint text="Nazwa, symbol i okres ważności kursu." />
+          <div class="space-y-6">
+            <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg font-semibold text-slate-900 min-w-0 [overflow-wrap:anywhere]">
+                    Podstawowe dane
+                  </h2>
+                  <HelpHint text="Nazwa, symbol i okres ważności kursu." />
+                </div>
               </div>
-            </div>
 
-            <div class="mt-5 grid gap-4 md:grid-cols-2">
-              <label class="block space-y-2">
-                <span class="text-sm font-medium text-slate-700">Nazwa</span>
-                <input
-                  v-model="form.mainName"
-                  type="text"
-                  required
-                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                >
-              </label>
+              <div class="mt-5 grid gap-4 md:grid-cols-2">
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">Nazwa</span>
+                  <input
+                    v-model="form.mainName"
+                    type="text"
+                    required
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  >
+                </label>
 
-              <label class="block space-y-2">
-                <span class="text-sm font-medium text-slate-700">Nazwa szczegółowa</span>
-                <input
-                  v-model="form.name"
-                  type="text"
-                  required
-                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                >
-              </label>
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">Nazwa szczegółowa</span>
+                  <input
+                    v-model="form.name"
+                    type="text"
+                    required
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  >
+                </label>
 
-              <label class="block space-y-2">
-                <span class="text-sm font-medium text-slate-700">Symbol</span>
-                <input
-                  v-model="form.symbol"
-                  type="text"
-                  required
-                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                >
-              </label>
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">Symbol</span>
+                  <input
+                    v-model="form.symbol"
+                    type="text"
+                    required
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 font-mono text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  >
+                </label>
 
-              <label class="block space-y-2">
-                <span class="text-sm font-medium text-slate-700">Ważność w latach</span>
-                <input
-                  v-model="form.expiryTime"
-                  type="text"
-                  inputmode="numeric"
-                  required
-                  class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                >
-              </label>
-            </div>
-          </section>
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">Ważność w latach</span>
+                  <input
+                    v-model="form.expiryTime"
+                    type="text"
+                    inputmode="numeric"
+                    required
+                    class="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  >
+                </label>
+              </div>
+            </section>
+
+            <CourseLegalBasisPicker
+              v-model="legalBasisId"
+              :template-uses-tag="templateUsesLegalBasisTag"
+              :disabled="submitPending || pending"
+            />
+          </div>
 
           <aside class="space-y-6">
             <section class="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm">
@@ -1115,6 +1133,7 @@ useSeoMeta({
           <CourseCertificateTranslationsEditor
             v-model="translationForms"
             :disabled="submitPending || pending"
+            :legal-basis="selectedLegalBasisContent"
           />
         </div>
 
@@ -1131,6 +1150,16 @@ useSeoMeta({
                 <HelpHint text="Edytuj wygląd zaświadczenia i wstawiaj dane uzupełniane automatycznie." />
               </div>
             </div>
+
+            <!-- To samo ostrzeżenie co przy wyborze podstawy: autor szablonu pracuje w tej
+                 zakładce i inaczej nie zobaczyłby, że znacznik nie ma czego wstawić. -->
+            <p
+              v-if="templateUsesLegalBasisTag && !legalBasisId"
+              class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800"
+            >
+              Szablon zawiera znacznik podstawy prawnej, a kurs nie ma jej wybranej — na zaświadczeniu
+              będzie w tym miejscu pusto. Wybierz podstawę w zakładce z danymi kursu.
+            </p>
 
             <div class="mt-5 space-y-4">
               <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">

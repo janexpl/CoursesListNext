@@ -334,6 +334,12 @@ export interface CourseCertificateTranslation {
   certFrontPage: string
 }
 
+export interface CourseLegalBasis {
+  id: number
+  name: string
+  content: string
+}
+
 export interface CourseDetails {
   id: number
   mainName: string
@@ -343,6 +349,34 @@ export interface CourseDetails {
   courseProgram: string
   certFrontPage: string
   certificateTranslations: CourseCertificateTranslation[]
+  // Podstawa prawna wstawiana w szablon znacznikiem {{ podstawa_prawna }}.
+  legalBasis: CourseLegalBasis | null
+}
+
+export interface LegalBasis {
+  id: number
+  name: string
+  content: string
+  // Ilu kursów dotknie zmiana treści.
+  courseCount: number
+  updatedAt: string
+}
+
+export interface LegalBasisDetails extends LegalBasis {
+  courses: Array<{ id: number, symbol: string, name: string }>
+}
+
+export interface LegalBasesResponse {
+  data: LegalBasis[]
+}
+
+export interface LegalBasisResponse {
+  data: LegalBasisDetails
+}
+
+export interface LegalBasisPayload {
+  name: string
+  content: string
 }
 
 export interface CourseResponse {
@@ -370,6 +404,8 @@ export interface UpdateCoursePayload {
   courseProgram: string
   certFrontPage: string
   certificateTranslations: CourseCertificateTranslation[]
+  // null zdejmuje podstawę; pominięte pole zostawia ją bez zmian.
+  legalBasisId?: number | null
 }
 
 export type CreateCoursePayload = UpdateCoursePayload
@@ -684,6 +720,8 @@ export interface CertificateDetails {
   renewedAt: string | null
   renewedByCertificateId: number | null
   renewalOfCertificateId: number | null
+  // Treść podstawy prawnej zamrożona przy wystawieniu; pusty tekst, gdy brak.
+  legalBasis: string
 }
 
 export interface CertificatePrintImage {
@@ -830,6 +868,12 @@ const apiErrorMessages: Record<string, string> = {
 
   // certificates: przedłużenie
   'conflict:certificate already renewed': 'To zaświadczenie zostało już przedłużone.',
+
+  // podstawy prawne
+  'conflict:legal basis in use': 'Tej podstawy prawnej używa co najmniej jeden kurs — najpierw wybierz kursom inną.',
+  'conflict:legal basis name already exists': 'Podstawa prawna o tej nazwie już istnieje.',
+  'not_found:legal basis not found': 'Nie znaleziono podstawy prawnej.',
+  'bad_request:legal basis not found': 'Wybrana podstawa prawna już nie istnieje — odśwież listę.',
   // Na trasie przedłużenia brak kursanta albo kursu to konflikt danych, na które
   // wskazuje przedłużany dokument - nie "nie ma takiego zaświadczenia".
   'conflict:student not found': 'Kursant z przedłużanego zaświadczenia już nie istnieje.',
@@ -1031,6 +1075,20 @@ export function useApi() {
       body: payload
     }),
     courseAuditLog: async (id: number) => await request<AuditLogResponse>(`/api/v1/courses/${id}/audit-log`),
+    legalBases: async () => await request<LegalBasesResponse>('/api/v1/legal-bases'),
+    legalBasis: async (id: number) => await request<LegalBasisResponse>(`/api/v1/legal-bases/${id}`),
+    createLegalBasis: async (payload: LegalBasisPayload) => await request<LegalBasisResponse>('/api/v1/legal-bases', {
+      method: 'POST',
+      body: payload
+    }),
+    // Zmiana treści i usuwanie - tylko administrator.
+    updateLegalBasis: async (id: number, payload: LegalBasisPayload) => await request<LegalBasisResponse>(`/api/v1/admin/legal-bases/${id}`, {
+      method: 'PATCH',
+      body: payload
+    }),
+    deleteLegalBasis: async (id: number) => await request(`/api/v1/admin/legal-bases/${id}`, {
+      method: 'DELETE'
+    }),
     coursePlatformDelivery: async (id: number) => await request<CoursePlatformDeliveryResponse>(`/api/v1/courses/${id}/platform-delivery`),
     updateCoursePlatformDelivery: async (id: number, deliveredByPlatform: boolean) => await request<CoursePlatformDeliveryResponse>(`/api/v1/courses/${id}/platform-delivery`, {
       method: 'PUT',

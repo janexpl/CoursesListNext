@@ -11,10 +11,13 @@ import {
   supportedCourseCertificateTranslationLanguages
 } from '~/utils/courseCertificateTranslations'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   disabled?: boolean
+  // Treść podstawy prawnej kursu do podglądu znacznika {{ podstawa_prawna }}.
+  legalBasis?: string | null
 }>(), {
-  disabled: false
+  disabled: false,
+  legalBasis: null
 })
 
 const translations = defineModel<CourseCertificateTranslationForm[]>({ required: true })
@@ -327,7 +330,7 @@ ${templatePreviewQrCss}
   </head>
   <body>
     <div class="certificate-sheet">
-      ${renderTemplatePreviewQr(html)}
+      ${renderTemplatePreviewQr(html, props.legalBasis)}
     </div>
   </body>
 </html>`

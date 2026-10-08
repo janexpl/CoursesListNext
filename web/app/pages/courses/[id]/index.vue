@@ -191,11 +191,12 @@ function buildCertificatePreviewDocument(html: string) {
         max-width: 100%;
         height: auto;
       }
+${templatePreviewQrCss}
     </style>
   </head>
   <body>
     <div class="certificate-sheet">
-      ${html}
+      ${renderTemplatePreviewQr(html, course.value?.legalBasis?.content)}
     </div>
   </body>
 </html>`
@@ -526,6 +527,22 @@ async function refreshAll() {
                 <dt class="text-xs uppercase tracking-[0.16em] text-slate-400">Ważność</dt>
                 <dd class="mt-1 text-sm text-slate-900">
                   {{ formatExpiryLabel(course.expiryTime) }}
+                </dd>
+              </div>
+
+              <div class="md:col-span-2">
+                <dt class="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-slate-400">
+                  Podstawa prawna
+                  <HelpHint text="Wstawiana na zaświadczenie w miejsce znacznika {{ podstawa_prawna }}. Wydane zaświadczenia zachowują treść z dnia wystawienia." />
+                </dt>
+                <dd class="mt-1 text-sm text-slate-900">
+                  <template v-if="course.legalBasis">
+                    <span class="font-medium">{{ course.legalBasis.name }}</span>
+                    <span class="mt-1 block leading-6 text-slate-600">{{ course.legalBasis.content }}</span>
+                  </template>
+                  <template v-else>
+                    Brak
+                  </template>
                 </dd>
               </div>
             </dl>

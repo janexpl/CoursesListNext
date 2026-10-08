@@ -438,7 +438,10 @@ const certificatePreview = computed(() => {
     data_rozpoczecia: formatPolishDate(certificate.value.courseDateStart),
     data_zakonczenia: formatPolishDate(certificate.value.courseDateEnd),
     data_wystawienia: formatPolishDate(certificate.value.date),
-    numer_zaswiadczenia: certificateNumber.value
+    numer_zaswiadczenia: certificateNumber.value,
+    // Ten sam klucz co w pdf.go - podgląd i druk z przeglądarki mają cytować tę samą
+    // (zamrożoną) podstawę co PDF z serwera.
+    podstawa_prawna: certificate.value.legalBasis || ''
   }
 
   // Nadruki wstawiane znacznikiem - dokładnie te same klucze co w pdf.go.
@@ -459,7 +462,10 @@ const certificatePreview = computed(() => {
       placed[normalizedTag] = true
       return raw[normalizedTag]
     }
-    return values[normalizedTag] ?? ''
+    // Escapowane jak w pdf.go (html.EscapeString) - inaczej tekst ze znakami < albo &
+    // (np. treść podstawy prawnej wpisana w bibliotece) drukowałby się z przeglądarki
+    // inaczej niż z serwera albo wstrzykiwał znaczniki do arkusza wydruku.
+    return escapeHtml(values[normalizedTag] ?? '')
   })
 
   return { html, placed }

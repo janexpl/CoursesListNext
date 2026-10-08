@@ -21,6 +21,9 @@ export const certificateTemplatePlaceholders: TemplatePlaceholder[] = [
   { label: 'Data zakończenia', value: '{{ data_zakonczenia }}' },
   { label: 'Data wystawienia', value: '{{ data_wystawienia }}' },
   { label: 'Numer zaświadczenia', value: '{{ numer_zaswiadczenia }}' },
+  // Treść podstawy prawnej wybranej w ustawieniach kursu (biblioteka podstaw prawnych).
+  // Zaświadczenie zamraża ją przy wystawieniu.
+  { label: 'Podstawa prawna', value: '{{ podstawa_prawna }}' },
   { label: 'Kod QR', value: '{{ kod_qr }}' },
   // Nadruki pojawiają się wyłącznie na zaświadczeniach wystawianych przez platformę;
   // na pozostałych wydrukach znacznik po prostu znika.

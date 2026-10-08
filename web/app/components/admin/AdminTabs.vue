@@ -7,7 +7,8 @@ const route = useRoute()
 const sections = [
   { label: 'Użytkownicy', to: '/admin/users' },
   { label: 'Klucze API', to: '/admin/api-keys' },
-  { label: 'Nadruki zaświadczeń', to: '/admin/certificate-print-assets' }
+  { label: 'Nadruki zaświadczeń', to: '/admin/certificate-print-assets' },
+  { label: 'Podstawy prawne', to: '/admin/legal-bases' }
 ]
 
 function isActive(path: string) {
