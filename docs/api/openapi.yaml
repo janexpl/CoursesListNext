@@ -1009,9 +1009,9 @@ paths:
         element zawiera pełną treść kursu. Odpowiedź bywa duża (szablony HTML mają kilka kB na kurs) —
         używaj tylko, gdy treść jest potrzebna. Stronicowanie i filtry jak w `GET /courses`.
 
-        Elementy mają kształt `CourseDetails` — **bez** `deliveredByPlatform` (kształt `CourseDetails` jest
-        zamrożony). Filtruj parametrem `deliveredByPlatform`; wartość flagi pojedynczego kursu zwraca
-        `GET /courses/{id}/platform-delivery`.
+        Elementy mają kształt `CourseDetails` — **bez** `deliveredByPlatform`. Filtruj parametrem
+        `deliveredByPlatform`; wartość flagi pojedynczego kursu zwraca `GET /courses/{id}/platform-delivery`.
+        `CourseDetails` dostaje nowe pola wyłącznie przyrostowo (ostatnio `legalBasis`) - ignoruj nieznane pola.
       x-required-scope: courses:read
       parameters:
         - $ref: "#/components/parameters/Search"
@@ -1069,10 +1069,11 @@ paths:
       operationId: replaceCourse
       summary: Aktualizacja kursu (pełne nadpisanie, łącznie z tłumaczeniami)
       description: >-
-        **Mimo metody PATCH to pełne nadpisanie** pól kursu. Wyjątkiem są tłumaczenia: pominięte
-        `certificateTranslations` zostawia je bez zmian. Podana lista jest synchronizowana z bazą — tłumaczenia
-        z listy są wstawiane lub nadpisywane, a te spoza listy usuwane (`[]` usuwa wszystkie). Zmiana kursu nie
-        wpływa na wystawione już zaświadczenia (przechowują kopię treści).
+        **Mimo metody PATCH to pełne nadpisanie** pól kursu. Wyjątki: pominięte `certificateTranslations`
+        zostawia tłumaczenia bez zmian (podana lista jest synchronizowana z bazą — tłumaczenia z listy są
+        wstawiane lub nadpisywane, a te spoza listy usuwane, `[]` usuwa wszystkie), a pominięte `legalBasisId`
+        zostawia podstawę prawną bez zmian (`null` ją zdejmuje). Zmiana kursu nie wpływa na wystawione już
+        zaświadczenia (przechowują kopię treści, także podstawy prawnej).
       x-required-scope: courses:write
       requestBody:
         required: true
@@ -1101,6 +1102,171 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /legal-bases:
+    get:
+      tags: [courses]
+      operationId: listLegalBases
+      summary: Biblioteka podstaw prawnych
+      description: >-
+        Podstawy prawne cytowane na zaświadczeniach. Kurs wskazuje jedną z nich (`legalBasisId`), a szablon
+        wstawia jej treść znacznikiem `{{ podstawa_prawna }}`. Posortowane po nazwie.
+      x-required-scope: courses:read
+      responses:
+        "200":
+          description: Lista.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalBasisListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [courses]
+      operationId: createLegalBasis
+      summary: Dodanie podstawy prawnej
+      description: >-
+        Dostępne dla każdego, kto edytuje kursy: nowa podstawa niczego nie zmienia, dopóki kurs jej nie wskaże.
+        Zmiana treści istniejącej podstawy - `PATCH /admin/legal-bases/{id}`.
+      x-required-scope: courses:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalBasisWrite"
+      responses:
+        "201":
+          description: Utworzona podstawa.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalBasisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "`legal basis name already exists` (porównanie bez wielkości liter i odstępów na brzegach)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /legal-bases/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [courses]
+      operationId: getLegalBasis
+      summary: Podstawa prawna z listą kursów, które ją wskazują
+      x-required-scope: courses:read
+      responses:
+        "200":
+          description: Podstawa.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalBasisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`legal basis not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/legal-bases/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [courses]
+      operationId: updateLegalBasis
+      summary: Zmiana nazwy i treści podstawy prawnej
+      description: >-
+        Tylko administrator i **tylko w sesji przeglądarki** (klucz API dostaje 403): treść trafia na każde
+        przyszłe zaświadczenie kursów, które wskazują tę podstawę. Wydane zaświadczenia mają treść zamrożoną
+        w chwili wystawienia i się nie zmieniają. Odpowiedź zawiera listę kursów objętych zmianą.
+      x-required-scope: courses:write
+      x-requires-admin: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalBasisWrite"
+      responses:
+        "200":
+          description: Podstawa po zmianie.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalBasisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`legal basis not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`legal basis name already exists`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [courses]
+      operationId: deleteLegalBasis
+      summary: Usunięcie nieużywanej podstawy prawnej
+      description: Tylko administrator, w sesji przeglądarki. Podstawy wskazywanej przez kurs nie da się usunąć.
+      x-required-scope: courses:write
+      x-requires-admin: true
+      responses:
+        "204":
+          description: Usunięto.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "`legal basis not found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`legal basis in use` - podstawę wskazuje co najmniej jeden kurs."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -3860,7 +4026,7 @@ components:
       description: "Języki tłumaczeń. `pl` to język bazowy kursu i nie może być tłumaczeniem."
     CourseDetails:
       type: object
-      required: [id, mainName, name, symbol, expiryTime, courseProgram, certFrontPage, certificateTranslations]
+      required: [id, mainName, name, symbol, expiryTime, courseProgram, certFrontPage, certificateTranslations, legalBasis]
       properties:
         id:
           type: integer
@@ -3882,6 +4048,89 @@ components:
           description: Posortowane po kodzie języka; pusta tablica, gdy brak tłumaczeń.
           items:
             $ref: "#/components/schemas/CourseCertificateTranslation"
+        legalBasis:
+          description: >-
+            Podstawa prawna wstawiana na zaświadczenie w miejsce znacznika `{{ podstawa_prawna }}`;
+            `null`, gdy kurs jej nie wskazuje.
+          oneOf:
+            - $ref: "#/components/schemas/CourseLegalBasis"
+            - type: "null"
+    CourseLegalBasis:
+      type: object
+      required: [id, name, content]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        content:
+          type: string
+    LegalBasis:
+      type: object
+      required: [id, name, content, courseCount, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: Nazwa do wyboru z listy; unikalna bez względu na wielkość liter. Nie trafia na wydruk.
+        content:
+          type: string
+          description: >-
+            Tekst wstawiany w szablon, zwykle od „§ …” do nawiasu z Dz. U. - zwrot „na podstawie” zostaje
+            w szablonie. Odstępy są sprowadzane do pojedynczych spacji.
+        courseCount:
+          type: integer
+          description: Ilu kursów dotknie zmiana treści.
+        updatedAt:
+          $ref: "#/components/schemas/LocalTimestamp"
+    LegalBasisDetails:
+      allOf:
+        - $ref: "#/components/schemas/LegalBasis"
+        - type: object
+          required: [courses]
+          properties:
+            courses:
+              type: array
+              description: Kursy wskazujące tę podstawę.
+              items:
+                type: object
+                required: [id, symbol, name]
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  symbol:
+                    type: string
+                  name:
+                    type: string
+    LegalBasisWrite:
+      type: object
+      additionalProperties: false
+      required: [name, content]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        content:
+          type: string
+          minLength: 1
+    LegalBasisListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegalBasis"
+    LegalBasisResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/LegalBasisDetails"
     CourseDetailsResponse:
       type: object
       required: [data]
@@ -3929,6 +4178,13 @@ components:
             się powtarzać; wszystkie pola każdego tłumaczenia są wymagane, a `courseProgram` musi być tablicą JSON.
           items:
             $ref: "#/components/schemas/CourseCertificateTranslation"
+        legalBasisId:
+          type: [integer, "null"]
+          format: int64
+          description: >-
+            Podstawa prawna kursu z biblioteki (`GET /legal-bases`). Przy PATCH: **pominięcie pola zostawia
+            podstawę bez zmian**, `null` ją zdejmuje - ten sam wyjątek od pełnego nadpisania co
+            `certificateTranslations`. Nieistniejące id - 400 `legal basis not found`.
 
     # ---------------------------------------------------------- certificates
     ExpiryDate:
@@ -4025,7 +4281,7 @@ components:
             to **aktualna** treść kursu (`pl`) i jego tłumaczeń.
     CertificateDetails:
       type: object
-      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, duplicateIssuedAt, duplicateReason, renewedAt, renewedByCertificateId, renewalOfCertificateId]
+      required: [id, date, studentId, courseId, studentFirstname, studentSecondname, studentLastname, studentBirthdate, studentBirthplace, studentPesel, companyName, courseDateStart, courseDateEnd, registryYear, registryNumber, courseName, courseSymbol, courseExpiryTime, courseProgram, certFrontPage, expiryDate, journal, languageCode, printVariants, verificationCode, revokedAt, revokeReason, duplicateIssuedAt, duplicateReason, renewedAt, renewedByCertificateId, renewalOfCertificateId, legalBasis]
       properties:
         id:
           type: integer
@@ -4136,6 +4392,13 @@ components:
           description: >-
             Identyfikator dokumentu, którego TEN jest przedłużeniem; `null`, gdy nie powstał przez
             `POST /certificates/{id}/renew`. Wyliczane, nie przechowywane.
+        legalBasis:
+          type: string
+          description: >-
+            Treść podstawy prawnej wstawiana w miejsce znacznika `{{ podstawa_prawna }}`, zamrożona
+            w chwili wystawienia - późniejsza zmiana w bibliotece nie dotyczy wydanych dokumentów.
+            Dla dokumentów sprzed biblioteki (bez zamrożonej treści) bieżąca podstawa kursu. Pusty
+            tekst, gdy brak.
     CertificateRenew:
       type: object
       additionalProperties: false

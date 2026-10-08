@@ -199,7 +199,7 @@ pole pominięte w żądaniu **nie zostaje bez zmian**, tylko jest czyszczone. Je
 |---|---|
 | `PATCH /students/{id}` | `secondName`, `pesel`, adres, `telephone`, `companyId` (kursant straci firmę) |
 | `PATCH /companies/{id}` | `email`, `contactPerson`, `note`, `expiryNotificationEmail`, `telephone` (→ pusty string); `expiryNotificationsEnabled` → `false` |
-| `PATCH /courses/{id}` | — (wszystkie pola kursu wymagane). **Wyjątek:** pominięte `certificateTranslations` zostawia tłumaczenia bez zmian; podana lista je zastępuje, a `[]` usuwa wszystkie |
+| `PATCH /courses/{id}` | — (wszystkie pola kursu wymagane). **Wyjątki:** pominięte `certificateTranslations` zostawia tłumaczenia bez zmian; podana lista je zastępuje, a `[]` usuwa wszystkie. Pominięte `legalBasisId` zostawia podstawę prawną bez zmian, `null` ją zdejmuje |
 | `PATCH /certificates/{id}` | `courseDateEnd` |
 | `PATCH /journals/{id}` | `companyId`, `organizerAddress`, `notes` |
 | `PATCH /admin/users/{id}` | — (wszystkie pola wymagane) |
@@ -294,44 +294,51 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
    nie sprawdzaj go warunkiem „prawdziwości" (`if (expiryTime)`), bo pomylisz `0` z brakiem terminu.
 11. `GET /courses` i `GET /courses/details` przyjmują `updatedSince` i `deliveredByPlatform` (sekcja 6.6).
    Wartość `deliveredByPlatform` jest na elementach `GET /courses` i pod `GET /courses/{id}/platform-delivery`,
-   ale **nie** w `CourseDetails` (także nie w `GET /courses/details`) — kształt `CourseDetails` się nie zmienia.
+   ale **nie** w `CourseDetails` (także nie w `GET /courses/details`).
+12. **Podstawa prawna** jest w bibliotece (`GET /legal-bases`), a nie w szablonie: kurs wskazuje jedną
+   (`CourseDetails.legalBasis`, przy zapisie `legalBasisId`), a szablon wstawia jej treść znacznikiem
+   `{{ podstawa_prawna }}`. Treść jest **zamrażana przy wystawieniu** (`CertificateDetails.legalBasis`) —
+   zmiana w bibliotece dotyczy tylko zaświadczeń wystawionych później, wydane cytują przepis z dnia
+   wystawienia. Nową podstawę może dodać każdy z `courses:write` (`POST /legal-bases`); treść istniejącej
+   zmienia wyłącznie administrator w przeglądarce (`/admin/legal-bases/{id}`, klucz API dostaje 403).
+   Kurs bez podstawy drukuje w miejscu znacznika pusty tekst.
 
 ### Kursanci i firmy
 
-12. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
+13. NIP jest walidowany przy zapisie firmy (400 `nip validation error: …`, te same komunikaty co w
    `GET /companies/lookup-by-nip`) i zapisywany jako same cyfry — `123-456-32-18` wróci jako `1234563218`.
-13. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
-14. Brak operacji usuwania kursantów, firm i kursów.
-15. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
+14. `expiryNotificationEmail` to jeden string z adresami rozdzielonymi przecinkami (maks. 10), nie tablica.
+15. Brak operacji usuwania kursantów, firm i kursów.
+16. Imię, nazwisko i data urodzenia identyfikują osobę — nie da się utworzyć drugiego kursanta o tych samych
     wartościach, także różniących się tylko wielkością liter lub spacjami (409). Przed utworzeniem kursanta
     wyszukaj go (`GET /students?search=...`). Dane sprzed wprowadzenia tej reguły mogą zawierać takie duplikaty;
     edycja rekordu z takiej pary, zmieniająca jego zapis na identyczny z bliźniakiem, też zwróci 409.
     Integracje, które mają własny identyfikator osoby, powinny zamiast tego używać
     `PUT /students/by-external-id/{externalId}` (sekcja 6.2).
-16. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
+17. `externalId` kursanta i firmy (maks. 64 znaki, unikalny) ustawia wyłącznie `PUT .../by-external-id/{externalId}`.
     Jest tylko do odczytu w `StudentDetails`/`CompanyDetails`, nie ma go na listach, a `POST` i `PATCH` go nie
     przyjmują (400) i nie zmieniają. Rekordy zakładane w aplikacji webowej mają `externalId: null`.
-17. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
+18. `telephone` firmy jest opcjonalny. Brak telefonu zapisuje się i wraca jako pusty string (ok. połowa istniejących
     firm nie ma telefonu).
 
 ### Dzienniki
 
-18. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
+19. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
-19. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
-20. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
+20. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
+21. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
     zaświadczeń ani usunięcia całego dziennika.
-21. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
+22. `DELETE /journals/{id}` usuwa trwale sesje, uczestników, obecność i skany (także dla zamkniętego dziennika).
     Zaświadczenia zostają.
 
 ### Pozostałe
 
-22. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
+23. Historia zmian (`.../audit-log`) nieistniejącego obiektu to pusta lista, nie 404 — dzięki temu historia pozostaje
     dostępna np. po usunięciu użytkownika. Pozostałe listy podrzędne dla nieistniejącego rodzica zwracają 404.
-23. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
+24. Unikalność adresu e-mail użytkownika **rozróżnia wielkość liter**: `Jan@example.com` i `jan@example.com`
     to dla API dwa różne adresy. Normalizuj adresy po swojej stronie, zanim utworzysz konto.
 
 ---
