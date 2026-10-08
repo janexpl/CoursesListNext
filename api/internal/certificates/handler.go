@@ -1102,6 +1102,7 @@ func mapCertificateDetailsResponse(certificate sqlc.GetCertificateByIDRow, print
 		RenewedAt:              pgutil.NullableTimestampz(certificate.RenewedAt),
 		RenewedByCertificateID: pgutil.NullableInt64(certificate.RenewedByCertificateID),
 		RenewalOfCertificateID: pgutil.NullableInt64(certificate.RenewalOfCertificateID),
+		LegalBasis:             certificate.LegalBasis,
 
 		Journal:       journal,
 		PrintVariants: printVariants,

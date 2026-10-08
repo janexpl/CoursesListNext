@@ -263,13 +263,15 @@ func TestDeliveredByPlatformFlagAndFilter(t *testing.T) {
 		t.Fatalf("GET /courses items must expose deliveredByPlatform, got %s", mustJSON(list))
 	}
 
-	// Kształt CourseDetails pozostaje bez zmian.
+	// Kształt CourseDetails pozostaje bez zmian - w szczególności flaga platformy nie
+	// wycieka do tej odpowiedzi. legalBasis doszło świadomie (biblioteka podstaw prawnych);
+	// schemat CourseDetails nie zabrania dodatkowych pól, więc to zmiana dodająca.
 	details := e.mustCall(t, http.MethodGet, fmt.Sprintf("/courses/%d", remote), nil, nil)
 	var detailsBody struct {
 		Data map[string]json.RawMessage `json:"data"`
 	}
 	details.decode(t, &detailsBody)
-	wantKeys := []string{"certFrontPage", "certificateTranslations", "courseProgram", "expiryTime", "id", "mainName", "name", "symbol"}
+	wantKeys := []string{"certFrontPage", "certificateTranslations", "courseProgram", "expiryTime", "id", "legalBasis", "mainName", "name", "symbol"}
 	var gotKeys []string
 	for key := range detailsBody.Data {
 		gotKeys = append(gotKeys, key)

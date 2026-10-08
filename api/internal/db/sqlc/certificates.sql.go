@@ -76,7 +76,8 @@ INSERT INTO certificates (
     course_symbol_snapshot,
     course_expiry_time_snapshot,
     course_program_snapshot,
-    cert_front_page_snapshot
+    cert_front_page_snapshot,
+    legal_basis_snapshot
 ) VALUES (
     $1,
     $2,
@@ -96,7 +97,8 @@ INSERT INTO certificates (
     $16,
     $17,
     $18,
-    $19
+    $19,
+    $20
 )
 RETURNING id, verification_code
 `
@@ -121,6 +123,7 @@ type CreateCertificateParams struct {
 	CourseExpiryTimeSnapshot  pgtype.Text `json:"course_expiry_time_snapshot"`
 	CourseProgramSnapshot     []byte      `json:"course_program_snapshot"`
 	CertFrontPageSnapshot     string      `json:"cert_front_page_snapshot"`
+	LegalBasisSnapshot        pgtype.Text `json:"legal_basis_snapshot"`
 }
 
 type CreateCertificateRow struct {
@@ -149,6 +152,7 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 		arg.CourseExpiryTimeSnapshot,
 		arg.CourseProgramSnapshot,
 		arg.CertFrontPageSnapshot,
+		arg.LegalBasisSnapshot,
 	)
 	var i CreateCertificateRow
 	err := row.Scan(&i.ID, &i.VerificationCode)
@@ -206,12 +210,21 @@ SELECT
     -- nienullowalną i skanowanie NULL-a kończyłoby się błędem. Indeks
     -- certificates_renewed_by_certificate_id_uidx gwarantuje najwyżej jeden taki wiersz,
     -- więc złączenie nie powiela wyniku.
-    prev.id AS renewal_of_certificate_id
+    prev.id AS renewal_of_certificate_id,
+    -- Treść podstawy prawnej dla znacznika {{ podstawa_prawna }}: zamrożona przy
+    -- wystawieniu. Dokument sprzed biblioteki (migracja 0029) bierze aktualną podstawę
+    -- kursu - jego własny szablon i tak ma tekst wpisany na sztywno, ale wydruk w innej
+    -- wersji językowej używa bieżącego szablonu tłumaczenia, który może mieć już znacznik.
+    -- Pusty tekst zamiast NULL: sqlc typuje COALESCE jako string, a skan NULL-a do string
+    -- kończy się błędem (tak było już z renewal_of_certificate_id).
+    COALESCE(c.legal_basis_snapshot, lb.content, '') AS legal_basis
 FROM certificates c
 LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = c.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
+LEFT JOIN courses co ON co.id = r.course_id
+LEFT JOIN legal_bases lb ON lb.id = co.legal_basis_id
 WHERE c.id = $1
   AND c.deleted_at IS NULL
 `
@@ -253,6 +266,7 @@ type GetCertificateByIDRow struct {
 	RenewedAt              pgtype.Timestamptz `json:"renewed_at"`
 	RenewedByCertificateID pgtype.Int8        `json:"renewed_by_certificate_id"`
 	RenewalOfCertificateID pgtype.Int8        `json:"renewal_of_certificate_id"`
+	LegalBasis             string             `json:"legal_basis"`
 }
 
 // UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
@@ -300,6 +314,7 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id int64) (GetCertific
 		&i.RenewedAt,
 		&i.RenewedByCertificateID,
 		&i.RenewalOfCertificateID,
+		&i.LegalBasis,
 	)
 	return i, err
 }
@@ -1033,7 +1048,7 @@ WITH updated AS (
       AND c.deleted_at IS NULL
     -- RETURNING całego wiersza: główne zapytanie widzi migawkę sprzed UPDATE w CTE, więc
     -- dane zaświadczenia muszą pochodzić z RETURNING, a nie z ponownego odczytu tabeli.
-    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.duplicate_reason, c.duplicate_issued_at, c.duplicate_issued_by_user_id, c.idempotency_key, c.renewed_at, c.renewed_by_certificate_id, c.renewed_by_user_id
+    RETURNING c.id, c.date, c.student_id, c.coursedatestart, c.coursedateend, c.registry_id, c.language_code, c.student_firstname_snapshot, c.student_secondname_snapshot, c.student_lastname_snapshot, c.student_birthdate_snapshot, c.student_birthplace_snapshot, c.student_pesel_snapshot, c.company_name_snapshot, c.course_name_snapshot, c.course_symbol_snapshot, c.course_expiry_time_snapshot, c.course_program_snapshot, c.cert_front_page_snapshot, c.deleted_at, c.deleted_by_user_id, c.delete_reason, c.company_id_snapshot, c.verification_code, c.revoked_at, c.revoke_reason, c.revoked_by_user_id, c.duplicate_reason, c.duplicate_issued_at, c.duplicate_issued_by_user_id, c.idempotency_key, c.renewed_at, c.renewed_by_certificate_id, c.renewed_by_user_id, c.legal_basis_snapshot
 )
 SELECT
     u.id,
@@ -1080,12 +1095,16 @@ SELECT
     u.idempotency_key,
     u.renewed_at,
     u.renewed_by_certificate_id,
-    prev.id AS renewal_of_certificate_id
+    prev.id AS renewal_of_certificate_id,
+    -- Ta sama kolumna co w GetCertificateByID - patrz uwaga o konwersji strukturalnej.
+    COALESCE(u.legal_basis_snapshot, lb.content, '') AS legal_basis
 FROM updated u
 LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = u.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = u.registry_id
+LEFT JOIN courses co ON co.id = r.course_id
+LEFT JOIN legal_bases lb ON lb.id = co.legal_basis_id
 `
 
 type UpdateCertificateParams struct {
@@ -1141,6 +1160,7 @@ type UpdateCertificateRow struct {
 	RenewedAt              pgtype.Timestamptz `json:"renewed_at"`
 	RenewedByCertificateID pgtype.Int8        `json:"renewed_by_certificate_id"`
 	RenewalOfCertificateID pgtype.Int8        `json:"renewal_of_certificate_id"`
+	LegalBasis             string             `json:"legal_basis"`
 }
 
 // UWAGA: service.go robi konwersję strukturalną GetCertificateByIDRow(UpdateCertificateRow),
@@ -1202,6 +1222,7 @@ func (q *Queries) UpdateCertificate(ctx context.Context, arg UpdateCertificatePa
 		&i.RenewedAt,
 		&i.RenewedByCertificateID,
 		&i.RenewalOfCertificateID,
+		&i.LegalBasis,
 	)
 	return i, err
 }

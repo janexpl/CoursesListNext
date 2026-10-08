@@ -244,5 +244,6 @@ func buildJournalCertificateParams(source sqlc.GetJournalAttendeeForCertificateG
 		CourseExpiryTimeSnapshot:  source.CourseExpiryTime,
 		CourseProgramSnapshot:     []byte(source.CourseProgram),
 		CertFrontPageSnapshot:     frontPage,
+		LegalBasisSnapshot:        source.LegalBasis,
 	}, nil
 }

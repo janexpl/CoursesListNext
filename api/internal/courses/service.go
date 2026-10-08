@@ -42,6 +42,8 @@ type CreateCourseInput struct {
 	CourseProgram           string
 	CertFrontPage           string
 	CertificateTranslations []CourseTranslationInput
+	// LegalBasisID: pominięte (Set=false) przy edycji zostawia podstawę bez zmian.
+	LegalBasisID OptionalID
 }
 type UpdateCourseInput = CreateCourseInput
 
@@ -98,7 +100,46 @@ var (
 	ErrUnsupportedTranslationLanguage = fmt.Errorf("%w: unsupported translation language", ErrInvalidInput)
 	ErrDuplicateTranslationLanguage   = fmt.Errorf("%w: duplicate translation language", ErrInvalidInput)
 	ErrIncompleteTranslation          = fmt.Errorf("%w: translation fields are required", ErrInvalidInput)
+	ErrLegalBasisNotFound             = fmt.Errorf("%w: legal basis not found", ErrInvalidInput)
 )
+
+type legalBasisReader interface {
+	GetLegalBasisByID(ctx context.Context, id int64) (sqlc.LegalBasis, error)
+}
+
+// resolveLegalBasisID zamienia wybór z żądania na wartość kolumny. Pominięte pole
+// zostawia dotychczasową podstawę (current); nieistniejąca podstawa to błąd walidacji,
+// a nie 500 z naruszenia klucza obcego.
+func resolveLegalBasisID(ctx context.Context, q legalBasisReader, choice OptionalID, current pgtype.Int8) (pgtype.Int8, error) {
+	if !choice.Set {
+		return current, nil
+	}
+	if choice.Value == nil {
+		return pgtype.Int8{}, nil
+	}
+	if *choice.Value <= 0 {
+		return pgtype.Int8{}, ErrLegalBasisNotFound
+	}
+	if _, err := q.GetLegalBasisByID(ctx, *choice.Value); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.Int8{}, ErrLegalBasisNotFound
+		}
+		return pgtype.Int8{}, err
+	}
+	return pgtype.Int8{Int64: *choice.Value, Valid: true}, nil
+}
+
+// loadCourseLegalBasis buduje obiekt podstawy do odpowiedzi kursu.
+func loadCourseLegalBasis(ctx context.Context, q legalBasisReader, id pgtype.Int8) (*CourseLegalBasisDTO, error) {
+	if !id.Valid {
+		return nil, nil
+	}
+	basis, err := q.GetLegalBasisByID(ctx, id.Int64)
+	if err != nil {
+		return nil, err
+	}
+	return &CourseLegalBasisDTO{ID: basis.ID, Name: basis.Name, Content: basis.Content}, nil
+}
 
 func NewService(pool *pgxpool.Pool, queries *sqlc.Queries, recorder *auditlog.Recorder) *Service {
 	return &Service{
@@ -140,6 +181,10 @@ func (s *Service) Create(ctx context.Context, input CreateCourseInput) (CourseDe
 			}
 		}
 	}()
+	legalBasisID, err := resolveLegalBasisID(ctx, tx.queries, input.LegalBasisID, pgtype.Int8{})
+	if err != nil {
+		return CourseDetailDTO{}, err
+	}
 	courseParams := sqlc.CreateCourseParams{
 		Mainname:      pgtype.Text{String: input.MainName, Valid: true},
 		Name:          input.Name,
@@ -147,6 +192,7 @@ func (s *Service) Create(ctx context.Context, input CreateCourseInput) (CourseDe
 		Expirytime:    pgtype.Text{String: expiryTime, Valid: true},
 		Courseprogram: []byte(input.CourseProgram),
 		Certfrontpage: pgtype.Text{String: input.CertFrontPage, Valid: true},
+		LegalBasisID:  legalBasisID,
 	}
 	row, err := tx.queries.CreateCourse(ctx, courseParams)
 	if err != nil {
@@ -163,13 +209,17 @@ func (s *Service) Create(ctx context.Context, input CreateCourseInput) (CourseDe
 		}
 		return CourseDetailDTO{}, ErrDatabaseTransactionError
 	}
+	created := makeCourseDetailDTO(row, courseTranslations)
+	if created.LegalBasis, err = loadCourseLegalBasis(ctx, tx.queries, row.LegalBasisID); err != nil {
+		return CourseDetailDTO{}, err
+	}
 	if s.recorder != nil {
 		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
 			EntityType: "course",
 			EntityID:   row.ID,
 			Action:     "create",
 			Before:     nil,
-			After:      makeCourseDetailDTO(row, courseTranslations),
+			After:      created,
 			Metadata:   nil,
 		}); err != nil {
 			return CourseDetailDTO{}, err
@@ -179,7 +229,7 @@ func (s *Service) Create(ctx context.Context, input CreateCourseInput) (CourseDe
 		return CourseDetailDTO{}, err
 	}
 	committed = true
-	return makeCourseDetailDTO(row, courseTranslations), nil
+	return created, nil
 }
 
 func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourseInput) (CourseDetailDTO, error) {
@@ -224,6 +274,13 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 		return CourseDetailDTO{}, ErrDatabaseTransactionError
 	}
 	before := makeCourseDetailDTO(beforeCourse, beforeTranslations)
+	if before.LegalBasis, err = loadCourseLegalBasis(ctx, tx.queries, beforeCourse.LegalBasisID); err != nil {
+		return CourseDetailDTO{}, ErrDatabaseTransactionError
+	}
+	legalBasisID, err := resolveLegalBasisID(ctx, tx.queries, input.LegalBasisID, beforeCourse.LegalBasisID)
+	if err != nil {
+		return CourseDetailDTO{}, err
+	}
 	row, err := tx.queries.UpdateCourse(ctx, sqlc.UpdateCourseParams{
 		ID:            courseID,
 		Mainname:      pgtype.Text{String: input.MainName, Valid: true},
@@ -232,6 +289,8 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 		Expirytime:    pgtype.Text{String: expiryTime, Valid: true},
 		Courseprogram: []byte(input.CourseProgram),
 		Certfrontpage: pgtype.Text{String: input.CertFrontPage, Valid: true},
+		// Bez jawnego wyboru zostaje dotychczasowa podstawa - patrz OptionalID.
+		LegalBasisID: legalBasisID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -260,13 +319,18 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 		}
 	}
 
+	after := makeCourseDetailDTO(row, courseTranslations)
+	if after.LegalBasis, err = loadCourseLegalBasis(ctx, tx.queries, row.LegalBasisID); err != nil {
+		return CourseDetailDTO{}, ErrDatabaseTransactionError
+	}
+
 	if s.recorder != nil {
 		if err := s.recorder.Record(ctx, tx.queries, auditlog.Entry{
 			EntityType: "course",
 			EntityID:   courseID,
 			Action:     "update",
 			Before:     before,
-			After:      makeCourseDetailDTO(row, courseTranslations),
+			After:      after,
 			Metadata:   nil,
 		}); err != nil {
 			return CourseDetailDTO{}, err
@@ -278,7 +342,7 @@ func (s *Service) Update(ctx context.Context, courseID int64, input UpdateCourse
 	}
 	committed = true
 
-	return makeCourseDetailDTO(row, courseTranslations), nil
+	return after, nil
 }
 
 func validateCourseInput(input CreateCourseInput) error {

@@ -22,6 +22,7 @@ type Querier interface {
 	ListCoursesDetails(ctx context.Context, arg sqlc.ListCoursesDetailsParams) ([]sqlc.ListCoursesDetailsRow, error)
 	GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error)
 	ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
+	GetLegalBasisByID(ctx context.Context, id int64) (sqlc.LegalBasis, error)
 }
 
 type Creator interface {
@@ -288,10 +289,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := GetCourseResponse{
-		Data: makeCourseDetailDTO(course, translations),
+	detail := makeCourseDetailDTO(course, translations)
+	if detail.LegalBasis, err = loadCourseLegalBasis(r.Context(), h.queries, course.LegalBasisID); err != nil {
+		response.HandleDBError(w, err, "legal basis")
+		return
 	}
-	response.WriteJSON(w, http.StatusOK, resp)
+	response.WriteJSON(w, http.StatusOK, GetCourseResponse{Data: detail})
 }
 
 func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
@@ -328,6 +331,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		CourseProgram:           courseProgram,
 		CertFrontPage:           certFrontPage,
 		CertificateTranslations: mapCourseTranslationInputs(req.CertificateTranslations),
+		LegalBasisID:            req.LegalBasisID,
 	})
 	if err != nil {
 		if message, ok := courseValidationMessage(err); ok {
@@ -375,6 +379,7 @@ func (h *Handler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		CourseProgram:           courseProgram,
 		CertFrontPage:           certFrontPage,
 		CertificateTranslations: mapCourseTranslationInputs(req.CertificateTranslations),
+		LegalBasisID:            req.LegalBasisID,
 	})
 	if err != nil {
 		if message, ok := courseValidationMessage(err); ok {
@@ -437,6 +442,14 @@ func makeCourseDetailDTOFromListRow(row sqlc.ListCoursesDetailsRow) (CourseDetai
 			return CourseDetailDTO{}, err
 		}
 	}
+	// Klucze z json_build_object w ListCoursesDetails odpowiadają tagom CourseLegalBasisDTO.
+	var legalBasis *CourseLegalBasisDTO
+	if len(row.LegalBasis) > 0 && string(row.LegalBasis) != "null" {
+		legalBasis = &CourseLegalBasisDTO{}
+		if err := json.Unmarshal(row.LegalBasis, legalBasis); err != nil {
+			return CourseDetailDTO{}, err
+		}
+	}
 
 	return CourseDetailDTO{
 		ID:                      row.ID,
@@ -447,6 +460,7 @@ func makeCourseDetailDTOFromListRow(row sqlc.ListCoursesDetailsRow) (CourseDetai
 		CourseProgram:           string(row.Courseprogram),
 		CertFrontPage:           row.Certfrontpage.String,
 		CertificateTranslations: translations,
+		LegalBasis:              legalBasis,
 	}, nil
 }
 
@@ -476,6 +490,8 @@ func courseValidationMessage(err error) (string, bool) {
 		return "duplicate translation language", true
 	case errors.Is(err, ErrIncompleteTranslation):
 		return "translation fields are required", true
+	case errors.Is(err, ErrLegalBasisNotFound):
+		return "legal basis not found", true
 	case errors.Is(err, ErrInvalidInput):
 		return "invalid request body", true
 	default:

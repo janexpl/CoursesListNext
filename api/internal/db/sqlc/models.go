@@ -78,6 +78,7 @@ type Certificate struct {
 	RenewedAt                 pgtype.Timestamptz `json:"renewed_at"`
 	RenewedByCertificateID    pgtype.Int8        `json:"renewed_by_certificate_id"`
 	RenewedByUserID           pgtype.Int8        `json:"renewed_by_user_id"`
+	LegalBasisSnapshot        pgtype.Text        `json:"legal_basis_snapshot"`
 }
 
 type CertificatePrintAsset struct {
@@ -119,6 +120,7 @@ type Course struct {
 	Certfrontpage       pgtype.Text        `json:"certfrontpage"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	DeliveredByPlatform bool               `json:"delivered_by_platform"`
+	LegalBasisID        pgtype.Int8        `json:"legal_basis_id"`
 }
 
 type CourseCertificateTranslation struct {
@@ -137,6 +139,14 @@ type IdempotencyKey struct {
 	RequestHash   string             `json:"request_hash"`
 	CertificateID int64              `json:"certificate_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type LegalBasis struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Registry struct {

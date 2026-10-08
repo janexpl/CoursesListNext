@@ -22,6 +22,7 @@ type fakeQuerier struct {
 	UpdateCourseFunc                                func(ctx context.Context, arg sqlc.UpdateCourseParams) (sqlc.Course, error)
 	CreateCourseFunc                                func(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error)
 	ListCourseCertificateTranslationsByCourseIDFunc func(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error)
+	GetLegalBasisByIDFunc                           func(ctx context.Context, id int64) (sqlc.LegalBasis, error)
 }
 
 type fakeCreator struct {
@@ -47,6 +48,13 @@ func (f fakeQuerier) UpdateCourse(ctx context.Context, arg sqlc.UpdateCoursePara
 
 func (f fakeQuerier) CreateCourse(ctx context.Context, arg sqlc.CreateCourseParams) (sqlc.Course, error) {
 	return f.CreateCourseFunc(ctx, arg)
+}
+
+func (f fakeQuerier) GetLegalBasisByID(ctx context.Context, id int64) (sqlc.LegalBasis, error) {
+	if f.GetLegalBasisByIDFunc == nil {
+		return sqlc.LegalBasis{}, errors.New("unexpected GetLegalBasisByID call")
+	}
+	return f.GetLegalBasisByIDFunc(ctx, id)
 }
 
 func (f fakeQuerier) ListCourseCertificateTranslationsByCourseID(ctx context.Context, courseID int64) ([]sqlc.ListCourseCertificateTranslationsByCourseIDRow, error) {

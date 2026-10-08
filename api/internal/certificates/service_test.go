@@ -396,8 +396,12 @@ func TestCreateReturnsCertificateIDOnSuccess(t *testing.T) {
 								},
 							}
 						case 3:
-							if len(args) != 19 {
-								t.Fatalf("expected 19 create certificate args, got %d", len(args))
+							if len(args) != 20 {
+								t.Fatalf("expected 20 create certificate args, got %d", len(args))
+							}
+							// Kurs w tym teście nie wskazuje podstawy prawnej - migawka pusta.
+							if snapshot, ok := args[19].(pgtype.Text); !ok || snapshot.Valid {
+								t.Fatalf("expected empty legal_basis_snapshot, got %+v", args[19])
 							}
 							companyIDSnapshot, ok := args[13].(pgtype.Int8)
 							if !ok || !companyIDSnapshot.Valid || companyIDSnapshot.Int64 != 3 {

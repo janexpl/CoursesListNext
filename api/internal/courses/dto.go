@@ -1,5 +1,7 @@
 package courses
 
+import "encoding/json"
+
 type CourseDTO struct {
 	ID         int64  `json:"id"`
 	MainName   string `json:"mainName"`
@@ -19,6 +21,9 @@ type CourseDetailDTO struct {
 	CourseProgram           string                            `json:"courseProgram"`
 	CertFrontPage           string                            `json:"certFrontPage"`
 	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`
+	// LegalBasis - podstawa prawna wstawiana w szablon znacznikiem {{ podstawa_prawna }};
+	// null, gdy kurs jej nie wskazuje.
+	LegalBasis *CourseLegalBasisDTO `json:"legalBasis"`
 }
 
 type ListCoursesResponse struct {
@@ -65,6 +70,40 @@ type coursePayload struct {
 	CourseProgram           string                            `json:"courseProgram"`
 	CertFrontPage           string                            `json:"certFrontPage"`
 	CertificateTranslations []CourseCertificateTranslationDTO `json:"certificateTranslations"`
+	LegalBasisID            OptionalID                        `json:"legalBasisId"`
+}
+
+// CourseLegalBasisDTO - podstawa prawna wskazana przez kurs.
+type CourseLegalBasisDTO struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// OptionalID odróżnia pole pominięte od jawnego null.
+//
+// PATCH /courses/{id} działa jak pełne nadpisanie, ale legalBasisId - tak jak
+// certificateTranslations - pominięte zostawia podstawę bez zmian, a null ją zdejmuje.
+// Inaczej każdy klient API, który nie zna nowego pola, zdejmowałby kursom podstawę
+// prawną przy każdej edycji.
+type OptionalID struct {
+	Set   bool
+	Value *int64
+}
+
+// UnmarshalJSON jest wołane tylko dla obecnego klucza, więc samo wywołanie oznacza Set.
+func (o *OptionalID) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var value int64
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	o.Value = &value
+	return nil
 }
 
 type CourseCertificateTranslationDTO struct {

@@ -59,8 +59,14 @@ SELECT
     c.courseprogram,
     c.certfrontpage,
     COALESCE(t.translations, '[]'::json)::json AS certificate_translations,
+    -- Podstawa prawna jako gotowy obiekt JSON o kluczach CourseLegalBasisDTO; NULL dla
+    -- kursu bez podstawy.
+    CASE WHEN lb.id IS NULL THEN NULL
+         ELSE json_build_object('id', lb.id, 'name', lb.name, 'content', lb.content)
+    END::json AS legal_basis,
     COUNT(*) OVER () AS total_count
 FROM courses c
+LEFT JOIN legal_bases lb ON lb.id = c.legal_basis_id
 LEFT JOIN LATERAL (
     SELECT json_agg(
         json_build_object(
@@ -103,7 +109,9 @@ OFFSET sqlc.arg(offset_count);
 
 
 -- name: GetCourseByID :one
-SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform FROM courses
+-- Lista kolumn pokrywa się z tabelą, więc sqlc zwraca model Course, z którego korzystają
+-- też zaświadczenia. Nową kolumnę kursu trzeba dopisać tu, w UpdateCourse i w CreateCourse.
+SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform, legal_basis_id FROM courses
 WHERE id = $1;
 
 
@@ -115,9 +123,10 @@ WHERE id = $1;
       symbol = $4,
       expirytime = $5,
       courseprogram = $6,
-      certfrontpage = $7
+      certfrontpage = $7,
+      legal_basis_id = sqlc.narg(legal_basis_id)
   WHERE id = $1
-  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform;
+  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform, legal_basis_id;
 
 -- name: CreateCourse :one
   INSERT INTO courses (
@@ -126,9 +135,10 @@ WHERE id = $1;
       symbol,
       expirytime,
       courseprogram,
-      certfrontpage
+      certfrontpage,
+      legal_basis_id
   ) VALUES (
-      $1, $2, $3, $4, $5, $6
+      $1, $2, $3, $4, $5, $6, sqlc.narg(legal_basis_id)
   )
   RETURNING
       id,
@@ -139,7 +149,8 @@ WHERE id = $1;
       courseprogram,
       certfrontpage,
       updated_at,
-      delivered_by_platform;
+      delivered_by_platform,
+      legal_basis_id;
 
 -- name: SetCourseDeliveredByPlatform :one
 UPDATE courses

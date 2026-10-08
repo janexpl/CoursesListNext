@@ -21,6 +21,7 @@ import (
 	dbsql "github.com/janexpl/CoursesListNext/api/internal/db/sqlc"
 	"github.com/janexpl/CoursesListNext/api/internal/gusclient"
 	"github.com/janexpl/CoursesListNext/api/internal/journals"
+	"github.com/janexpl/CoursesListNext/api/internal/legalbases"
 	"github.com/janexpl/CoursesListNext/api/internal/registries"
 	"github.com/janexpl/CoursesListNext/api/internal/response"
 	"github.com/janexpl/CoursesListNext/api/internal/students"
@@ -59,6 +60,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	coursesService := courses.NewService(deps.Pool, deps.Queries, recorder)
 	coursesService.SetWebhookPublisher(webhookPublisher)
 	courseHandler := courses.NewHandler(deps.Queries, coursesService)
+	legalBasisHandler := legalbases.NewHandler(deps.Queries, legalbases.NewService(deps.Pool, deps.Queries, recorder))
 	registryHandler := registries.NewHandler(deps.Queries)
 	journalService := journals.NewService(deps.Pool, deps.Queries, recorder)
 	journalHandler := journals.NewHandler(deps.Queries, journalService)
@@ -171,6 +173,11 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Post("/courses", courseHandler.CreateCourse)
 			r.With(auth.RequireScope(auth.ScopeCertificatesRead)).Get("/courses/{id}/certificates", certificateHandler.ListByCourseID)
 			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/courses/{id}/platform-delivery", courseHandler.GetPlatformDelivery)
+			// Wybór i dodanie podstawy prawnej należą do edycji kursu; zmiana treści
+			// istniejącej podstawy jest w grupie administratora niżej.
+			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/legal-bases", legalBasisHandler.List)
+			r.With(auth.RequireScope(auth.ScopeCoursesRead)).Get("/legal-bases/{id}", legalBasisHandler.Get)
+			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Post("/legal-bases", legalBasisHandler.Create)
 			r.With(auth.RequireScope(auth.ScopeCoursesWrite)).Put("/courses/{id}/platform-delivery", courseHandler.PutPlatformDelivery)
 
 			r.With(auth.RequireScope(auth.ScopeRegistriesRead)).Get("/registries/next-number", registryHandler.GetNextNumber)
@@ -230,6 +237,12 @@ func NewRouter(deps Dependencies) http.Handler {
 				// z certificates:write nie powinien móc podłożyć własnego podpisu.
 				r.With(auth.RequireSession()).Post("/admin/certificate-print-assets/{kind}", certAssetHandler.Upsert)
 				r.With(auth.RequireSession()).Delete("/admin/certificate-print-assets/{kind}", certAssetHandler.Delete)
+
+				// Treść podstawy prawnej trafia na każde przyszłe zaświadczenie kursów, które
+				// ją wskazują - z tego samego powodu co nadruki zmienia ją tylko administrator
+				// w przeglądarce, nie klucz integracji.
+				r.With(auth.RequireSession()).Patch("/admin/legal-bases/{id}", legalBasisHandler.Update)
+				r.With(auth.RequireSession()).Delete("/admin/legal-bases/{id}", legalBasisHandler.Delete)
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireScope(auth.ScopeAuditLogRead))

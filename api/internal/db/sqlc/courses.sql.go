@@ -18,9 +18,10 @@ const createCourse = `-- name: CreateCourse :one
       symbol,
       expirytime,
       courseprogram,
-      certfrontpage
+      certfrontpage,
+      legal_basis_id
   ) VALUES (
-      $1, $2, $3, $4, $5, $6
+      $1, $2, $3, $4, $5, $6, $7
   )
   RETURNING
       id,
@@ -31,7 +32,8 @@ const createCourse = `-- name: CreateCourse :one
       courseprogram,
       certfrontpage,
       updated_at,
-      delivered_by_platform
+      delivered_by_platform,
+      legal_basis_id
 `
 
 type CreateCourseParams struct {
@@ -41,6 +43,7 @@ type CreateCourseParams struct {
 	Expirytime    pgtype.Text `json:"expirytime"`
 	Courseprogram []byte      `json:"courseprogram"`
 	Certfrontpage pgtype.Text `json:"certfrontpage"`
+	LegalBasisID  pgtype.Int8 `json:"legal_basis_id"`
 }
 
 func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Course, error) {
@@ -51,6 +54,7 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		arg.Expirytime,
 		arg.Courseprogram,
 		arg.Certfrontpage,
+		arg.LegalBasisID,
 	)
 	var i Course
 	err := row.Scan(
@@ -63,15 +67,18 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		&i.Certfrontpage,
 		&i.UpdatedAt,
 		&i.DeliveredByPlatform,
+		&i.LegalBasisID,
 	)
 	return i, err
 }
 
 const getCourseByID = `-- name: GetCourseByID :one
-SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform FROM courses
+SELECT id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform, legal_basis_id FROM courses
 WHERE id = $1
 `
 
+// Lista kolumn pokrywa się z tabelą, więc sqlc zwraca model Course, z którego korzystają
+// też zaświadczenia. Nową kolumnę kursu trzeba dopisać tu, w UpdateCourse i w CreateCourse.
 func (q *Queries) GetCourseByID(ctx context.Context, id int64) (Course, error) {
 	row := q.db.QueryRow(ctx, getCourseByID, id)
 	var i Course
@@ -85,6 +92,7 @@ func (q *Queries) GetCourseByID(ctx context.Context, id int64) (Course, error) {
 		&i.Certfrontpage,
 		&i.UpdatedAt,
 		&i.DeliveredByPlatform,
+		&i.LegalBasisID,
 	)
 	return i, err
 }
@@ -188,8 +196,14 @@ SELECT
     c.courseprogram,
     c.certfrontpage,
     COALESCE(t.translations, '[]'::json)::json AS certificate_translations,
+    -- Podstawa prawna jako gotowy obiekt JSON o kluczach CourseLegalBasisDTO; NULL dla
+    -- kursu bez podstawy.
+    CASE WHEN lb.id IS NULL THEN NULL
+         ELSE json_build_object('id', lb.id, 'name', lb.name, 'content', lb.content)
+    END::json AS legal_basis,
     COUNT(*) OVER () AS total_count
 FROM courses c
+LEFT JOIN legal_bases lb ON lb.id = c.legal_basis_id
 LEFT JOIN LATERAL (
     SELECT json_agg(
         json_build_object(
@@ -248,6 +262,7 @@ type ListCoursesDetailsRow struct {
 	Courseprogram           []byte      `json:"courseprogram"`
 	Certfrontpage           pgtype.Text `json:"certfrontpage"`
 	CertificateTranslations []byte      `json:"certificate_translations"`
+	LegalBasis              []byte      `json:"legal_basis"`
 	TotalCount              int64       `json:"total_count"`
 }
 
@@ -289,6 +304,7 @@ func (q *Queries) ListCoursesDetails(ctx context.Context, arg ListCoursesDetails
 			&i.Courseprogram,
 			&i.Certfrontpage,
 			&i.CertificateTranslations,
+			&i.LegalBasis,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -328,9 +344,10 @@ const updateCourse = `-- name: UpdateCourse :one
       symbol = $4,
       expirytime = $5,
       courseprogram = $6,
-      certfrontpage = $7
+      certfrontpage = $7,
+      legal_basis_id = $8
   WHERE id = $1
-  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform
+  RETURNING id, mainname, name, symbol, expirytime, courseprogram, certfrontpage, updated_at, delivered_by_platform, legal_basis_id
 `
 
 type UpdateCourseParams struct {
@@ -341,6 +358,7 @@ type UpdateCourseParams struct {
 	Expirytime    pgtype.Text `json:"expirytime"`
 	Courseprogram []byte      `json:"courseprogram"`
 	Certfrontpage pgtype.Text `json:"certfrontpage"`
+	LegalBasisID  pgtype.Int8 `json:"legal_basis_id"`
 }
 
 func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Course, error) {
@@ -352,6 +370,7 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		arg.Expirytime,
 		arg.Courseprogram,
 		arg.Certfrontpage,
+		arg.LegalBasisID,
 	)
 	var i Course
 	err := row.Scan(
@@ -364,6 +383,7 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.Certfrontpage,
 		&i.UpdatedAt,
 		&i.DeliveredByPlatform,
+		&i.LegalBasisID,
 	)
 	return i, err
 }

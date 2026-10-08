@@ -199,7 +199,9 @@ func TestServiceUpdateRecordsAuditLogWithBeforeAndAfter(t *testing.T) {
 								return nil
 							}}
 						case strings.Contains(sql, "UPDATE courses"):
-							if len(args) != 7 || args[0] != int64(12) {
+							// Ósmy argument to legal_basis_id: żądanie go nie podaje, więc
+							// zostaje dotychczasowa wartość kursu (tu brak podstawy).
+							if len(args) != 8 || args[0] != int64(12) || args[7].(pgtype.Int8).Valid {
 								t.Fatalf("unexpected update args: %+v", args)
 							}
 							return fakeServiceRow{scan: func(dest ...interface{}) error {

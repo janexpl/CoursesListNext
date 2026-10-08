@@ -101,12 +101,21 @@ SELECT
     -- nienullowalną i skanowanie NULL-a kończyłoby się błędem. Indeks
     -- certificates_renewed_by_certificate_id_uidx gwarantuje najwyżej jeden taki wiersz,
     -- więc złączenie nie powiela wyniku.
-    prev.id AS renewal_of_certificate_id
+    prev.id AS renewal_of_certificate_id,
+    -- Treść podstawy prawnej dla znacznika {{ podstawa_prawna }}: zamrożona przy
+    -- wystawieniu. Dokument sprzed biblioteki (migracja 0029) bierze aktualną podstawę
+    -- kursu - jego własny szablon i tak ma tekst wpisany na sztywno, ale wydruk w innej
+    -- wersji językowej używa bieżącego szablonu tłumaczenia, który może mieć już znacznik.
+    -- Pusty tekst zamiast NULL: sqlc typuje COALESCE jako string, a skan NULL-a do string
+    -- kończy się błędem (tak było już z renewal_of_certificate_id).
+    COALESCE(c.legal_basis_snapshot, lb.content, '') AS legal_basis
 FROM certificates c
 LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = c.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = c.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
 JOIN registries r ON r.id = c.registry_id
+LEFT JOIN courses co ON co.id = r.course_id
+LEFT JOIN legal_bases lb ON lb.id = co.legal_basis_id
 WHERE c.id = $1
   AND c.deleted_at IS NULL;
 
@@ -130,7 +139,8 @@ INSERT INTO certificates (
     course_symbol_snapshot,
     course_expiry_time_snapshot,
     course_program_snapshot,
-    cert_front_page_snapshot
+    cert_front_page_snapshot,
+    legal_basis_snapshot
 ) VALUES (
     sqlc.arg(date),
     sqlc.arg(student_id),
@@ -150,7 +160,8 @@ INSERT INTO certificates (
     sqlc.arg(course_symbol_snapshot),
     sqlc.arg(course_expiry_time_snapshot),
     sqlc.arg(course_program_snapshot),
-    sqlc.arg(cert_front_page_snapshot)
+    sqlc.arg(cert_front_page_snapshot),
+    sqlc.narg(legal_basis_snapshot)
 )
 RETURNING id, verification_code;
 
@@ -252,12 +263,16 @@ SELECT
     u.idempotency_key,
     u.renewed_at,
     u.renewed_by_certificate_id,
-    prev.id AS renewal_of_certificate_id
+    prev.id AS renewal_of_certificate_id,
+    -- Ta sama kolumna co w GetCertificateByID - patrz uwaga o konwersji strukturalnej.
+    COALESCE(u.legal_basis_snapshot, lb.content, '') AS legal_basis
 FROM updated u
 LEFT JOIN certificates prev ON prev.renewed_by_certificate_id = u.id AND prev.deleted_at IS NULL
 LEFT JOIN training_journal_attendees tja ON tja.certificate_id = u.id
 LEFT JOIN training_journals tj ON tj.id = tja.journal_id
-JOIN registries r ON r.id = u.registry_id;
+JOIN registries r ON r.id = u.registry_id
+LEFT JOIN courses co ON co.id = r.course_id
+LEFT JOIN legal_bases lb ON lb.id = co.legal_basis_id;
 
 -- name: SoftDeleteCertificate :one
 -- Jedno polecenie, bo usunięcie następcy musi odznaczyć poprzednika niepodzielnie:

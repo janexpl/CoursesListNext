@@ -109,6 +109,10 @@ type courseSnapshot struct {
 	ExpiryTime *string
 	Program    []byte
 	FrontPage  string
+	// LegalBasis - treść podstawy prawnej kursu z chwili wystawienia; nil, gdy kurs jej
+	// nie wskazuje. Zamrażana jak szablon: poprawka w bibliotece nie zmienia wydanych
+	// dokumentów.
+	LegalBasis *string
 }
 
 func NewService(pool *pgxpool.Pool, queries *dbsqlc.Queries, recorder *auditlog.Recorder) *Service {
@@ -254,6 +258,13 @@ func (s *Service) prepareCertificate(ctx context.Context, input CreateCertificat
 	}
 
 	courseSnapshot := buildCourseSnapshot(course, translation, languageCode)
+	if course.LegalBasisID.Valid {
+		basis, err := s.queries.GetLegalBasisByID(ctx, course.LegalBasisID.Int64)
+		if err != nil {
+			return preparedCertificate{}, err
+		}
+		courseSnapshot.LegalBasis = &basis.Content
+	}
 
 	registryYear := input.RegistryYear
 	if input.AssignRegistryNumber && registryYear == 0 {
@@ -786,6 +797,7 @@ func toCreateCertificateParams(
 		CourseExpiryTimeSnapshot:  pgutil.OptionalText(course.ExpiryTime),
 		CourseProgramSnapshot:     course.Program,
 		CertFrontPageSnapshot:     course.FrontPage,
+		LegalBasisSnapshot:        pgutil.OptionalText(course.LegalBasis),
 	}
 }
 

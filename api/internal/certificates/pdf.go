@@ -572,6 +572,9 @@ func substituteCertificateTemplate(certificate sqlc.GetCertificateByIDRow, rawVa
 		"data_zakonczenia":    formatPolishDate(certificate.CourseDateEnd),
 		"data_wystawienia":    formatPolishDate(certificate.Date),
 		"numer_zaswiadczenia": buildCertificateNumber(certificate.RegistryNumber, certificate.CourseSymbol, certificate.RegistryYear),
+		// Treść wpisana przez użytkownika w bibliotece podstaw prawnych - dlatego tutaj,
+		// z escapowaniem, a nie w rawValues.
+		"podstawa_prawna": certificate.LegalBasis,
 	}
 
 	// rawValues omijają html.EscapeString, więc wolno tam wkładać WYŁĄCZNIE HTML zbudowany

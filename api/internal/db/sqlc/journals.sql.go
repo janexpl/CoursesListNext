@@ -681,12 +681,16 @@ const getJournalAttendeeForCertificateGeneration = `-- name: GetJournalAttendeeF
 	  c.symbol AS course_symbol,
 	  c.expirytime AS course_expiry_time,
 	      c.courseprogram::text AS course_program,
-	      c.certfrontpage AS cert_front_page
+	      c.certfrontpage AS cert_front_page,
+	      -- Zaświadczenie z dziennika zamraża podstawę prawną tak samo jak wystawione
+	      -- z formularza (certificates.Service) - inaczej drukowałoby bieżącą treść.
+	      lb.content AS legal_basis
   FROM training_journal_attendees a
   JOIN training_journals j ON j.id = a.journal_id
 	  JOIN students s ON s.id = a.student_id
 	  LEFT JOIN companies comp ON comp.id = s.company_id
 	  JOIN courses c ON c.id = j.course_id
+	  LEFT JOIN legal_bases lb ON lb.id = c.legal_basis_id
   WHERE a.journal_id = $1
     AND a.id = $2
 `
@@ -717,6 +721,7 @@ type GetJournalAttendeeForCertificateGenerationRow struct {
 	CourseExpiryTime  pgtype.Text `json:"course_expiry_time"`
 	CourseProgram     string      `json:"course_program"`
 	CertFrontPage     pgtype.Text `json:"cert_front_page"`
+	LegalBasis        pgtype.Text `json:"legal_basis"`
 }
 
 func (q *Queries) GetJournalAttendeeForCertificateGeneration(ctx context.Context, arg GetJournalAttendeeForCertificateGenerationParams) (GetJournalAttendeeForCertificateGenerationRow, error) {
@@ -743,6 +748,7 @@ func (q *Queries) GetJournalAttendeeForCertificateGeneration(ctx context.Context
 		&i.CourseExpiryTime,
 		&i.CourseProgram,
 		&i.CertFrontPage,
+		&i.LegalBasis,
 	)
 	return i, err
 }

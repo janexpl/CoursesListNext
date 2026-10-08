@@ -65,6 +65,9 @@ type CertificateDetailsDTO struct {
 	RenewedAt              *string `json:"renewedAt"`
 	RenewedByCertificateID *int64  `json:"renewedByCertificateId"`
 	RenewalOfCertificateID *int64  `json:"renewalOfCertificateId"`
+	// LegalBasis - treść wstawiana w miejsce {{ podstawa_prawna }}; pusty tekst, gdy brak.
+	// Podgląd i druk z przeglądarki podstawiają ją tak samo jak PDF z serwera.
+	LegalBasis string `json:"legalBasis"`
 }
 
 // CertificatePrintDecorDTO opisuje nadruki wydruku: gdzie po nie sięgnąć i jak szerokie
