@@ -1,4 +1,7 @@
-FROM node:22-bookworm-slim AS builder
+# Obrazy bazowe z lustra Docker Huba prowadzonego przez Google (te same oficjalne obrazy).
+# Anonimowe pobrania z Docker Huba na runnerach GitHuba kończyły się 429 Too Many Requests
+# i blokowały deploy.
+FROM mirror.gcr.io/library/node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -16,7 +19,7 @@ COPY . .
 
 RUN pnpm build
 
-FROM node:22-bookworm-slim
+FROM mirror.gcr.io/library/node:22-bookworm-slim
 
 WORKDIR /app
 

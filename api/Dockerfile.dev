@@ -1,3 +1,6 @@
+# Obrazy bazowe z lustra Docker Huba prowadzonego przez Google (te same oficjalne obrazy).
+# Anonimowe pobrania z Docker Huba na runnerach GitHuba kończyły się 429 Too Many Requests
+# i blokowały deploy.
 # Obraz deweloperski API.
 #
 # Powód istnienia: renderowanie PDF. Produkcja drukuje zaświadczenia przez Chromium
@@ -8,7 +11,7 @@
 #
 # Kod jest montowany z hosta i uruchamiany przez `go run`, więc obrazu nie trzeba
 # przebudowywać po każdej zmianie - wystarczy restart kontenera.
-FROM golang:1.26.1-bookworm
+FROM mirror.gcr.io/library/golang:1.26.1-bookworm
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \

@@ -1,4 +1,7 @@
-FROM golang:1.26.1-bookworm AS builder
+# Obrazy bazowe z lustra Docker Huba prowadzonego przez Google (te same oficjalne obrazy).
+# Anonimowe pobrania z Docker Huba na runnerach GitHuba kończyły się 429 Too Many Requests
+# i blokowały deploy.
+FROM mirror.gcr.io/library/golang:1.26.1-bookworm AS builder
 
 WORKDIR /src/notifications
 
@@ -8,7 +11,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 go build -o /out/notifications ./cmd/notifications
 
-FROM debian:bookworm-slim
+FROM mirror.gcr.io/library/debian:bookworm-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tzdata \
