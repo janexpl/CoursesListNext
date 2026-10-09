@@ -4847,7 +4847,7 @@ components:
     JournalCreate:
       type: object
       additionalProperties: false
-      required: [courseId, title, organizerName, location, formOfTraining, legalBasis, dateStart, dateEnd]
+      required: [courseId, title, organizerName, location, formOfTraining, dateStart, dateEnd]
       properties:
         courseId:
           type: integer
@@ -4874,7 +4874,10 @@ components:
           examples: ["stacjonarna"]
         legalBasis:
           type: string
-          minLength: 1
+          description: >-
+            Własna kopia podstawy prawnej dziennika. Pole może być pominięte lub puste,
+            jeśli kurs ma podstawę prawną — API kopiuje wtedy jej treść. Niepusta wartość
+            ma pierwszeństwo. Puste pole dla kursu bez podstawy powoduje 400 `invalid request body`.
         dateStart:
           $ref: "#/components/schemas/Date"
         dateEnd:

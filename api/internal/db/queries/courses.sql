@@ -157,3 +157,9 @@ UPDATE courses
 SET delivered_by_platform = sqlc.arg(delivered_by_platform)
 WHERE id = sqlc.arg(id)
 RETURNING delivered_by_platform;
+
+-- name: GetCourseLegalBasisContent :one
+SELECT COALESCE(lb.content, '')::text AS content
+FROM courses c
+LEFT JOIN legal_bases lb ON lb.id = c.legal_basis_id
+WHERE c.id = $1;

@@ -97,6 +97,20 @@ func (q *Queries) GetCourseByID(ctx context.Context, id int64) (Course, error) {
 	return i, err
 }
 
+const getCourseLegalBasisContent = `-- name: GetCourseLegalBasisContent :one
+SELECT COALESCE(lb.content, '')::text AS content
+FROM courses c
+LEFT JOIN legal_bases lb ON lb.id = c.legal_basis_id
+WHERE c.id = $1
+`
+
+func (q *Queries) GetCourseLegalBasisContent(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, getCourseLegalBasisContent, id)
+	var content string
+	err := row.Scan(&content)
+	return content, err
+}
+
 const listCourses = `-- name: ListCourses :many
 SELECT
     id,

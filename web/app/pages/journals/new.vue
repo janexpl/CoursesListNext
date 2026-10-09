@@ -79,6 +79,7 @@ const courseDetailsPending = ref(false)
 const courseDetailsLoadError = ref('')
 const courseDetailsError = computed(() => courseSearchError.value || courseDetailsLoadError.value)
 const lastAutoTitle = ref('')
+const lastAutoLegalBasis = ref('')
 let courseDetailsRequestId = 0
 
 const selectedCourseId = computed(() => selectedCourse.value?.id ?? null)
@@ -89,6 +90,11 @@ const trimmedOrganizerName = computed(() => form.organizerName.trim())
 const trimmedLocation = computed(() => form.location.trim())
 const trimmedFormOfTraining = computed(() => form.formOfTraining.trim())
 const trimmedLegalBasis = computed(() => form.legalBasis.trim())
+const legalBasisFromCourse = computed(() => Boolean(
+  selectedCourseDetails.value?.id === selectedCourseId.value
+  && lastAutoLegalBasis.value
+  && trimmedLegalBasis.value === lastAutoLegalBasis.value
+))
 
 const requiredJournalDataComplete = computed(() => {
   return !!(
@@ -174,6 +180,17 @@ function extractCourseProgramHours(courseProgram: string) {
   }
 }
 
+function updateAutoLegalBasis(content: string) {
+  const nextAutoLegalBasis = content.trim()
+  const currentLegalBasis = form.legalBasis.trim()
+
+  if (!currentLegalBasis || currentLegalBasis === lastAutoLegalBasis.value) {
+    form.legalBasis = nextAutoLegalBasis
+  }
+
+  lastAutoLegalBasis.value = nextAutoLegalBasis
+}
+
 async function fetchSelectedCourseDetails(courseId: number) {
   const requestId = ++courseDetailsRequestId
   courseDetailsPending.value = true
@@ -187,6 +204,7 @@ async function fetchSelectedCourseDetails(courseId: number) {
     }
 
     selectedCourseDetails.value = response.data
+    updateAutoLegalBasis(response.data.legalBasis?.content ?? '')
   } catch (error) {
     if (requestId !== courseDetailsRequestId) {
       return
@@ -206,6 +224,7 @@ watch(selectedCourseId, (courseId) => {
   courseDetailsLoadError.value = ''
 
   if (!courseId) {
+    updateAutoLegalBasis('')
     selectedCourseDetails.value = null
     courseDetailsPending.value = false
     return
@@ -253,6 +272,7 @@ function resetForm() {
   form.dateEnd = ''
   form.notes = ''
   lastAutoTitle.value = ''
+  lastAutoLegalBasis.value = ''
   clearCompanySelection()
   errorMessage.value = ''
 }
@@ -555,7 +575,13 @@ function companyLabel(company: Pick<CompanySummary, 'name' | 'city'>) {
               </label>
 
               <label class="block space-y-2 md:col-span-2">
-                <span class="text-sm font-medium text-slate-700">Podstawa prawna</span>
+                <span class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  Podstawa prawna
+                  <HelpHint
+                    v-if="legalBasisFromCourse"
+                    text="Uzupełnione z podstawy prawnej wybranego kursu. Możesz ją zmienić - dziennik przechowuje własną kopię."
+                  />
+                </span>
                 <textarea
                   v-model="form.legalBasis"
                   rows="3"

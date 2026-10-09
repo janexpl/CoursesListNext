@@ -23,6 +23,7 @@ import (
 )
 
 type Querier interface {
+	GetCourseLegalBasisContent(ctx context.Context, id int64) (string, error)
 	ListJournals(ctx context.Context, arg sqlc.ListJournalsParams) ([]sqlc.ListJournalsRow, error)
 	CreateJournal(ctx context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error)
 	GetJournalByID(ctx context.Context, id int64) (sqlc.GetJournalByIDRow, error)
@@ -650,7 +651,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	organizerName := strings.TrimSpace(req.OrganizerName)
 	title := strings.TrimSpace(req.Title)
 
-	if req.CourseID <= 0 || dateStart == "" || dateEnd == "" || formOfTraining == "" || legalBasis == "" || location == "" || organizerName == "" || title == "" {
+	if req.CourseID <= 0 || dateStart == "" || dateEnd == "" || formOfTraining == "" || location == "" || organizerName == "" || title == "" {
 		response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
 		return
 	}
@@ -677,6 +678,22 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if h.scheduler == nil {
 		response.WriteError(w, http.StatusInternalServerError, response.CodeInternalError, "journal service is not configured")
 		return
+	}
+
+	// Pominięta podstawa prawna to podstawa kursu z biblioteki. Dziennik zapisuje jej
+	// kopię tekstu, więc późniejsza zmiana w bibliotece nie zmienia już założonych
+	// dzienników - tak jak migawka na zaświadczeniu.
+	if legalBasis == "" {
+		content, err := h.querier.GetCourseLegalBasisContent(r.Context(), req.CourseID)
+		if err != nil {
+			response.HandleDBError(w, err, "course")
+			return
+		}
+		legalBasis = strings.TrimSpace(content)
+		if legalBasis == "" {
+			response.WriteError(w, http.StatusBadRequest, response.CodeBadRequest, "invalid request body")
+			return
+		}
 	}
 
 	row, err := h.scheduler.CreateJournal(r.Context(), sqlc.CreateJournalParams{

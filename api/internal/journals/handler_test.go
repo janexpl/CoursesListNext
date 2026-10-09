@@ -22,6 +22,7 @@ import (
 )
 
 type fakeQuerier struct {
+	getCourseLegalBasisContentFunc       func(ctx context.Context, id int64) (string, error)
 	listJournalsFunc                     func(ctx context.Context, arg sqlc.ListJournalsParams) ([]sqlc.ListJournalsRow, error)
 	createJournalFunc                    func(ctx context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error)
 	getJournalByIDFunc                   func(ctx context.Context, id int64) (sqlc.GetJournalByIDRow, error)
@@ -82,6 +83,14 @@ func (f fakeQuerier) GetJournalByID(ctx context.Context, id int64) (sqlc.GetJour
 	}
 
 	return f.getJournalByIDFunc(ctx, id)
+}
+
+func (f fakeQuerier) GetCourseLegalBasisContent(ctx context.Context, id int64) (string, error) {
+	if f.getCourseLegalBasisContentFunc == nil {
+		return "", errors.New("unexpected GetCourseLegalBasisContent call")
+	}
+
+	return f.getCourseLegalBasisContentFunc(ctx, id)
 }
 
 func (f fakeQuerier) GetCourseByID(ctx context.Context, id int64) (sqlc.Course, error) {
@@ -3973,4 +3982,61 @@ func (s schedulerFunc) GenerateSessionsFromCourse(ctx context.Context, journalID
 
 func (s schedulerFunc) GenerateAttendeeCertificate(context.Context, int64, int64) (GenerateAttendeeCertificateResult, error) {
 	return GenerateAttendeeCertificateResult{}, errors.New("unexpected GenerateAttendeeCertificate call")
+}
+
+func TestCreateLegalBasis(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		courseBasis string
+		lookupError error
+		wantBasis   string
+		wantStatus  int
+		wantLookup  bool
+	}{
+		{name: "empty uses course basis", input: "", courseBasis: "§ 16 ust. 3", wantBasis: "§ 16 ust. 3", wantStatus: http.StatusCreated, wantLookup: true},
+		{name: "whitespace uses course basis", input: "  ", courseBasis: "§ 16 ust. 3", wantBasis: "§ 16 ust. 3", wantStatus: http.StatusCreated, wantLookup: true},
+		{name: "empty without course basis", wantStatus: http.StatusBadRequest, wantLookup: true},
+		{name: "explicit overrides course basis", input: "  Własna podstawa  ", courseBasis: "§ 16 ust. 3", wantBasis: "Własna podstawa", wantStatus: http.StatusCreated},
+		{name: "missing course", lookupError: pgx.ErrNoRows, wantStatus: http.StatusNotFound, wantLookup: true},
+		{name: "lookup failure", lookupError: errors.New("db error"), wantStatus: http.StatusInternalServerError, wantLookup: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookupCalled := false
+			createCalled := false
+			handler := newSchedulingHandler(fakeQuerier{
+				getCourseLegalBasisContentFunc: func(_ context.Context, id int64) (string, error) {
+					lookupCalled = true
+					if id != 7 {
+						t.Fatalf("expected course 7, got %d", id)
+					}
+					return tt.courseBasis, tt.lookupError
+				},
+				createJournalFunc: func(_ context.Context, arg sqlc.CreateJournalParams) (sqlc.CreateJournalRow, error) {
+					createCalled = true
+					if arg.LegalBasis != tt.wantBasis {
+						t.Fatalf("expected legal basis %q, got %q", tt.wantBasis, arg.LegalBasis)
+					}
+					return sqlc.CreateJournalRow{ID: 1, LegalBasis: arg.LegalBasis}, nil
+				},
+			})
+			body := strings.Replace(validCreateJournalBody, "§ 16", tt.input, 1)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/journals", strings.NewReader(body))
+			req = req.WithContext(auth.ContextWithUser(req.Context(), sqlc.User{ID: 1}))
+			rec := httptest.NewRecorder()
+			handler.Create(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tt.wantStatus, rec.Code, rec.Body.String())
+			}
+			if lookupCalled != tt.wantLookup || createCalled != (tt.wantStatus == http.StatusCreated) {
+				t.Fatalf("unexpected calls: lookup=%v, create=%v", lookupCalled, createCalled)
+			}
+			if tt.wantStatus == http.StatusBadRequest && journalErrorMessage(t, rec) != "invalid request body" {
+				t.Fatalf("unexpected error: %s", rec.Body.String())
+			}
+		})
+	}
 }

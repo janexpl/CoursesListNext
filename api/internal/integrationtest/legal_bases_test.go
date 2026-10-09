@@ -368,3 +368,52 @@ func TestLegalBasisMigrationFromTemplates(t *testing.T) {
 		}
 	}
 }
+
+func TestJournalCopiesCourseLegalBasisWhenOmitted(t *testing.T) {
+	e := requireEnv(t)
+	course := e.seedCourse(t)
+	basis := e.createLegalBasis(t, "§ 16 ust. 3 podstawa dziennika")
+	if resp := e.patchCourse(t, course.ID, map[string]any{"legalBasisId": basis.ID}); resp.Status != http.StatusOK {
+		t.Fatalf("przypisanie: %d %s", resp.Status, resp.Body)
+	}
+
+	resp := e.mustCall(t, http.MethodPost, "/journals", map[string]any{
+		"courseId":       course.ID,
+		"title":          "Dziennik z podstawą kursu",
+		"organizerName":  "Jan Kowalski",
+		"location":       "Warszawa",
+		"formOfTraining": "stacjonarna",
+		"dateStart":      "2026-03-10",
+		"dateEnd":        "2026-03-12",
+	}, nil)
+	if resp.Status != http.StatusCreated {
+		t.Fatalf("POST /journals: expected 201, got %d: %s", resp.Status, resp.Body)
+	}
+	journalID := decodeCreated(t, resp).ID
+	var savedBasis string
+	if err := e.pool.QueryRow(t.Context(), "SELECT legal_basis FROM training_journals WHERE id = $1", journalID).Scan(&savedBasis); err != nil {
+		t.Fatal(err)
+	}
+	if savedBasis != basis.Content {
+		t.Fatalf("dziennik musi zapisać treść kursu: expected %q, got %q", basis.Content, savedBasis)
+	}
+
+	// Późniejsza zmiana biblioteki nie zmienia kopii zapisanej w dzienniku.
+	if update := e.callWithSession(t, http.MethodPatch, fmt.Sprintf("/admin/legal-bases/%d", basis.ID),
+		map[string]any{"name": basis.Name, "content": "Nowa treść"}); update.Status != http.StatusOK {
+		t.Fatalf("zmiana podstawy: %d %s", update.Status, update.Body)
+	}
+	details := e.mustCall(t, http.MethodGet, fmt.Sprintf("/journals/%d", journalID), nil, nil)
+	if details.Status != http.StatusOK {
+		t.Fatalf("GET /journals: %d %s", details.Status, details.Body)
+	}
+	var body struct {
+		Data struct {
+			LegalBasis string `json:"legalBasis"`
+		} `json:"data"`
+	}
+	details.decode(t, &body)
+	if body.Data.LegalBasis != basis.Content {
+		t.Fatalf("kopia w dzienniku zmieniła się: %q", body.Data.LegalBasis)
+	}
+}

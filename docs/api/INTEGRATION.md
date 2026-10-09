@@ -327,6 +327,9 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
     ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
+    Pominięte lub puste `legalBasis` uzupełnia się treścią podstawy prawnej kursu; gdy kurs jej nie ma,
+    API zwraca 400 `invalid request body`. Podana niepusta treść ma pierwszeństwo. Dziennik przechowuje
+    własną kopię, niezależną od późniejszych zmian podstawy kursu.
 20. W ścieżkach `/attendees/{attendeeId}` i w `journalAttendeeId` podajesz **id uczestnika**, nie id kursanta.
 21. Zamknięty dziennik blokuje (409 `journal is closed`): zmianę nagłówka i sesji, obecność, dodawanie i usuwanie uczestników.
     **Nie blokuje** wgrywania skanów (podpisany dziennik skanuje się po zamknięciu), wystawiania i powiązywania
