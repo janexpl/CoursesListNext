@@ -4,3 +4,10 @@ ignoredBuiltDependencies:
   - esbuild
   - unrs-resolver
   - vue-demi
+
+# Tiptap (edytor w @nuxt/ui) musi mieć wszystkie pakiety w jednej wersji. @nuxt/ui
+# deklaruje je wyłącznie jako peery, a pnpm przy aktualizacji zostawia ich zablokowane
+# wersje, podnosząc jednocześnie rozszerzenia ze starter-kitu - build pada wtedy na
+# MISSING_EXPORT z @tiptap/*. Naprawa: `pnpm remove @nuxt/ui && pnpm add @nuxt/ui@<zakres>`
+# (rozwiązuje peery od nowa), potem sprawdź, że wszystkie pakiety mają jedną wersję:
+# grep -oE "^  '@tiptap/[a-z0-9-]+@[0-9.]+" pnpm-lock.yaml | sort -u
