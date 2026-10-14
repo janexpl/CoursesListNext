@@ -1388,14 +1388,19 @@ async function waitForPrintFrameLoad(frame: HTMLIFrameElement) {
     const timeout = window.setTimeout(() => {
       frame.removeEventListener('load', onLoad)
       resolve()
-    }, 400)
+    }, 5000)
 
     function onLoad() {
       window.clearTimeout(timeout)
       resolve()
     }
 
-    if (frame.contentDocument?.readyState === 'complete') {
+    // Świeżo wstawiona ramka ma najpierw pusty about:blank ze stanem "complete" - czekamy
+    // na właściwy dokument z srcdoc, inaczej drukuje się pusta kartka.
+    if (
+      frame.contentDocument?.URL === 'about:srcdoc'
+      && frame.contentDocument.readyState === 'complete'
+    ) {
       window.clearTimeout(timeout)
       resolve()
       return
