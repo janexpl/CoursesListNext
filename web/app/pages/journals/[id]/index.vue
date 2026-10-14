@@ -426,42 +426,9 @@ const printCourseProgramEntries = computed(() => {
   }
 })
 
-function formatProgramHours(value: string | undefined) {
-  const normalized = `${value || ''}`.trim().replace(',', '.')
-  const parsed = Number.parseFloat(normalized)
-
-  if (!Number.isFinite(parsed)) {
-    return '0'
-  }
-
-  return parsed
-    .toString()
-    .replace(/\.0+$/, '')
-    .replace(/(\.\d*[1-9])0+$/, '$1')
-}
-
-const printProgramSplitBySortOrder = computed(() => {
-  const map: Record<number, { theory: string, practice: string }> = {}
-
-  for (const session of sessions.value) {
-    const entry = printCourseProgramEntries.value[session.sortOrder - 1]
-
-    if (!entry) {
-      map[session.sortOrder] = {
-        theory: formatProgramHours(String(session.hours)),
-        practice: '0'
-      }
-      continue
-    }
-
-    map[session.sortOrder] = {
-      theory: formatProgramHours(entry.TheoryTime),
-      practice: formatProgramHours(entry.PracticeTime)
-    }
-  }
-
-  return map
-})
+const printProgramSplitBySession = computed(() =>
+  journalProgramSplitBySession(sessions.value, printCourseProgramEntries.value)
+)
 
 const attendancePrintDays = computed(() => {
   const days = new Map<string, { date: string, totalHours: number }>()
@@ -852,8 +819,8 @@ const journalPrintDocument = computed(() => {
         <td>${session.sortOrder}</td>
         <td>${escapeHtml(formatPrintDate(session.sessionDate))}</td>
         <td>${escapeHtml(session.topic)}</td>
-        <td>${escapeHtml(printProgramSplitBySortOrder.value[session.sortOrder]?.theory || '0')}</td>
-        <td>${escapeHtml(printProgramSplitBySortOrder.value[session.sortOrder]?.practice || '0')}</td>
+        <td>${escapeHtml(printProgramSplitBySession.value[session.id]?.theory || '0')}</td>
+        <td>${escapeHtml(printProgramSplitBySession.value[session.id]?.practice || '0')}</td>
         <td>${escapeHtml(session.trainerName)}</td>
       </tr>
     `

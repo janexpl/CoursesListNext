@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -36,9 +38,9 @@ func buildJournalPDFHTML(
 		attendanceByKey[journalAttendanceKey(entry.JournalSessionID, entry.JournalAttendeeID)] = entry.Present
 	}
 
-	programSplitBySortOrder := buildJournalProgramSplitBySortOrder(course.Courseprogram, sessions)
+	programSplitBySession := buildJournalProgramSplitBySession(course.Courseprogram, sessions)
 	participantRowsHTML := buildJournalParticipantRowsHTML(attendees)
-	programRowsHTML := buildJournalProgramRowsHTML(sessions, programSplitBySortOrder)
+	programRowsHTML := buildJournalProgramRowsHTML(sessions, programSplitBySession)
 	attendanceHeadHTML := buildJournalAttendanceHeadHTML(sessions)
 	attendanceRowsHTML := buildJournalAttendanceRowsHTML(attendees, sessions, attendanceByKey)
 
@@ -409,7 +411,7 @@ func buildJournalParticipantRowsHTML(attendees []sqlc.ListJournalAttendeesRow) s
 
 func buildJournalProgramRowsHTML(
 	sessions []sqlc.TrainingJournalSession,
-	programSplitBySortOrder map[int32]journalProgramSplit,
+	programSplitBySession map[int64]journalProgramSplit,
 ) string {
 	if len(sessions) == 0 {
 		return `<tr><td colspan="6">Brak pozycji programu w dzienniku.</td></tr>`
@@ -417,7 +419,7 @@ func buildJournalProgramRowsHTML(
 
 	rows := make([]string, 0, len(sessions))
 	for index, session := range sessions {
-		split := programSplitBySortOrder[session.SortOrder]
+		split := programSplitBySession[session.ID]
 		if split.Theory == "" && split.Practice == "" {
 			split = journalProgramSplit{
 				Theory:   formatNumeric(session.Hours),
@@ -490,8 +492,11 @@ func buildJournalAttendanceRowsHTML(
 	return strings.Join(rows, "")
 }
 
-func buildJournalProgramSplitBySortOrder(courseProgram []byte, sessions []sqlc.TrainingJournalSession) map[int32]journalProgramSplit {
-	result := make(map[int32]journalProgramSplit, len(sessions))
+// buildJournalProgramSplitBySession rozdziela godziny teorii i praktyki z programu na sesje.
+// Temat dłuższy niż reszta dnia ma kilka sesji z tym samym sort_order; każda dostaje tylko
+// swoją część godzin, najpierw teorię, potem praktykę - inaczej wydruk liczyłby temat podwójnie.
+func buildJournalProgramSplitBySession(courseProgram []byte, sessions []sqlc.TrainingJournalSession) map[int64]journalProgramSplit {
+	result := make(map[int64]journalProgramSplit, len(sessions))
 	if len(courseProgram) == 0 {
 		return result
 	}
@@ -501,19 +506,52 @@ func buildJournalProgramSplitBySortOrder(courseProgram []byte, sessions []sqlc.T
 		return result
 	}
 
+	partsBySortOrder := make(map[int32]int, len(sessions))
+	for _, session := range sessions {
+		partsBySortOrder[session.SortOrder]++
+	}
+
+	theoryLeft := make(map[int32]float64, len(sessions))
 	for _, session := range sessions {
 		index := int(session.SortOrder) - 1
 		if index < 0 || index >= len(entries) {
 			continue
 		}
 		entry := entries[index]
-		result[session.SortOrder] = journalProgramSplit{
-			Theory:   formatJournalProgramHours(entry.TheoryTime),
-			Practice: formatJournalProgramHours(entry.PracticeTime),
+		if partsBySortOrder[session.SortOrder] == 1 {
+			result[session.ID] = journalProgramSplit{
+				Theory:   formatJournalProgramHours(entry.TheoryTime),
+				Practice: formatJournalProgramHours(entry.PracticeTime),
+			}
+			continue
+		}
+
+		left, started := theoryLeft[session.SortOrder]
+		if !started {
+			left = parseJournalProgramHours(entry.TheoryTime)
+		}
+		hours := numericToFloat64(session.Hours)
+		theory := math.Min(left, hours)
+		theoryLeft[session.SortOrder] = left - theory
+		result[session.ID] = journalProgramSplit{
+			Theory:   formatJournalHoursFloat(theory),
+			Practice: formatJournalHoursFloat(hours - theory),
 		}
 	}
 
 	return result
+}
+
+func parseJournalProgramHours(value string) float64 {
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(value, ",", ".")), 64)
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
+}
+
+func formatJournalHoursFloat(value float64) string {
+	return strconv.FormatFloat(math.Round(value*100)/100, 'f', -1, 64)
 }
 
 func formatJournalProgramHours(value string) string {

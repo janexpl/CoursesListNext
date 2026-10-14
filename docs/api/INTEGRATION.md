@@ -323,8 +323,9 @@ Poniższe zachowania są zamierzone — nie są błędami do obejścia, ale łat
 
 ### Dzienniki
 
-19. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 8 godzin dziennie, kolejne dni od `dateStart`);
-    ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
+19. **`POST /journals` od razu tworzy sesje** z programu kursu (maks. 10 godzin lekcyjnych, czyli 8 h zegarowych
+    dziennie, kolejne dni od `dateStart`; temat przekraczający granicę dnia dzieli się na części
+    „(cz. 1/2)”, „(cz. 2/2)” z tym samym `sortOrder`); ich liczbę podaje `sessionsCount`. Jeśli sesje nie mieszczą się w zakresie dat, API zwraca 400
     `course program does not fit within journal dates` i **nie tworzy dziennika** — wydłuż `dateEnd` i ponów.
     `POST .../sessions/generate-from-course` zwykle zwraca wtedy 409, bo sesje już istnieją.
     Pominięte lub puste `legalBasis` uzupełnia się treścią podstawy prawnej kursu; gdy kurs jej nie ma,

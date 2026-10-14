@@ -2216,8 +2216,9 @@ paths:
       operationId: createJournal
       summary: Utworzenie dziennika
       description: >-
-        Tworzy dziennik w statusie `draft` i **od razu generuje sesje z programu kursu** (maks. 8 godzin
-        na dzień, kolejne dni od `dateStart`, prowadzący = `organizerName`); `sessionsCount` w odpowiedzi
+        Tworzy dziennik w statusie `draft` i **od razu generuje sesje z programu kursu** (maks. 10 godzin
+        lekcyjnych na dzień, kolejne dni od `dateStart`, prowadzący = `organizerName`; temat
+        przekraczający granicę dnia dzieli się na części „(cz. 1/2)” z tym samym `sortOrder`); `sessionsCount` w odpowiedzi
         podaje ich liczbę. `totalHours` jest liczone z programu kursu.
       x-required-scope: journals:write
       requestBody:

@@ -10,7 +10,7 @@ import (
 )
 
 // ErrProgramExceedsJournalDates oznacza, że sesje wygenerowane z programu kursu
-// (maks. 8 godzin dziennie) nie mieszczą się między dateStart a dateEnd dziennika.
+// (maks. 10 godzin lekcyjnych dziennie) nie mieszczą się między dateStart a dateEnd dziennika.
 var ErrProgramExceedsJournalDates = errors.New("course program does not fit within journal dates")
 
 // SessionScheduler zapisuje dziennik lub jego sesje wygenerowane z programu kursu

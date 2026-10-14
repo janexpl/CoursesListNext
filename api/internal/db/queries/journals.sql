@@ -63,7 +63,7 @@
 
 
 -- name: CreateJournal :one
-  WITH RECURSIVE selected_course AS (
+  WITH selected_course AS (
       SELECT
           c.id,
           c.symbol,
@@ -157,50 +157,45 @@
           COALESCE(NULLIF(topic, ''), 'Temat ' || sort_order::text) AS topic,
           hours,
           sort_order,
-          ROW_NUMBER() OVER (PARTITION BY journal_id ORDER BY sort_order) AS row_no
+          SUM(hours) OVER (PARTITION BY journal_id ORDER BY sort_order) - hours AS hours_before
       FROM program_entries
-      WHERE topic <> '' OR hours > 0
+      -- Temat bez godzin nie ma czego rozpisać na dni, a sesja wymaga hours > 0.
+      WHERE hours > 0
+  ),
+  -- Program jest w godzinach lekcyjnych (45 min), a dzień szkolenia to maks. 8 h zegarowych,
+  -- czyli 10 pełnych godzin lekcyjnych. Każdy dzień jest dopełniany do 10, a temat, który
+  -- przekracza granicę dnia, dzieli się na części w kolejnych dniach.
+  day_parts AS (
+      SELECT
+          fe.journal_id,
+          fe.date_start,
+          fe.trainer_name,
+          fe.topic,
+          fe.sort_order,
+          d.day_offset,
+          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 10)
+              - GREATEST(fe.hours_before, d.day_offset * 10) AS hours,
+          ROW_NUMBER() OVER (PARTITION BY fe.journal_id, fe.sort_order ORDER BY d.day_offset) AS part_no,
+          COUNT(*) OVER (PARTITION BY fe.journal_id, fe.sort_order) AS part_count
+      FROM filtered_entries fe
+      CROSS JOIN LATERAL generate_series(
+          FLOOR(fe.hours_before / 10)::integer,
+          (CEIL((fe.hours_before + fe.hours) / 10) - 1)::integer
+      ) AS d(day_offset)
   ),
   scheduled_entries AS (
       SELECT
           journal_id,
           date_start,
           trainer_name,
-          topic,
+          CASE
+              WHEN part_count > 1 THEN topic || ' (cz. ' || part_no || '/' || part_count || ')'
+              ELSE topic
+          END AS topic,
           hours,
           sort_order,
-          row_no,
-          0::integer AS day_offset,
-          LEAST(GREATEST(hours, 0), 8)::numeric AS used_hours_on_day
-      FROM filtered_entries
-      WHERE row_no = 1
-
-      UNION ALL
-
-      SELECT
-          next_entry.journal_id,
-          next_entry.date_start,
-          next_entry.trainer_name,
-          next_entry.topic,
-          next_entry.hours,
-          next_entry.sort_order,
-          next_entry.row_no,
-          CASE
-              WHEN scheduled.used_hours_on_day > 0
-                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
-              THEN scheduled.day_offset + 1
-              ELSE scheduled.day_offset
-          END AS day_offset,
-          CASE
-              WHEN scheduled.used_hours_on_day > 0
-                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
-              THEN LEAST(GREATEST(next_entry.hours, 0), 8)::numeric
-              ELSE LEAST(scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0), 8)::numeric
-          END AS used_hours_on_day
-      FROM scheduled_entries scheduled
-      JOIN filtered_entries next_entry
-        ON next_entry.journal_id = scheduled.journal_id
-       AND next_entry.row_no = scheduled.row_no + 1
+          day_offset
+      FROM day_parts
   ),
   inserted_sessions AS (
       INSERT INTO training_journal_sessions (
@@ -219,6 +214,7 @@
           se.trainer_name,
           se.sort_order
       FROM scheduled_entries se
+      ORDER BY se.sort_order, se.day_offset
   )
   SELECT
       i.id,
@@ -517,7 +513,7 @@
   ORDER BY s.sort_order, s.id;
 
 -- name: GenerateJournalSessionsFromCourse :execrows
-  WITH RECURSIVE journal_source AS (
+  WITH journal_source AS (
       SELECT
           j.id,
           j.date_start,
@@ -548,50 +544,45 @@
           COALESCE(NULLIF(topic, ''), 'Temat ' || sort_order::text) AS topic,
           hours,
           sort_order,
-          ROW_NUMBER() OVER (PARTITION BY journal_id ORDER BY sort_order) AS row_no
+          SUM(hours) OVER (PARTITION BY journal_id ORDER BY sort_order) - hours AS hours_before
       FROM program_entries
-      WHERE topic <> '' OR hours > 0
+      -- Temat bez godzin nie ma czego rozpisać na dni, a sesja wymaga hours > 0.
+      WHERE hours > 0
+  ),
+  -- Program jest w godzinach lekcyjnych (45 min), a dzień szkolenia to maks. 8 h zegarowych,
+  -- czyli 10 pełnych godzin lekcyjnych. Każdy dzień jest dopełniany do 10, a temat, który
+  -- przekracza granicę dnia, dzieli się na części w kolejnych dniach.
+  day_parts AS (
+      SELECT
+          fe.journal_id,
+          fe.date_start,
+          fe.trainer_name,
+          fe.topic,
+          fe.sort_order,
+          d.day_offset,
+          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 10)
+              - GREATEST(fe.hours_before, d.day_offset * 10) AS hours,
+          ROW_NUMBER() OVER (PARTITION BY fe.journal_id, fe.sort_order ORDER BY d.day_offset) AS part_no,
+          COUNT(*) OVER (PARTITION BY fe.journal_id, fe.sort_order) AS part_count
+      FROM filtered_entries fe
+      CROSS JOIN LATERAL generate_series(
+          FLOOR(fe.hours_before / 10)::integer,
+          (CEIL((fe.hours_before + fe.hours) / 10) - 1)::integer
+      ) AS d(day_offset)
   ),
   scheduled_entries AS (
       SELECT
           journal_id,
           date_start,
           trainer_name,
-          topic,
+          CASE
+              WHEN part_count > 1 THEN topic || ' (cz. ' || part_no || '/' || part_count || ')'
+              ELSE topic
+          END AS topic,
           hours,
           sort_order,
-          row_no,
-          0::integer AS day_offset,
-          LEAST(GREATEST(hours, 0), 8)::numeric AS used_hours_on_day
-      FROM filtered_entries
-      WHERE row_no = 1
-
-      UNION ALL
-
-      SELECT
-          next_entry.journal_id,
-          next_entry.date_start,
-          next_entry.trainer_name,
-          next_entry.topic,
-          next_entry.hours,
-          next_entry.sort_order,
-          next_entry.row_no,
-          CASE
-              WHEN scheduled.used_hours_on_day > 0
-                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
-              THEN scheduled.day_offset + 1
-              ELSE scheduled.day_offset
-          END AS day_offset,
-          CASE
-              WHEN scheduled.used_hours_on_day > 0
-                  AND scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0) > 8
-              THEN LEAST(GREATEST(next_entry.hours, 0), 8)::numeric
-              ELSE LEAST(scheduled.used_hours_on_day + GREATEST(next_entry.hours, 0), 8)::numeric
-          END AS used_hours_on_day
-      FROM scheduled_entries scheduled
-      JOIN filtered_entries next_entry
-        ON next_entry.journal_id = scheduled.journal_id
-       AND next_entry.row_no = scheduled.row_no + 1
+          day_offset
+      FROM day_parts
   )
   INSERT INTO training_journal_sessions (
       journal_id,
@@ -613,7 +604,8 @@
       SELECT 1
       FROM training_journal_sessions existing
       WHERE existing.journal_id = se.journal_id
-  );
+  )
+  ORDER BY se.sort_order, se.day_offset;
 
 -- name: UpdateJournalSession :one
   UPDATE training_journal_sessions

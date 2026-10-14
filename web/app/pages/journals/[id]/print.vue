@@ -76,28 +76,9 @@ const courseProgramEntries = computed(() => {
   }
 })
 
-const programSplitBySortOrder = computed(() => {
-  const map: Record<number, { theory: string, practice: string }> = {}
-
-  for (const session of sessions.value) {
-    const entry = courseProgramEntries.value[session.sortOrder - 1]
-
-    if (!entry) {
-      map[session.sortOrder] = {
-        theory: formatProgramHours(String(session.hours)),
-        practice: '0'
-      }
-      continue
-    }
-
-    map[session.sortOrder] = {
-      theory: formatProgramHours(entry?.TheoryTime),
-      practice: formatProgramHours(entry?.PracticeTime)
-    }
-  }
-
-  return map
-})
+const programSplitBySession = computed(() =>
+  journalProgramSplitBySession(sessions.value, courseProgramEntries.value)
+)
 
 const attendanceLookup = computed(() => {
   const map = new Map<string, boolean>()
@@ -132,20 +113,6 @@ function formatHours(value: number | string) {
   return `${String(value)
     .replace(/\.0+$/, '')
     .replace(/(\.\d*[1-9])0+$/, '$1')} h`
-}
-
-function formatProgramHours(value: string | undefined) {
-  const normalized = `${value || ''}`.trim().replace(',', '.')
-  const parsed = Number.parseFloat(normalized)
-
-  if (!Number.isFinite(parsed)) {
-    return '0'
-  }
-
-  return parsed
-    .toString()
-    .replace(/\.0+$/, '')
-    .replace(/(\.\d*[1-9])0+$/, '$1')
 }
 
 function formatDate(value: string | null) {
@@ -375,8 +342,8 @@ onMounted(() => {
                 <td>{{ session.sortOrder }}</td>
                 <td>{{ formatDate(session.sessionDate) }}</td>
                 <td>{{ session.topic }}</td>
-                <td>{{ programSplitBySortOrder[session.sortOrder]?.theory || '0' }}</td>
-                <td>{{ programSplitBySortOrder[session.sortOrder]?.practice || '0' }}</td>
+                <td>{{ programSplitBySession[session.id]?.theory || '0' }}</td>
+                <td>{{ programSplitBySession[session.id]?.practice || '0' }}</td>
                 <td>{{ session.trainerName }}</td>
               </tr>
             </tbody>
