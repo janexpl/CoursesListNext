@@ -246,9 +246,9 @@ const createJournal = `-- name: CreateJournal :one
       -- Temat bez godzin nie ma czego rozpisać na dni, a sesja wymaga hours > 0.
       WHERE hours > 0
   ),
-  -- Program jest w godzinach lekcyjnych (45 min), a dzień szkolenia to maks. 8 h zegarowych,
-  -- czyli 10 pełnych godzin lekcyjnych. Każdy dzień jest dopełniany do 10, a temat, który
-  -- przekracza granicę dnia, dzieli się na części w kolejnych dniach.
+  -- Program jest w godzinach lekcyjnych, a dzień szkolenia to maks. 8 godzin lekcyjnych.
+  -- Każdy dzień jest dopełniany do 8, a temat, który przekracza granicę dnia, dzieli się
+  -- na części w kolejnych dniach.
   day_parts AS (
       SELECT
           fe.journal_id,
@@ -257,14 +257,14 @@ const createJournal = `-- name: CreateJournal :one
           fe.topic,
           fe.sort_order,
           d.day_offset,
-          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 10)
-              - GREATEST(fe.hours_before, d.day_offset * 10) AS hours,
+          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 8)
+              - GREATEST(fe.hours_before, d.day_offset * 8) AS hours,
           ROW_NUMBER() OVER (PARTITION BY fe.journal_id, fe.sort_order ORDER BY d.day_offset) AS part_no,
           COUNT(*) OVER (PARTITION BY fe.journal_id, fe.sort_order) AS part_count
       FROM filtered_entries fe
       CROSS JOIN LATERAL generate_series(
-          FLOOR(fe.hours_before / 10)::integer,
-          (CEIL((fe.hours_before + fe.hours) / 10) - 1)::integer
+          FLOOR(fe.hours_before / 8)::integer,
+          (CEIL((fe.hours_before + fe.hours) / 8) - 1)::integer
       ) AS d(day_offset)
   ),
   scheduled_entries AS (
@@ -512,9 +512,9 @@ const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromC
       -- Temat bez godzin nie ma czego rozpisać na dni, a sesja wymaga hours > 0.
       WHERE hours > 0
   ),
-  -- Program jest w godzinach lekcyjnych (45 min), a dzień szkolenia to maks. 8 h zegarowych,
-  -- czyli 10 pełnych godzin lekcyjnych. Każdy dzień jest dopełniany do 10, a temat, który
-  -- przekracza granicę dnia, dzieli się na części w kolejnych dniach.
+  -- Program jest w godzinach lekcyjnych, a dzień szkolenia to maks. 8 godzin lekcyjnych.
+  -- Każdy dzień jest dopełniany do 8, a temat, który przekracza granicę dnia, dzieli się
+  -- na części w kolejnych dniach.
   day_parts AS (
       SELECT
           fe.journal_id,
@@ -523,14 +523,14 @@ const generateJournalSessionsFromCourse = `-- name: GenerateJournalSessionsFromC
           fe.topic,
           fe.sort_order,
           d.day_offset,
-          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 10)
-              - GREATEST(fe.hours_before, d.day_offset * 10) AS hours,
+          LEAST(fe.hours_before + fe.hours, (d.day_offset + 1) * 8)
+              - GREATEST(fe.hours_before, d.day_offset * 8) AS hours,
           ROW_NUMBER() OVER (PARTITION BY fe.journal_id, fe.sort_order ORDER BY d.day_offset) AS part_no,
           COUNT(*) OVER (PARTITION BY fe.journal_id, fe.sort_order) AS part_count
       FROM filtered_entries fe
       CROSS JOIN LATERAL generate_series(
-          FLOOR(fe.hours_before / 10)::integer,
-          (CEIL((fe.hours_before + fe.hours) / 10) - 1)::integer
+          FLOOR(fe.hours_before / 8)::integer,
+          (CEIL((fe.hours_before + fe.hours) / 8) - 1)::integer
       ) AS d(day_offset)
   ),
   scheduled_entries AS (

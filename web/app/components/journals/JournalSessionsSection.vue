@@ -141,7 +141,7 @@ function formatSessionHours(value: number) {
                 <h3 class="text-base font-semibold leading-6 text-slate-900 min-w-0 [overflow-wrap:anywhere]">
                   {{ session.topic }}
                 </h3>
-                <HelpHint text="Data jest wstępnie wyliczana z programu szkolenia przy limicie 10 godzin lekcyjnych (8 h zegarowych) dziennie. Temat przekraczający granicę dnia jest dzielony na części." />
+                <HelpHint text="Data jest wstępnie wyliczana z programu szkolenia przy limicie 8 godzin lekcyjnych dziennie. Temat przekraczający granicę dnia jest dzielony na części." />
               </div>
             </div>
           </div>

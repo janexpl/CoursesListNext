@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Dzień szkolenia to maks. 10 godzin lekcyjnych; temat przekraczający granicę dnia
+// Dzień szkolenia to maks. 8 godzin lekcyjnych; temat przekraczający granicę dnia
 // dzieli się na części zamiast przesuwać się w całości na następny dzień.
 func TestJournalSplitsTopicAcrossDays(t *testing.T) {
 	e := requireEnv(t)
@@ -23,13 +23,13 @@ func TestJournalSplitsTopicAcrossDays(t *testing.T) {
 
 	resp := e.mustCall(t, http.MethodPost, "/journals", map[string]any{
 		"courseId":       course.ID,
-		"title":          "Dziennik dwudniowy",
+		"title":          "Dziennik trzydniowy",
 		"organizerName":  "Jan Kowalski",
 		"location":       "Warszawa",
 		"formOfTraining": "stacjonarna",
 		"legalBasis":     "§ 1",
 		"dateStart":      "2026-03-10",
-		"dateEnd":        "2026-03-11",
+		"dateEnd":        "2026-03-12",
 	}, nil)
 	if resp.Status != http.StatusCreated {
 		t.Fatalf("POST /journals: expected 201, got %d: %s", resp.Status, resp.Body)
@@ -61,10 +61,10 @@ func TestJournalSplitsTopicAcrossDays(t *testing.T) {
 
 	want := []session{
 		{"2026-03-10", "Wstęp", "4.00", 1},
-		{"2026-03-10", "Ćwiczenia (cz. 1/2)", "6.00", 2},
-		{"2026-03-11", "Ćwiczenia (cz. 2/2)", "1.00", 2},
+		{"2026-03-10", "Ćwiczenia (cz. 1/2)", "4.00", 2},
+		{"2026-03-11", "Ćwiczenia (cz. 2/2)", "3.00", 2},
 		{"2026-03-11", "Pierwsza pomoc", "5.00", 4},
-		{"2026-03-11", "Egzamin", "4.00", 5},
+		{"2026-03-12", "Egzamin", "4.00", 5},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("expected %d sessions, got %+v", len(want), got)
