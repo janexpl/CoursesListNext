@@ -1,7 +1,7 @@
 # Obrazy bazowe z lustra Docker Huba prowadzonego przez Google (te same oficjalne obrazy).
 # Anonimowe pobrania z Docker Huba na runnerach GitHuba kończyły się 429 Too Many Requests
 # i blokowały deploy.
-FROM mirror.gcr.io/library/golang:1.26.1-bookworm AS builder
+FROM mirror.gcr.io/library/golang:1.27.4-trixie AS builder
 
 WORKDIR /src/api
 
@@ -16,12 +16,12 @@ FROM mirror.gcr.io/library/debian:bookworm-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    chromium \
-    fonts-liberation \
-    wkhtmltopdf \
-    tzdata \
-    wget \
+  ca-certificates \
+  chromium \
+  fonts-liberation \
+  wkhtmltopdf \
+  tzdata \
+  wget \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 10001 appuser

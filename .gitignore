@@ -1,7 +1,7 @@
 .env
 skills-lock.json
 notifications-state.json
-
+.DS_Store
 # Compiled binaries (go build -o)
 /api/api
 /notifications/notifications

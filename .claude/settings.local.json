@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(git:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(cat /Users/janusz/Development/Projects/CoursesListNext/api/internal/validation/*.go)",
+      "Bash(gh pr:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(export PATH=\"$HOME/.local/share/pnpm:$HOME/.nvm/versions/node/*/bin:$PATH\")",
+      "Read(//Users/janusz/Development/Projects/CoursesListNext/web/$HOME/.local/share/**)",
+      "Read(//Users/janusz/Development/Projects/CoursesListNext/web/$HOME/.nvm/versions/node/*/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(export PATH=\"/opt/homebrew/bin:$PATH\")",
+      "Bash(npm list:*)",
+      "Bash(corepack pnpm:*)",
+      "Bash(corepack enable:*)",
+      "Bash(gofmt -w internal/certificates/service.go internal/certificates/service_test.go internal/certificates/handler.go)",
+      "Bash(npx pnpm *)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)",
+      "Bash(go vet *)",
+      "Bash(sqlc generate *)",
+      "Bash(gofmt -w internal/config/config.go cmd/api/main.go)"
+    ]
+  }
+}

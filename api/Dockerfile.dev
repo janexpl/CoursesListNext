@@ -11,20 +11,20 @@
 #
 # Kod jest montowany z hosta i uruchamiany przez `go run`, więc obrazu nie trzeba
 # przebudowywać po każdej zmianie - wystarczy restart kontenera.
-FROM mirror.gcr.io/library/golang:1.26.1-bookworm
+FROM mirror.gcr.io/library/golang:1.27.4-trixie 
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    chromium \
-    fonts-liberation \
-    tzdata \
+  ca-certificates \
+  chromium \
+  fonts-liberation \
+  tzdata \
   && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_BIN=/usr/bin/chromium \
-    PDF_RENDERER=chrome \
-    GOCACHE=/go-cache \
-    GOFLAGS=-buildvcs=false
+  PDF_RENDERER=chrome \
+  GOCACHE=/go-cache \
+  GOFLAGS=-buildvcs=false
 
 WORKDIR /src/api
 
