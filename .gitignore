@@ -10,3 +10,4 @@ notifications-state.json
 # w bazie - w repozytorium byłyby gotowym materiałem do podrobienia dokumentu.
 docs/api/wzory/*.png
 docs/api/wzory/*.jpg
+.claude/settings.local.json
