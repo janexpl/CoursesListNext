@@ -35,7 +35,8 @@ services:
       - DB_HOST=${DEV_DB_HOST:-192.168.0.11}
       - DB_PORT=${DEV_DB_PORT:-5432}
       - DB_NAME=${DEV_DB_NAME:-courselist}
-      - DB_PASS=${DEV_DB_PASS:-Acetamide#2022}
+      - DB_USER=${DEB_DB_USER}
+      - DB_PASS=${DEV_DB_PASS}
       - DB_SSLMODE=disable
       # Render jak na produkcji.
       - PDF_RENDERER=chrome
