@@ -226,19 +226,29 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
       bottom: 0;
     }
 
-    /* Pieczątki i podpis. Element inline z tego samego powodu co .qr-code, a szerokość
-       przychodzi w atrybucie style, bo ustala ją administrator przy wgrywaniu pliku. */
+    /* Pieczątki i podpis. Znacznik w treści to punkt zaczepienia bez wymiarów: obrazek
+       leży nad tekstem, wyśrodkowany na tym punkcie, i nie rozsuwa wiersza. Dwa znaczniki
+       obok siebie (pieczątka imienna i podpis) nakładają się, a późniejszy leży na wierzchu.
+       Szerokość obrazka przychodzi w atrybucie style, bo ustala ją administrator. */
     .cert-stamp,
     .cert-signature {
       display: inline-block;
-      vertical-align: bottom;
+      position: relative;
+      width: 0;
+      height: 0;
+      vertical-align: middle;
     }
 
     .cert-stamp img,
     .cert-signature img {
-      width: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+      max-width: none;
       height: auto;
       display: block;
+      -webkit-transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%);
     }
 
     /* Pasek awaryjny dla szablonów bez znaczników. Kończy się 32 mm przed prawą
@@ -256,8 +266,20 @@ func buildCertificatePDFHTML(certificate sqlc.GetCertificateByIDRow, verificatio
        w pełnych rozmiarach wyszedłby poza krawędź papieru. */
     .cert-marks .cert-stamp,
     .cert-marks .cert-signature {
+      position: static;
+      width: auto;
+      height: auto;
+      vertical-align: bottom;
       margin-right: 3%;
       max-width: 22%;
+    }
+
+    .cert-marks .cert-stamp img,
+    .cert-marks .cert-signature img {
+      position: static;
+      max-width: 100%;
+      -webkit-transform: none;
+      transform: none;
     }
 
     /* Pasek z nadrukami jest wyższy niż sam kod QR, więc treść dostaje mniej miejsca.
@@ -500,8 +522,8 @@ func wrapCertificateBack(back, dataURI string) string {
 // Adres obrazu jest escapowany mimo że powstaje w tym pakiecie z bajtów spod stałego
 // prefiksu: to jedyne miejsce, w którym wartość spoza szablonu trafia do atrybutu.
 func decorImageHTML(class string, img decorImage, alt string) string {
-	return `<span class="` + class + `" style="width:` + strconv.Itoa(img.WidthMM) + `mm">` +
-		`<img src="` + html.EscapeString(img.DataURI) + `" alt="` + alt + `"></span>`
+	return `<span class="` + class + `"><img src="` + html.EscapeString(img.DataURI) +
+		`" alt="` + alt + `" style="width:` + strconv.Itoa(img.WidthMM) + `mm"></span>`
 }
 
 // buildCertificateRawValues zbiera nadruki wstawiane bez escapowania. Brakującego

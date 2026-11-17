@@ -407,7 +407,7 @@ function decorMarks() {
 }
 
 function decorImageHtml(css: string, image: { dataUri: string, widthMm: number }, alt: string) {
-  return `<span class="${css}" style="width:${image.widthMm}mm"><img src="${image.dataUri}" alt="${alt}"></span>`
+  return `<span class="${css}"><img src="${image.dataUri}" alt="${alt}" style="width:${image.widthMm}mm"></span>`
 }
 
 const qrBlockHtml = computed(() => {
@@ -667,14 +667,22 @@ const certificatePreviewDocument = computed(() => {
       .cert-stamp,
       .cert-signature {
         display: inline-block;
-        vertical-align: bottom;
+        position: relative;
+        width: 0;
+        height: 0;
+        vertical-align: middle;
       }
 
       .cert-stamp img,
       .cert-signature img {
-        width: 100%;
+        position: absolute;
+        left: 0;
+        top: 0;
+        max-width: none;
         height: auto;
         display: block;
+        -webkit-transform: translate(-50%, -50%);
+        transform: translate(-50%, -50%);
       }
 
       .cert-marks {
@@ -687,8 +695,20 @@ const certificatePreviewDocument = computed(() => {
 
       .cert-marks .cert-stamp,
       .cert-marks .cert-signature {
+        position: static;
+        width: auto;
+        height: auto;
+        vertical-align: bottom;
         margin-right: 3%;
         max-width: 22%;
+      }
+
+      .cert-marks .cert-stamp img,
+      .cert-marks .cert-signature img {
+        position: static;
+        max-width: 100%;
+        -webkit-transform: none;
+        transform: none;
       }
 
       .cert-front--marks {

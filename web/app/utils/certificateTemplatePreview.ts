@@ -1,7 +1,7 @@
 // Podglądy szablonu w edytorach kursu pokazują sam szablon, bez danych konkretnego
 // zaświadczenia - nie ma tam ani kodu weryfikacyjnego, ani wgranych pieczątek.
 // Znaczniki, które na wydruku stają się obrazkami, renderujemy jako szare prostokąty
-// tej samej wielkości co prawdziwe nadruki, żeby autor szablonu widział, ile miejsca zajmą.
+// tej samej wielkości co prawdziwe nadruki, żeby autor szablonu widział, co przykryją.
 
 export const templatePreviewQrCss = `
       .qr-preview,
@@ -43,6 +43,25 @@ export const templatePreviewQrCss = `
         height: 18mm;
       }
 
+      /* Na wydruku pieczątka i podpis leżą nad tekstem, wyśrodkowane na miejscu znacznika
+         (api/internal/certificates/pdf.go). Prostokąt jest półprzezroczysty, żeby było
+         widać, co przykrywa. */
+      .decor-anchor {
+        display: inline-block;
+        position: relative;
+        width: 0;
+        height: 0;
+        vertical-align: middle;
+      }
+
+      .decor-anchor > .decor-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        opacity: 0.75;
+        transform: translate(-50%, -50%);
+      }
+
       /* Podstawa prawna to tekst, a nie obrazek: w podglądzie widać jej prawdziwą treść,
          lekko podkreśloną, żeby autor szablonu wiedział, skąd się wzięła. */
       .legal-basis-preview {
@@ -64,10 +83,10 @@ export const templatePreviewQrCss = `
 // Rozmiary odpowiadają domyślnym szerokościom nadruków z API (certassets.DefaultWidthMM).
 const previewBoxes: Array<{ token: RegExp, html: string }> = [
   { token: /{{\s*kod_qr\s*}}/g, html: '<span class="qr-preview">KOD QR</span>' },
-  { token: /{{\s*pieczatka_okragla\s*}}/g, html: '<span class="decor-preview stamp-preview stamp-preview--round">PIECZĄTKA OKRĄGŁA</span>' },
-  { token: /{{\s*pieczatka_firmowa\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA FIRMOWA</span>' },
-  { token: /{{\s*pieczatka_imienna\s*}}/g, html: '<span class="decor-preview stamp-preview">PIECZĄTKA IMIENNA</span>' },
-  { token: /{{\s*podpis\s*}}/g, html: '<span class="decor-preview signature-preview">PODPIS</span>' }
+  { token: /{{\s*pieczatka_okragla\s*}}/g, html: '<span class="decor-anchor"><span class="decor-preview stamp-preview stamp-preview--round">PIECZĄTKA OKRĄGŁA</span></span>' },
+  { token: /{{\s*pieczatka_firmowa\s*}}/g, html: '<span class="decor-anchor"><span class="decor-preview stamp-preview">PIECZĄTKA FIRMOWA</span></span>' },
+  { token: /{{\s*pieczatka_imienna\s*}}/g, html: '<span class="decor-anchor"><span class="decor-preview stamp-preview">PIECZĄTKA IMIENNA</span></span>' },
+  { token: /{{\s*podpis\s*}}/g, html: '<span class="decor-anchor"><span class="decor-preview signature-preview">PODPIS</span></span>' }
 ]
 
 function escapePreviewText(value: string) {
