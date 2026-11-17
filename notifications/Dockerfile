@@ -1,7 +1,7 @@
 # Obrazy bazowe z lustra Docker Huba prowadzonego przez Google (te same oficjalne obrazy).
 # Anonimowe pobrania z Docker Huba na runnerach GitHuba kończyły się 429 Too Many Requests
 # i blokowały deploy.
-FROM mirror.gcr.io/library/golang:1.26.1-bookworm AS builder
+FROM mirror.gcr.io/library/golang:1.27.4-bookworm AS builder
 
 WORKDIR /src/notifications
 
